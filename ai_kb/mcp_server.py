@@ -27,7 +27,7 @@ from core.models import (
     KnowledgeAtom, AtomRelation, Tag, atom_tags, Canvas, CanvasAtom,
 )
 from core import relations as rel_service
-from sqlalchemy import func, case
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 logger = logging.getLogger('beak_note.mcp')
@@ -122,30 +122,49 @@ def note_search(
 ) -> str:
     """搜尋知識庫中的原子。
 
-    query: 關鍵字搜尋（標題+內容，模糊匹配）
+    query: 關鍵字搜尋（ILIKE 匹配 + pg_trgm 相似度排序）
     atom_type: 篩選類型 (A/B/C/D/E/F)
     lifecycle: 篩選生命週期 (active/aging/archived/terminal)
     tag: 篩選標籤名稱
     source: 篩選來源 (human/ai/import/derived)
     limit: 回傳上限（預設 20，最大 100）
 
-    按 vitality_score 降序排列，活躍知識優先。
+    ILIKE 保證召回率，pg_trgm similarity 輔助排序（查詢>2字時啟用）。
     """
     limit = min(limit, 100)
 
     with session_scope() as s:
-        q = (
-            s.query(KnowledgeAtom)
-            .options(joinedload(KnowledgeAtom.tags))
-            .filter(KnowledgeAtom.is_deleted == False)
-        )
+        use_trgm = query and len(query) > 2
 
-        if query:
-            pattern = f'%{query}%'
-            q = q.filter(
-                KnowledgeAtom.title.ilike(pattern) |
-                KnowledgeAtom.content.ilike(pattern)
+        sim_expr = None
+        if use_trgm:
+            sim_expr = func.greatest(
+                func.similarity(KnowledgeAtom.title, query),
+                func.similarity(KnowledgeAtom.content, query),
             )
+            pattern = f'%{query}%'
+            q = (
+                s.query(KnowledgeAtom, sim_expr.label('sim'))
+                .options(joinedload(KnowledgeAtom.tags))
+                .filter(KnowledgeAtom.is_deleted == False)
+                .filter(
+                    KnowledgeAtom.title.ilike(pattern) |
+                    KnowledgeAtom.content.ilike(pattern)
+                )
+            )
+        else:
+            q = (
+                s.query(KnowledgeAtom)
+                .options(joinedload(KnowledgeAtom.tags))
+                .filter(KnowledgeAtom.is_deleted == False)
+            )
+
+            if query:
+                pattern = f'%{query}%'
+                q = q.filter(
+                    KnowledgeAtom.title.ilike(pattern) |
+                    KnowledgeAtom.content.ilike(pattern)
+                )
 
         if atom_type:
             q = q.filter(KnowledgeAtom.atom_type == atom_type)
@@ -159,13 +178,25 @@ def note_search(
         if tag:
             q = q.join(KnowledgeAtom.tags).filter(Tag.name == tag)
 
-        q = q.order_by(
-            KnowledgeAtom.vitality_score.desc(),
-            KnowledgeAtom.updated_at.desc(),
-        )
+        if use_trgm:
+            q = q.order_by(
+                sim_expr.desc(),
+                KnowledgeAtom.vitality_score.desc(),
+                KnowledgeAtom.updated_at.desc(),
+            )
+        else:
+            q = q.order_by(
+                KnowledgeAtom.vitality_score.desc(),
+                KnowledgeAtom.updated_at.desc(),
+            )
 
-        atoms = q.limit(limit).all()
-        total = q.count() if len(atoms) == limit else len(atoms)
+        rows = q.limit(limit).all()
+        total = q.count() if len(rows) == limit else len(rows)
+
+        if use_trgm:
+            atoms = [row[0] for row in rows]
+        else:
+            atoms = rows
 
         results = []
         for a in atoms:

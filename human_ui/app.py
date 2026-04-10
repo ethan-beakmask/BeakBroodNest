@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import Flask, request, jsonify, render_template
+from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from core.db import init_engine, get_session, session_scope, create_all_tables, Base, get_engine
@@ -56,9 +57,35 @@ def index():
 
 @app.route('/api/atoms', methods=['GET'])
 def list_atoms():
-    """列出知識原子，支援篩選"""
+    """列出知識原子，支援篩選（ILIKE + pg_trgm 相似度排序）"""
     with session_scope() as s:
-        q = s.query(KnowledgeAtom).filter(KnowledgeAtom.is_deleted == False)
+        keyword = request.args.get('q')
+        use_trgm = keyword and len(keyword) > 2
+
+        sim_expr = None
+        if use_trgm:
+            sim_expr = func.greatest(
+                func.similarity(KnowledgeAtom.title, keyword),
+                func.similarity(KnowledgeAtom.content, keyword),
+            )
+            pattern = f'%{keyword}%'
+            q = (
+                s.query(KnowledgeAtom, sim_expr.label('sim'))
+                .filter(KnowledgeAtom.is_deleted == False)
+                .filter(
+                    KnowledgeAtom.title.ilike(pattern) |
+                    KnowledgeAtom.content.ilike(pattern)
+                )
+            )
+        else:
+            q = s.query(KnowledgeAtom).filter(KnowledgeAtom.is_deleted == False)
+
+            if keyword:
+                pattern = f'%{keyword}%'
+                q = q.filter(
+                    KnowledgeAtom.title.ilike(pattern) |
+                    KnowledgeAtom.content.ilike(pattern)
+                )
 
         # 篩選參數
         atom_type = request.args.get('type')
@@ -73,17 +100,14 @@ def list_atoms():
         if source:
             q = q.filter(KnowledgeAtom.source == source)
 
-        keyword = request.args.get('q')
-        if keyword:
-            pattern = f'%{keyword}%'
-            q = q.filter(
-                KnowledgeAtom.title.ilike(pattern) |
-                KnowledgeAtom.content.ilike(pattern)
-            )
-
         # 排序
         sort = request.args.get('sort', 'updated_at')
-        if sort == 'vitality':
+        if use_trgm:
+            q = q.order_by(
+                sim_expr.desc(),
+                KnowledgeAtom.vitality_score.desc(),
+            )
+        elif sort == 'vitality':
             q = q.order_by(KnowledgeAtom.vitality_score.desc())
         elif sort == 'created_at':
             q = q.order_by(KnowledgeAtom.created_at.desc())
@@ -95,7 +119,9 @@ def list_atoms():
         per_page = request.args.get('per_page', 50, type=int)
         per_page = min(per_page, 200)
         total = q.count()
-        atoms = q.offset((page - 1) * per_page).limit(per_page).all()
+
+        rows = q.offset((page - 1) * per_page).limit(per_page).all()
+        atoms = [row[0] for row in rows] if use_trgm else rows
 
         return jsonify({
             'total': total,
