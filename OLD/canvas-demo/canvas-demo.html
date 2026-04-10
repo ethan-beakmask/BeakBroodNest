@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>React Flow Demo - 白板 + 心智圖</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+        }
+
+        .header {
+            background: #16213e;
+            color: white;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .header-info {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: calc(100vh - 49px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 畫布 */
+        #canvas {
+            width: 3000px;
+            height: 2000px;
+            background:
+                linear-gradient(rgba(51, 65, 85, 0.3) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(51, 65, 85, 0.3) 1px, transparent 1px);
+            background-size: 20px 20px;
+            position: absolute;
+            top: 0;
+            left: 0;
+            cursor: grab;
+        }
+
+        #canvas:active {
+            cursor: grabbing;
+        }
+
+        /* SVG 連線層 */
+        #connections-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        #connections-layer path {
+            pointer-events: stroke;
+            cursor: pointer;
+        }
+
+        #connections-layer path:hover {
+            stroke-width: 4 !important;
+        }
+
+        /* 一般卡片節點 */
+        .node {
+            position: absolute;
+            cursor: move;
+            z-index: 10;
+        }
+
+        .card-node {
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            min-width: 150px;
+            max-width: 200px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .card-node:hover {
+            border-color: #3b82f6;
+            box-shadow: 0 8px 15px -3px rgba(59, 130, 246, 0.3);
+        }
+
+        .card-node .title {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        .card-node .content {
+            color: #64748b;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .card-node .tags {
+            margin-top: 8px;
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .card-node .tag {
+            background: #e0f2fe;
+            color: #0369a1;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+        }
+
+        /* 計劃單節點 - 2層結構 */
+        .plan-node {
+            background: white;
+            border: 2px solid #8b5cf6;
+            border-radius: 8px;
+            min-width: 200px;
+            box-shadow: 0 4px 6px -1px rgba(139, 92, 246, 0.2);
+            overflow: hidden;
+        }
+
+        .plan-node:hover {
+            box-shadow: 0 8px 15px -3px rgba(139, 92, 246, 0.4);
+        }
+
+        .plan-node .plan-header {
+            background: linear-gradient(135deg, #8b5cf6, #6366f1);
+            color: white;
+            padding: 10px 12px;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .plan-node .plan-body {
+            padding: 8px 0;
+        }
+
+        .plan-node .plan-section {
+            padding: 6px 12px;
+        }
+
+        .plan-node .plan-section-title {
+            font-weight: 600;
+            color: #4c1d95;
+            font-size: 13px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .plan-node .plan-section-title::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: #8b5cf6;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .plan-node .plan-items {
+            padding-left: 20px;
+        }
+
+        .plan-node .plan-item {
+            color: #64748b;
+            font-size: 12px;
+            padding: 2px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .plan-node .plan-item::before {
+            content: '•';
+            color: #a78bfa;
+        }
+
+        /* 心智圖根節點 */
+        .mindmap-root {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 100px;
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 13px;
+            text-align: center;
+            box-shadow: 0 8px 20px -4px rgba(245, 158, 11, 0.5);
+            line-height: 1.3;
+        }
+
+        /* 心智圖分支節點 */
+        .mindmap-branch {
+            background: white;
+            border: 2px solid #f59e0b;
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-weight: 500;
+            color: #92400e;
+            font-size: 13px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            white-space: nowrap;
+        }
+
+        .mindmap-branch:hover {
+            background: #fffbeb;
+        }
+
+        /* 心智圖葉節點 */
+        .mindmap-leaf {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 12px;
+            color: #78350f;
+            white-space: nowrap;
+        }
+
+        /* 群組節點 */
+        .group-node {
+            background: rgba(59, 130, 246, 0.08);
+            border: 2px dashed #3b82f6;
+            border-radius: 12px;
+            z-index: 1 !important;
+        }
+
+        .group-node .group-label {
+            position: absolute;
+            top: -12px;
+            left: 16px;
+            background: #3b82f6;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* 控制面板 */
+        .controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 100;
+        }
+
+        .controls button {
+            background: #334155;
+            border: none;
+            color: #94a3b8;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .controls button:hover {
+            background: #475569;
+            color: white;
+        }
+
+        /* 圖例 */
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px 16px;
+            color: white;
+            font-size: 12px;
+            z-index: 100;
+        }
+
+        .legend h3 {
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: #94a3b8;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 4px 0;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .legend-line {
+            width: 24px;
+            height: 3px;
+            flex-shrink: 0;
+        }
+
+        /* 縮放顯示 */
+        .zoom-indicator {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            padding: 6px 12px;
+            color: #94a3b8;
+            font-size: 12px;
+            z-index: 100;
+        }
+
+        /* 選中狀態 */
+        .node.selected .card-node,
+        .node.selected .plan-node {
+            outline: 3px solid #3b82f6;
+            outline-offset: 2px;
+        }
+
+        .node.selected .mindmap-root,
+        .node.selected .mindmap-branch,
+        .node.selected .mindmap-leaf {
+            outline: 3px solid #f59e0b;
+            outline-offset: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>白板 + 心智圖 Demo（純 JS 實現）</h1>
+        <div class="header-info">拖拉節點移動 | 滾輪縮放 | 拖拉空白處平移</div>
+    </div>
+
+    <div id="canvas-container">
+        <div id="canvas">
+            <svg id="connections-layer"></svg>
+            <!-- 節點會動態插入這裡 -->
+        </div>
+
+        <div class="controls">
+            <button onclick="zoomIn()">+ 放大</button>
+            <button onclick="zoomOut()">- 縮小</button>
+            <button onclick="resetView()">重置視圖</button>
+            <button onclick="fitView()">適應視圖</button>
+        </div>
+
+        <div class="legend">
+            <h3>圖例</h3>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #3b82f6;"></div>
+                <span>白板卡片</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #8b5cf6;"></div>
+                <span>計劃單 (2層結構)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #f59e0b; border-radius: 50%;"></div>
+                <span>心智圖</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-line" style="background: #3b82f6;"></div>
+                <span>卡片關聯</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-line" style="background: #f59e0b;"></div>
+                <span>心智圖連線</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-line" style="background: #10b981; border-style: dashed;"></div>
+                <span>跨區關聯</span>
+            </div>
+        </div>
+
+        <div class="zoom-indicator">
+            縮放: <span id="zoom-level">100%</span>
+        </div>
+    </div>
+
+    <script>
+        // ========== 資料定義 ==========
+        const nodes = [
+            // 白板群組
+            {
+                id: 'group-whiteboard',
+                type: 'group',
+                x: 50,
+                y: 50,
+                width: 480,
+                height: 350,
+                data: { label: '白板區 - 自由關聯卡片' }
+            },
+            // 白板卡片
+            {
+                id: 'card-1',
+                type: 'card',
+                x: 80,
+                y: 100,
+                data: {
+                    title: '專案構想',
+                    content: '建立一個知識管理系統，結合白板與心智圖的優點...',
+                    tags: ['構想', '重要']
+                }
+            },
+            {
+                id: 'card-2',
+                type: 'card',
+                x: 300,
+                y: 90,
+                data: {
+                    title: '技術選型',
+                    content: 'React Flow 或純 JS 實現畫布引擎',
+                    tags: ['技術', 'React']
+                }
+            },
+            // 計劃單
+            {
+                id: 'card-plan',
+                type: 'plan',
+                x: 170,
+                y: 230,
+                data: {
+                    title: '本週計劃',
+                    sections: [
+                        { name: '1. 採購', items: ['青菜', '水果'] },
+                        { name: '2. 開會', items: ['簡報', '名片'] }
+                    ]
+                }
+            },
+            // 心智圖
+            {
+                id: 'mind-root',
+                type: 'mindmap-root',
+                x: 650,
+                y: 175,
+                data: { label: '知識管理\n系統' }
+            },
+            {
+                id: 'mind-branch-1',
+                type: 'mindmap-branch',
+                x: 820,
+                y: 80,
+                data: { label: '前端技術' }
+            },
+            {
+                id: 'mind-branch-2',
+                type: 'mindmap-branch',
+                x: 820,
+                y: 180,
+                data: { label: '後端架構' }
+            },
+            {
+                id: 'mind-branch-3',
+                type: 'mindmap-branch',
+                x: 820,
+                y: 280,
+                data: { label: '資料結構' }
+            },
+            {
+                id: 'mind-leaf-1',
+                type: 'mindmap-leaf',
+                x: 960,
+                y: 50,
+                data: { label: 'React Flow' }
+            },
+            {
+                id: 'mind-leaf-2',
+                type: 'mindmap-leaf',
+                x: 960,
+                y: 95,
+                data: { label: 'Markdown 編輯器' }
+            },
+            {
+                id: 'mind-leaf-3',
+                type: 'mindmap-leaf',
+                x: 960,
+                y: 155,
+                data: { label: 'Flask API' }
+            },
+            {
+                id: 'mind-leaf-4',
+                type: 'mindmap-leaf',
+                x: 960,
+                y: 200,
+                data: { label: 'PostgreSQL' }
+            },
+            {
+                id: 'mind-leaf-5',
+                type: 'mindmap-leaf',
+                x: 960,
+                y: 260,
+                data: { label: 'JSON 匯出' }
+            },
+            {
+                id: 'mind-leaf-6',
+                type: 'mindmap-leaf',
+                x: 960,
+                y: 305,
+                data: { label: 'CSV 匯出' }
+            }
+        ];
+
+        const edges = [
+            // 白板內部連線
+            { id: 'e1', source: 'card-1', target: 'card-2', label: '相關', color: '#3b82f6', animated: true },
+            { id: 'e2', source: 'card-1', target: 'card-plan', label: '待辦', color: '#3b82f6' },
+            { id: 'e3', source: 'card-2', target: 'card-plan', color: '#3b82f6' },
+            // 心智圖連線
+            { id: 'e4', source: 'mind-root', target: 'mind-branch-1', color: '#f59e0b', arrow: true },
+            { id: 'e5', source: 'mind-root', target: 'mind-branch-2', color: '#f59e0b', arrow: true },
+            { id: 'e6', source: 'mind-root', target: 'mind-branch-3', color: '#f59e0b', arrow: true },
+            { id: 'e7', source: 'mind-branch-1', target: 'mind-leaf-1', color: '#fcd34d' },
+            { id: 'e8', source: 'mind-branch-1', target: 'mind-leaf-2', color: '#fcd34d' },
+            { id: 'e9', source: 'mind-branch-2', target: 'mind-leaf-3', color: '#fcd34d' },
+            { id: 'e10', source: 'mind-branch-2', target: 'mind-leaf-4', color: '#fcd34d' },
+            { id: 'e11', source: 'mind-branch-3', target: 'mind-leaf-5', color: '#fcd34d' },
+            { id: 'e12', source: 'mind-branch-3', target: 'mind-leaf-6', color: '#fcd34d' },
+            // 跨區關聯線
+            { id: 'e-cross', source: 'group-whiteboard', target: 'mind-root', label: '關聯', color: '#10b981', dashed: true, animated: true, arrow: true }
+        ];
+
+        // ========== 狀態變數 ==========
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let isDragging = false;
+        let isPanning = false;
+        let dragTarget = null;
+        let startX, startY, nodeStartX, nodeStartY;
+
+        const canvas = document.getElementById('canvas');
+        const container = document.getElementById('canvas-container');
+        const connectionsLayer = document.getElementById('connections-layer');
+
+        // ========== 節點渲染 ==========
+        function renderNodes() {
+            // 清除舊節點（保留 SVG）
+            const oldNodes = canvas.querySelectorAll('.node');
+            oldNodes.forEach(n => n.remove());
+
+            nodes.forEach(node => {
+                const el = document.createElement('div');
+                el.className = 'node';
+                el.id = `node-${node.id}`;
+                el.style.left = `${node.x}px`;
+                el.style.top = `${node.y}px`;
+                el.dataset.nodeId = node.id;
+
+                switch (node.type) {
+                    case 'group':
+                        el.innerHTML = `
+                            <div class="group-node" style="width: ${node.width}px; height: ${node.height}px;">
+                                <div class="group-label">${node.data.label}</div>
+                            </div>
+                        `;
+                        break;
+
+                    case 'card':
+                        el.innerHTML = `
+                            <div class="card-node">
+                                <div class="title">${node.data.title}</div>
+                                <div class="content">${node.data.content}</div>
+                                ${node.data.tags ? `
+                                    <div class="tags">
+                                        ${node.data.tags.map(t => `<span class="tag">${t}</span>`).join('')}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                        break;
+
+                    case 'plan':
+                        el.innerHTML = `
+                            <div class="plan-node">
+                                <div class="plan-header">${node.data.title}</div>
+                                <div class="plan-body">
+                                    ${node.data.sections.map(s => `
+                                        <div class="plan-section">
+                                            <div class="plan-section-title">${s.name}</div>
+                                            <div class="plan-items">
+                                                ${s.items.map(i => `<div class="plan-item">${i}</div>`).join('')}
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `;
+                        break;
+
+                    case 'mindmap-root':
+                        el.innerHTML = `<div class="mindmap-root">${node.data.label.replace('\n', '<br>')}</div>`;
+                        break;
+
+                    case 'mindmap-branch':
+                        el.innerHTML = `<div class="mindmap-branch">${node.data.label}</div>`;
+                        break;
+
+                    case 'mindmap-leaf':
+                        el.innerHTML = `<div class="mindmap-leaf">${node.data.label}</div>`;
+                        break;
+                }
+
+                canvas.appendChild(el);
+            });
+        }
+
+        // ========== 連線渲染 ==========
+        function getNodeCenter(nodeId) {
+            const node = nodes.find(n => n.id === nodeId);
+            if (!node) return { x: 0, y: 0 };
+
+            const el = document.getElementById(`node-${nodeId}`);
+            if (!el) return { x: node.x, y: node.y };
+
+            const rect = el.getBoundingClientRect();
+            const width = rect.width / scale;
+            const height = rect.height / scale;
+
+            return {
+                x: node.x + width / 2,
+                y: node.y + height / 2
+            };
+        }
+
+        function renderConnections() {
+            // 清除舊連線
+            connectionsLayer.innerHTML = '';
+
+            // 定義箭頭 marker
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+
+            ['#3b82f6', '#f59e0b', '#fcd34d', '#10b981'].forEach(color => {
+                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+                marker.setAttribute('id', `arrow-${color.replace('#', '')}`);
+                marker.setAttribute('viewBox', '0 0 10 10');
+                marker.setAttribute('refX', '9');
+                marker.setAttribute('refY', '5');
+                marker.setAttribute('markerWidth', '6');
+                marker.setAttribute('markerHeight', '6');
+                marker.setAttribute('orient', 'auto-start-reverse');
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+                path.setAttribute('fill', color);
+
+                marker.appendChild(path);
+                defs.appendChild(marker);
+            });
+
+            connectionsLayer.appendChild(defs);
+
+            edges.forEach(edge => {
+                const source = getNodeCenter(edge.source);
+                const target = getNodeCenter(edge.target);
+
+                // 計算控制點（貝茲曲線）
+                const dx = target.x - source.x;
+                const dy = target.y - source.y;
+                const cx1 = source.x + dx * 0.5;
+                const cy1 = source.y;
+                const cx2 = source.x + dx * 0.5;
+                const cy2 = target.y;
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${source.x} ${source.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${target.x} ${target.y}`);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', edge.color);
+                path.setAttribute('stroke-width', edge.dashed ? '3' : '2');
+
+                if (edge.dashed) {
+                    path.setAttribute('stroke-dasharray', '8,4');
+                }
+
+                if (edge.arrow) {
+                    path.setAttribute('marker-end', `url(#arrow-${edge.color.replace('#', '')})`);
+                }
+
+                if (edge.animated) {
+                    path.innerHTML = `
+                        <animate attributeName="stroke-dashoffset" from="24" to="0" dur="1s" repeatCount="indefinite"/>
+                    `;
+                    path.setAttribute('stroke-dasharray', '12,12');
+                }
+
+                connectionsLayer.appendChild(path);
+
+                // 標籤
+                if (edge.label) {
+                    const midX = (source.x + target.x) / 2;
+                    const midY = (source.y + target.y) / 2;
+
+                    // 背景
+                    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    bg.setAttribute('x', midX - 20);
+                    bg.setAttribute('y', midY - 10);
+                    bg.setAttribute('width', '40');
+                    bg.setAttribute('height', '20');
+                    bg.setAttribute('rx', '4');
+                    bg.setAttribute('fill', '#1a1a2e');
+                    connectionsLayer.appendChild(bg);
+
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', midX);
+                    text.setAttribute('y', midY + 4);
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('fill', edge.color);
+                    text.setAttribute('font-size', '12');
+                    text.setAttribute('font-weight', '600');
+                    text.textContent = edge.label;
+                    connectionsLayer.appendChild(text);
+                }
+            });
+        }
+
+        // ========== 拖拉功能 ==========
+        canvas.addEventListener('mousedown', (e) => {
+            const nodeEl = e.target.closest('.node');
+
+            if (nodeEl) {
+                // 拖拉節點
+                isDragging = true;
+                dragTarget = nodeEl;
+                dragTarget.classList.add('selected');
+
+                const nodeId = nodeEl.dataset.nodeId;
+                const node = nodes.find(n => n.id === nodeId);
+
+                startX = e.clientX;
+                startY = e.clientY;
+                nodeStartX = node.x;
+                nodeStartY = node.y;
+
+                e.preventDefault();
+            } else if (e.target === canvas || e.target === connectionsLayer) {
+                // 平移畫布
+                isPanning = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                canvas.style.cursor = 'grabbing';
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging && dragTarget) {
+                const dx = (e.clientX - startX) / scale;
+                const dy = (e.clientY - startY) / scale;
+
+                const nodeId = dragTarget.dataset.nodeId;
+                const node = nodes.find(n => n.id === nodeId);
+
+                node.x = nodeStartX + dx;
+                node.y = nodeStartY + dy;
+
+                dragTarget.style.left = `${node.x}px`;
+                dragTarget.style.top = `${node.y}px`;
+
+                renderConnections();
+            }
+
+            if (isPanning) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+
+                panX += dx;
+                panY += dy;
+
+                startX = e.clientX;
+                startY = e.clientY;
+
+                updateTransform();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (dragTarget) {
+                dragTarget.classList.remove('selected');
+            }
+            isDragging = false;
+            isPanning = false;
+            dragTarget = null;
+            canvas.style.cursor = 'grab';
+        });
+
+        // ========== 縮放功能 ==========
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            const newScale = Math.max(0.25, Math.min(2, scale * delta));
+
+            // 以滑鼠位置為中心縮放
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            panX = mouseX - (mouseX - panX) * (newScale / scale);
+            panY = mouseY - (mouseY - panY) * (newScale / scale);
+
+            scale = newScale;
+            updateTransform();
+        });
+
+        function updateTransform() {
+            canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            canvas.style.transformOrigin = '0 0';
+            document.getElementById('zoom-level').textContent = `${Math.round(scale * 100)}%`;
+        }
+
+        // ========== 控制按鈕 ==========
+        function zoomIn() {
+            scale = Math.min(2, scale * 1.2);
+            updateTransform();
+        }
+
+        function zoomOut() {
+            scale = Math.max(0.25, scale / 1.2);
+            updateTransform();
+        }
+
+        function resetView() {
+            scale = 1;
+            panX = 0;
+            panY = 0;
+            updateTransform();
+        }
+
+        function fitView() {
+            // 計算所有節點的邊界
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+            nodes.forEach(node => {
+                const el = document.getElementById(`node-${node.id}`);
+                if (el) {
+                    const width = el.offsetWidth;
+                    const height = el.offsetHeight;
+                    minX = Math.min(minX, node.x);
+                    minY = Math.min(minY, node.y);
+                    maxX = Math.max(maxX, node.x + width);
+                    maxY = Math.max(maxY, node.y + height);
+                }
+            });
+
+            const contentWidth = maxX - minX + 100;
+            const contentHeight = maxY - minY + 100;
+            const containerRect = container.getBoundingClientRect();
+
+            scale = Math.min(
+                containerRect.width / contentWidth,
+                containerRect.height / contentHeight,
+                1
+            );
+
+            panX = (containerRect.width - contentWidth * scale) / 2 - minX * scale + 50;
+            panY = (containerRect.height - contentHeight * scale) / 2 - minY * scale + 50;
+
+            updateTransform();
+        }
+
+        // ========== 初始化 ==========
+        function init() {
+            renderNodes();
+            // 等待 DOM 更新後再渲染連線
+            requestAnimationFrame(() => {
+                renderConnections();
+                fitView();
+            });
+        }
+
+        init();
+
+        // ========== 匯出資料結構 (供參考) ==========
+        window.getCanvasData = function() {
+            return { nodes, edges };
+        };
+
+        console.log('畫布資料結構:', { nodes, edges });
+        console.log('可用 getCanvasData() 取得資料');
+    </script>
+</body>
+</html>

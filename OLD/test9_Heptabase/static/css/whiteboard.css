@@ -1,0 +1,535 @@
+/* ============================================================
+   白板 (Whiteboard) 專屬樣式
+   ============================================================ */
+
+/* ---- 白板容器 ---- */
+.wb-viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-primary);
+    cursor: grab;
+}
+
+.wb-viewport.panning {
+    cursor: grabbing;
+}
+
+.wb-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6000px;
+    height: 4000px;
+    transform-origin: 0 0;
+    background:
+        radial-gradient(circle, var(--border-light) 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
+/* ---- SVG 連線層 ---- */
+.wb-connections {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.wb-connections path {
+    pointer-events: stroke;
+    cursor: pointer;
+    transition: stroke-width 0.15s;
+}
+
+.wb-connections path:hover {
+    stroke-width: 3;
+}
+
+.wb-connections .conn-label {
+    font-size: 11px;
+    fill: var(--text-secondary);
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+/* ---- 連線建立模式 ---- */
+.wb-temp-line {
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-dasharray: 6 4;
+    fill: none;
+    pointer-events: none;
+}
+
+/* ---- 卡片 ---- */
+.wb-card {
+    position: absolute;
+    background: var(--bg-secondary);
+    border: 1.5px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow);
+    min-width: 220px;
+    max-width: 360px;
+    z-index: 10;
+    transition: box-shadow 0.15s, border-color 0.15s;
+    display: flex;
+    flex-direction: column;
+}
+
+.wb-card:hover {
+    box-shadow: var(--card-shadow-hover);
+    border-color: var(--border-medium);
+}
+
+.wb-card.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2), var(--card-shadow-hover);
+}
+
+.wb-card.drag-over {
+    border-color: var(--success);
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+    background: #f0fdf4;
+}
+
+.wb-card.dragging {
+    opacity: 0.6;
+    z-index: 100;
+}
+
+/* ---- 卡片 Header ---- */
+.wb-card-header {
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: move;
+    border-bottom: 1px solid var(--border-light);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    min-height: 36px;
+    flex-shrink: 0;
+}
+
+.wb-card-header .drag-handle {
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: move;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+}
+
+.wb-card-title {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: var(--font-family);
+    min-width: 0;
+}
+
+.wb-card-title:focus {
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    padding: 1px 4px;
+    margin: -1px -4px;
+}
+
+.wb-card-schema {
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--bg-tertiary);
+    padding: 1px 6px;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.wb-card-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.wb-card:hover .wb-card-actions {
+    opacity: 1;
+}
+
+.wb-card-actions button {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.wb-card-actions button:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.wb-card-actions button.danger:hover {
+    background: #fef2f2;
+    color: var(--danger);
+}
+
+/* ---- 卡片 Body (Item 列表) ---- */
+.wb-card-body {
+    padding: 6px;
+    min-height: 30px;
+    flex: 1;
+}
+
+.wb-card-body.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 16px 6px;
+}
+
+/* ---- 卡片內的 Item ---- */
+.wb-item {
+    padding: 6px 8px;
+    border-radius: var(--radius);
+    margin-bottom: 3px;
+    background: var(--bg-tertiary);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: grab;
+    transition: background 0.15s, transform 0.1s;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    position: relative;
+}
+
+.wb-item:hover {
+    background: #e8eef4;
+}
+
+.wb-item.dragging {
+    opacity: 0.4;
+    transform: scale(0.95);
+}
+
+.wb-item-grip {
+    color: var(--text-muted);
+    font-size: 10px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: grab;
+}
+
+.wb-item-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.wb-item-title {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 12px;
+    margin-bottom: 2px;
+}
+
+.wb-item-detail {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.wb-item-detail span {
+    margin-right: 8px;
+}
+
+.wb-item-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 16px;
+    height: 16px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.wb-item:hover .wb-item-remove {
+    display: flex;
+}
+
+.wb-item-remove:hover {
+    background: #fef2f2;
+    color: var(--danger);
+}
+
+/* ---- 卡片 Footer (Tags) ---- */
+.wb-card-footer {
+    padding: 4px 8px 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    border-top: 1px solid var(--border-light);
+}
+
+.wb-card-footer:empty {
+    display: none;
+}
+
+/* ---- 白板工具列 ---- */
+.wb-toolbar {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--card-shadow);
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 100;
+}
+
+.wb-toolbar button {
+    padding: 5px 10px;
+    border-radius: var(--radius);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-family);
+    transition: background 0.15s;
+    white-space: nowrap;
+}
+
+.wb-toolbar button:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.wb-toolbar button.active {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+.wb-toolbar .separator {
+    width: 1px;
+    height: 20px;
+    background: var(--border-light);
+    margin: 0 4px;
+}
+
+/* ---- 縮放指示器 ---- */
+.wb-zoom {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.wb-zoom button {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.wb-zoom button:hover {
+    background: var(--bg-tertiary);
+}
+
+/* ---- 連線錨點 ---- */
+.wb-card-anchor {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-secondary);
+    cursor: crosshair;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 15;
+}
+
+.wb-card:hover .wb-card-anchor {
+    opacity: 1;
+}
+
+.wb-card-anchor.top    { top: -5px; left: 50%; transform: translateX(-50%); }
+.wb-card-anchor.bottom { bottom: -5px; left: 50%; transform: translateX(-50%); }
+.wb-card-anchor.left   { left: -5px; top: 50%; transform: translateY(-50%); }
+.wb-card-anchor.right  { right: -5px; top: 50%; transform: translateY(-50%); }
+
+/* ---- 群組視覺框 ---- */
+.wb-group-box {
+    position: absolute;
+    border: 2px dashed;
+    border-radius: var(--radius-lg);
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.6;
+}
+
+.wb-group-label {
+    position: absolute;
+    top: -12px;
+    left: 12px;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+    pointer-events: none;
+}
+
+/* ---- Minimap ---- */
+.wb-minimap {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    width: 160px;
+    height: 100px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    box-shadow: var(--card-shadow);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.wb-minimap-viewport {
+    position: absolute;
+    border: 1.5px solid var(--accent);
+    background: rgba(59, 130, 246, 0.08);
+    border-radius: 2px;
+}
+
+.wb-minimap-card {
+    position: absolute;
+    background: var(--border-medium);
+    border-radius: 1px;
+}
+
+/* ---- 右側面板 ---- */
+.wb-panel {
+    width: 300px;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-light);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+.wb-panel.hidden {
+    display: none;
+}
+
+.wb-panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.wb-panel-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.wb-panel-body {
+    padding: 12px 16px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.wb-panel-section {
+    margin-bottom: 16px;
+}
+
+.wb-panel-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+/* ---- Context Menu ---- */
+.context-menu {
+    position: fixed;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 4px;
+    z-index: 500;
+    min-width: 160px;
+}
+
+.context-menu-item {
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.context-menu-item:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.context-menu-item.danger:hover {
+    background: #fef2f2;
+    color: var(--danger);
+}
+
+.context-menu-separator {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 0;
+}

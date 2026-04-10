@@ -1,0 +1,15 @@
+[postgresql]
+host = 192.168.0.16
+port = 5432
+database = beak_note
+username = beak_note
+password = YOUR_PASSWORD_HERE
+
+[flask]
+host = 192.168.0.16
+port = 5170
+debug = true
+secret_key = CHANGE_THIS_SECRET_KEY
+
+[logging]
+level = INFO

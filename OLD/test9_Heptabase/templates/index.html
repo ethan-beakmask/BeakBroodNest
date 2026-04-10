@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+{% block title %}白板 - Heptabase{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/whiteboard.css">
+{% endblock %}
+{% block extra_js %}
+<script src="/static/js/whiteboard.js"></script>
+{% endblock %}
+
+{% block body %}
+<div x-data="whiteboardApp({{ wb_id }})" x-init="init(); loadWhiteboards()" @click="closeContextMenu()" @keydown.escape.window="deselectCard(); closeContextMenu(); showAddCardModal=false; showAddItemModal=false; showTagModal=false; showWbModal=false;">
+
+    <!-- Header -->
+    <div class="app-header">
+        <div class="logo">Heptabase</div>
+        <nav>
+            <a href="#" class="active">白板</a>
+            <a href="/schemas">表結構</a>
+        </nav>
+        <div class="header-right">
+            <span class="text-sm text-muted" x-text="wb ? wb.name : ''"></span>
+        </div>
+    </div>
+
+    <div class="app-layout">
+
+        <!-- 左側邊欄 -->
+        <div class="sidebar">
+            <!-- 白板列表 -->
+            <div class="sidebar-section">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="sidebar-title">白板</div>
+                    <button class="btn-ghost btn-sm" @click="showWbModal=true">+</button>
+                </div>
+                <template x-for="w in whiteboards" :key="w.id">
+                    <a :href="'/whiteboard/' + w.id"
+                       class="sidebar-item"
+                       :class="{ active: w.id == wbId }">
+                        <span class="icon icon-wb">W</span>
+                        <span x-text="w.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                        <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
+                                @click.prevent.stop="if(confirm('刪除此白板？')) deleteWhiteboard(w.id)"
+                                x-show="whiteboards.length > 1">x</button>
+                    </a>
+                </template>
+            </div>
+
+            <!-- Schema 列表 -->
+            <div class="sidebar-section">
+                <div class="sidebar-title">表結構</div>
+                <template x-for="s in schemas" :key="s.id">
+                    <a :href="'/items/' + s.id" class="sidebar-item">
+                        <span class="icon icon-schema" x-text="s.icon || 'S'"></span>
+                        <span x-text="s.name"></span>
+                    </a>
+                </template>
+                <a href="/schemas" class="sidebar-item text-muted">+ 管理表結構</a>
+            </div>
+
+            <!-- 標籤 -->
+            <div class="sidebar-section">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="sidebar-title">標籤</div>
+                    <button class="btn-ghost btn-sm" @click="openTagModal()">+</button>
+                </div>
+                <template x-for="t in tags" :key="t.id">
+                    <div class="sidebar-item">
+                        <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                    </div>
+                </template>
+                <div x-show="tags.length === 0" class="text-sm text-muted" style="padding: 4px 8px;">尚無標籤</div>
+            </div>
+        </div>
+
+        <!-- 白板主區域 -->
+        <div class="wb-viewport"
+             x-ref="viewport"
+             @mousedown="onViewportMouseDown($event)"
+             @mousemove="onViewportMouseMove($event)"
+             @mouseup="onViewportMouseUp($event)"
+             @contextmenu="onCanvasContextMenu($event)">
+
+            <!-- 工具列 -->
+            <div class="wb-toolbar">
+                <button @click="openAddCardModal()" title="新增卡片">+ 卡片</button>
+                <div class="separator"></div>
+                <button :class="{ active: mode === 'connect' }" @click="toggleConnectMode()" title="建立連線">連線</button>
+                <div class="separator"></div>
+                <button @click="fitView()" title="適應視圖">適應</button>
+            </div>
+
+            <!-- 畫布 -->
+            <div class="wb-canvas" x-ref="canvas" @contextmenu.prevent>
+                <!-- SVG 連線層 -->
+                <svg class="wb-connections" x-ref="connSvg"></svg>
+
+                <!-- 卡片 -->
+                <template x-for="card in cards" :key="card.id">
+                    <div class="wb-card"
+                         :id="'card-' + card.id"
+                         :class="{ selected: selectedCardId === card.id, dragging: dragCard && dragCard.id === card.id }"
+                         :style="`left:${card.pos_x}px; top:${card.pos_y}px; z-index:${card.z_index || 10}; background:${card.color || '#ffffff'};`"
+                         @contextmenu.prevent.stop="onCardContextMenu($event, card)"
+                         @click.stop="mode === 'connect' ? onCardClickForConnect($event, card) : selectCard(card.id)"
+                         @dragover.prevent="onCardDragOver($event, card)"
+                         @dragenter.prevent="onCardDragEnter($event, card)"
+                         @dragleave="onCardDragLeave($event, card)"
+                         @drop="onCardDrop($event, card)">
+
+                        <!-- 連線錨點 -->
+                        <div class="wb-card-anchor top" @mousedown.stop="onAnchorMouseDown($event, card, 'top')"></div>
+                        <div class="wb-card-anchor bottom" @mousedown.stop="onAnchorMouseDown($event, card, 'bottom')"></div>
+                        <div class="wb-card-anchor left" @mousedown.stop="onAnchorMouseDown($event, card, 'left')"></div>
+                        <div class="wb-card-anchor right" @mousedown.stop="onAnchorMouseDown($event, card, 'right')"></div>
+
+                        <!-- Header -->
+                        <div class="wb-card-header" @mousedown.stop="onCardMouseDown($event, card)">
+                            <span class="drag-handle">::</span>
+                            <input class="wb-card-title"
+                                   :value="card.title"
+                                   @change="card.title = $event.target.value; updateCardTitle(card)"
+                                   @mousedown.stop
+                                   @click.stop>
+                            <span class="wb-card-schema" x-text="getSchemaName(card.schema_id)" x-show="card.schema_id"></span>
+                            <div class="wb-card-actions">
+                                <button title="加入項目" @click.stop="openAddItemModal(card.id)">+</button>
+                                <button class="danger" title="刪除卡片" @click.stop="if(confirm('刪除此卡片？')) deleteCard(card.id)">x</button>
+                            </div>
+                        </div>
+
+                        <!-- Body: Items -->
+                        <div class="wb-card-body" :class="{ empty: !card.items || card.items.length === 0 }">
+                            <template x-if="!card.items || card.items.length === 0">
+                                <span>拖入項目或點 + 加入</span>
+                            </template>
+                            <template x-for="item in (card.items || [])" :key="item.item_id">
+                                <div class="wb-item"
+                                     draggable="true"
+                                     @dragstart="onItemDragStart($event, item, card)"
+                                     @dragend="onItemDragEnd($event)">
+                                    <span class="wb-item-grip">::</span>
+                                    <div class="wb-item-content">
+                                        <div class="wb-item-title" x-text="item.title"></div>
+                                        <div class="wb-item-detail" x-text="formatItemDetails(item)"></div>
+                                    </div>
+                                    <button class="wb-item-remove"
+                                            @click.stop="removeItemFromCard(card.id, item.item_id)"
+                                            title="移除">x</button>
+                                </div>
+                            </template>
+                        </div>
+
+                        <!-- Footer: Tags -->
+                        <div class="wb-card-footer" x-show="card.tags && card.tags.length > 0">
+                            <template x-for="t in (card.tags || [])" :key="t.tag_id">
+                                <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"
+                                      style="font-size:10px; padding:1px 6px;"></span>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- 縮放控制 -->
+            <div class="wb-zoom">
+                <button @click="zoomOut()">-</button>
+                <span x-text="zoomPercent + '%'" style="min-width:36px; text-align:center;"></span>
+                <button @click="zoomIn()">+</button>
+                <button @click="resetZoom()" style="margin-left:4px; font-size:11px;">重置</button>
+            </div>
+        </div>
+
+        <!-- 右側面板 -->
+        <div class="wb-panel" :class="{ hidden: !showPanel || !selectedCard }">
+            <template x-if="selectedCard">
+                <div>
+                    <div class="wb-panel-header">
+                        <h3 x-text="selectedCard.title"></h3>
+                        <button class="modal-close" @click="deselectCard()">x</button>
+                    </div>
+                    <div class="wb-panel-body">
+                        <!-- 卡片設定 -->
+                        <div class="wb-panel-section">
+                            <div class="wb-panel-section-title">卡片設定</div>
+                            <div class="form-group">
+                                <label>標題</label>
+                                <input class="form-control" :value="selectedCard.title"
+                                       @change="selectedCard.title = $event.target.value; updateCardTitle(selectedCard)">
+                            </div>
+                            <div class="form-group">
+                                <label>背景色</label>
+                                <div class="flex gap-2" style="flex-wrap:wrap;">
+                                    <template x-for="c in cardColors" :key="c">
+                                        <div @click="updateCardColor(selectedCard, c)"
+                                             :style="`width:24px; height:24px; border-radius:4px; background:${c}; border:2px solid ${selectedCard.color === c ? 'var(--accent)' : 'var(--border-light)'}; cursor:pointer;`"></div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 標籤管理 -->
+                        <div class="wb-panel-section">
+                            <div class="wb-panel-section-title">標籤</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                                <template x-for="t in tags" :key="t.id">
+                                    <span class="tag-badge" :style="getTagStyle(t.color) + 'cursor:pointer;'"
+                                          :class="{ 'selected': cardHasTag(selectedCard.id, t.id) }"
+                                          @click="toggleCardTag(selectedCard.id, t.id)">
+                                        <span x-show="cardHasTag(selectedCard.id, t.id)">v </span>
+                                        <span x-text="t.name"></span>
+                                    </span>
+                                </template>
+                            </div>
+                            <div x-show="tags.length === 0" class="text-sm text-muted mt-2">
+                                尚無標籤，點左側 + 建立
+                            </div>
+                        </div>
+
+                        <!-- Items 列表 -->
+                        <div class="wb-panel-section">
+                            <div class="flex items-center justify-between">
+                                <div class="wb-panel-section-title">資料項目</div>
+                                <button class="btn btn-sm btn-secondary" @click="openAddItemModal(selectedCard.id)">+ 加入</button>
+                            </div>
+                            <template x-for="item in (selectedCard.items || [])" :key="item.item_id">
+                                <div style="padding:6px 0; border-bottom:1px solid var(--border-light);">
+                                    <div style="font-size:13px; font-weight:500;" x-text="item.title"></div>
+                                    <div class="text-sm text-muted" x-text="formatItemDetails(item)"></div>
+                                </div>
+                            </template>
+                            <div x-show="!selectedCard.items || selectedCard.items.length === 0"
+                                 class="text-sm text-muted mt-2">尚無資料項目</div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- Modals -->
+    <!-- ============================================ -->
+
+    <!-- 新增卡片 Modal -->
+    <template x-if="showAddCardModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>新增卡片</h3>
+                    <button class="modal-close" @click="showAddCardModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>卡片標題</label>
+                        <input class="form-control" x-model="newCard.title" placeholder="輸入標題..."
+                               @keydown.enter="createCard()">
+                    </div>
+                    <div class="form-group">
+                        <label>關聯表結構（選填）</label>
+                        <select class="form-control" x-model="newCard.schema_id">
+                            <option value="">-- 不關聯 --</option>
+                            <template x-for="s in schemas" :key="s.id">
+                                <option :value="s.id" x-text="s.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>背景色</label>
+                        <div class="flex gap-2">
+                            <template x-for="c in cardColors" :key="c">
+                                <div @click="newCard.color = c"
+                                     :style="`width:28px; height:28px; border-radius:4px; background:${c}; border:2px solid ${newCard.color === c ? 'var(--accent)' : 'var(--border-light)'}; cursor:pointer;`"></div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showAddCardModal=false">取消</button>
+                    <button class="btn btn-primary" @click="createCard()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 加入 Item Modal -->
+    <template x-if="showAddItemModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>加入資料項目</h3>
+                    <button class="modal-close" @click="showAddItemModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>篩選表結構</label>
+                        <select class="form-control" x-model="addItemSchemaId" @change="loadAvailableItems()">
+                            <option :value="null">-- 全部 --</option>
+                            <template x-for="s in schemas" :key="s.id">
+                                <option :value="s.id" x-text="s.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="mt-4">
+                        <template x-for="item in availableItems" :key="item.id">
+                            <div class="flex items-center justify-between" style="padding:8px; border-bottom:1px solid var(--border-light);">
+                                <div>
+                                    <div style="font-size:13px; font-weight:500;" x-text="item.title"></div>
+                                    <div class="text-sm text-muted" x-text="item.schema_name || ''"></div>
+                                </div>
+                                <button class="btn btn-sm btn-primary" @click="addItemToCard(item.id)">加入</button>
+                            </div>
+                        </template>
+                        <div x-show="availableItems.length === 0" class="empty-state">
+                            <p>沒有未關聯的項目</p>
+                            <p class="text-sm">請先到表結構頁面建立資料項目</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showAddItemModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Tag Modal -->
+    <template x-if="showTagModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>標籤管理</h3>
+                    <button class="modal-close" @click="showTagModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="flex gap-2 mb-4">
+                        <input class="form-control" x-model="newTagName" placeholder="新標籤名稱..."
+                               @keydown.enter="createTag()" style="flex:1;">
+                        <input type="color" x-model="newTagColor" style="width:36px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
+                        <button class="btn btn-primary" @click="createTag()">建立</button>
+                    </div>
+                    <template x-for="t in tags" :key="t.id">
+                        <div class="flex items-center justify-between" style="padding:6px 0; border-bottom:1px solid var(--border-light);">
+                            <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                            <button class="btn-ghost btn-sm" @click="if(confirm('刪除標籤？')) { API.deleteTag(t.id).then(() => API.getTags().then(r => tags = r)) }">刪除</button>
+                        </div>
+                    </template>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showTagModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 新增白板 Modal -->
+    <template x-if="showWbModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>新增白板</h3>
+                    <button class="modal-close" @click="showWbModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>白板名稱</label>
+                        <input class="form-control" x-model="newWbName" placeholder="輸入名稱..."
+                               @keydown.enter="createWhiteboard()">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showWbModal=false">取消</button>
+                    <button class="btn btn-primary" @click="createWhiteboard()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 右鍵選單 -->
+    <template x-if="contextMenu">
+        <div class="context-menu" :style="`left:${contextMenu.x}px; top:${contextMenu.y}px;`"
+             @click.stop>
+            <!-- 畫布右鍵 -->
+            <template x-if="contextMenu.type === 'canvas'">
+                <div>
+                    <div class="context-menu-item" @click="contextAddCard()">新增卡片</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="fitView(); closeContextMenu()">適應視圖</div>
+                    <div class="context-menu-item" @click="resetZoom(); closeContextMenu()">重置縮放</div>
+                </div>
+            </template>
+            <!-- 卡片右鍵 -->
+            <template x-if="contextMenu.type === 'card'">
+                <div>
+                    <div class="context-menu-item" @click="openAddItemModal(contextMenu.cardId); closeContextMenu()">加入項目</div>
+                    <div class="context-menu-item" @click="selectCard(contextMenu.cardId); closeContextMenu()">編輯</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item danger" @click="if(confirm('刪除此卡片？')) deleteCard(contextMenu.cardId); closeContextMenu()">刪除卡片</div>
+                </div>
+            </template>
+        </div>
+    </template>
+
+</div>
+{% endblock %}
