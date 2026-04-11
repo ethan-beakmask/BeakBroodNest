@@ -1,5 +1,5 @@
 /**
- * BeakNote 白板引擎
+ * BeakCortex 白板引擎
  * pan/zoom、原子卡片渲染、拖曳、SVG 連線、atom_type 視覺區分、lifecycle 透明度
  */
 

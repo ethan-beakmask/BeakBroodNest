@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakNote MCP Server -- AI 知識庫介面
+BeakCortex MCP Server -- AI 知識庫介面
 讓 Claude Code 直接操作知識原子，取代 MEMORY.md 的讀寫流程
 
 啟動方式:
@@ -33,14 +33,14 @@ from orchestrator import dispatcher as orch_dispatcher
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
-logger = logging.getLogger('beak_note.mcp')
+logger = logging.getLogger('beak_cortex.mcp')
 
 # ============================================================
 # MCP Server 定義
 # ============================================================
 
 mcp = FastMCP(
-    "BeakNote",
+    "BeakCortex",
     instructions="知識白板與 AI 共用知識庫 -- 結構化知識存取，取代 MEMORY.md",
 )
 
@@ -672,7 +672,7 @@ def task_dispatch(
     title: str,
     instruction: str,
     model: str = 'sonnet',
-    working_dir: str = '/opt/BeakNote',
+    working_dir: str = '/opt/BeakCortex',
     priority: int = 5,
     timeout_seconds: int = 600,
 ) -> str:
@@ -816,7 +816,7 @@ def task_collect(task_id: int, include_raw: bool = False) -> str:
 
 def create_argument_parser():
     parser = argparse.ArgumentParser(
-        description='BeakNote MCP Server -- AI 知識庫介面',
+        description='BeakCortex MCP Server -- AI 知識庫介面',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -833,7 +833,7 @@ def main():
     parser = create_argument_parser()
 
     if len(sys.argv) == 1:
-        print('BeakNote MCP Server -- AI 知識庫介面')
+        print('BeakCortex MCP Server -- AI 知識庫介面')
         print()
         print('此程式為 MCP (Model Context Protocol) 伺服器，')
         print('供 Claude Code 等 AI 工具透過 stdio 存取知識庫。')
@@ -864,9 +864,9 @@ def main():
         print()
         print('Claude Code 設定範例 (~/.claude/settings.json):')
         print('  "mcpServers": {')
-        print('    "beak_note": {')
-        print('      "command": "/opt/BeakNote/venv/bin/python",')
-        print('      "args": ["/opt/BeakNote/ai_kb/mcp_server.py", "--stdio"]')
+        print('    "beak_cortex": {')
+        print('      "command": "/opt/BeakCortex/venv/bin/python",')
+        print('      "args": ["/opt/BeakCortex/ai_kb/mcp_server.py", "--stdio"]')
         print('    }')
         print('  }')
         print()

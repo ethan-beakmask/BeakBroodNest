@@ -3,7 +3,7 @@
 Orchestrator 環境驗證 (smoke test)
 
 在 tmux 內執行:
-  cd /opt/BeakNote && source venv/bin/activate
+  cd /opt/BeakCortex && source venv/bin/activate
   python orchestrator/smoke_test.py          # 派發測試任務
   python orchestrator/smoke_test.py --check  # 查詢結果
 """
@@ -40,7 +40,7 @@ def dispatch():
             title='smoke test',
             instruction='請回答 1+1 等於多少，只回答數字',
             model='haiku',
-            working_dir='/opt/BeakNote',
+            working_dir='/opt/BeakCortex',
             main_pane=main_pane,
         )
         s.add(task)
@@ -56,12 +56,12 @@ def dispatch():
     instr_file.write('請回答 1+1 等於多少，只回答數字')
     instr_file.close()
 
-    wrapper_path = '/opt/BeakNote/orchestrator/wrapper.sh'
+    wrapper_path = '/opt/BeakCortex/orchestrator/wrapper.sh'
     wrapper_cmd = (
         f'bash {shlex.quote(wrapper_path)}'
         f' {task_id}'
         f' haiku'
-        f' /opt/BeakNote'
+        f' /opt/BeakCortex'
         f' {shlex.quote(instr_file.name)}'
         f' {shlex.quote(main_pane)}'
     )

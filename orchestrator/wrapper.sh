@@ -16,13 +16,13 @@ INSTRUCTION_FILE="$4"
 MAIN_PANE="${5:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV_PYTHON="/opt/BeakNote/venv/bin/python"
+VENV_PYTHON="/opt/BeakCortex/venv/bin/python"
 COLLECTOR="${SCRIPT_DIR}/collector.py"
 
 OUTPUT_FILE="/tmp/beak-output-${TASK_ID}.txt"
 
-echo "[BeakNote Worker] Task #${TASK_ID} starting (model: ${MODEL})"
-echo "[BeakNote Worker] Working dir: ${WORKING_DIR}"
+echo "[BeakCortex Worker] Task #${TASK_ID} starting (model: ${MODEL})"
+echo "[BeakCortex Worker] Working dir: ${WORKING_DIR}"
 
 cd "$WORKING_DIR" || {
     echo "ERROR: cannot cd to ${WORKING_DIR}" > "$OUTPUT_FILE"
@@ -49,7 +49,7 @@ claude -p \
     "$INSTRUCTION" > "$OUTPUT_FILE" 2>&1 || EXIT_CODE=$?
 
 echo ""
-echo "[BeakNote Worker] claude exited with code ${EXIT_CODE}"
+echo "[BeakCortex Worker] claude exited with code ${EXIT_CODE}"
 
 # 收集結果
 "$VENV_PYTHON" "$COLLECTOR" \
@@ -61,4 +61,4 @@ echo "[BeakNote Worker] claude exited with code ${EXIT_CODE}"
 # 清理
 rm -f "$INSTRUCTION_FILE" "$OUTPUT_FILE"
 
-echo "[BeakNote Worker] Task #${TASK_ID} done."
+echo "[BeakCortex Worker] Task #${TASK_ID} done."

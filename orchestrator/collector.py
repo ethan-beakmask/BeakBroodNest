@@ -85,14 +85,14 @@ def _notify_main(main_pane: str, task_id: int, exit_code: int, report_id: int):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='BeakNote Worker 結果收集器')
+    parser = argparse.ArgumentParser(description='BeakCortex Worker 結果收集器')
     parser.add_argument('--task-id', type=int, required=True, help='任務 ID')
     parser.add_argument('--exit-code', type=int, required=True, help='claude process exit code')
     parser.add_argument('--output-file', type=str, default='', help='輸出檔路徑')
     parser.add_argument('--main-pane', type=str, default='', help='主線 tmux pane ID')
 
     if len(sys.argv) == 1:
-        print('BeakNote Worker 結果收集器')
+        print('BeakCortex Worker 結果收集器')
         print()
         print('此程式由 wrapper.sh 自動呼叫，不需手動執行。')
         print()

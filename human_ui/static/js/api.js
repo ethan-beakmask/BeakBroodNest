@@ -1,5 +1,5 @@
 /**
- * BeakNote API 封裝
+ * BeakCortex API 封裝
  */
 const API = {
     async _fetch(url, options = {}) {

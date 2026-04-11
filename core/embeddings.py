@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from core.models import KnowledgeAtom, AtomEmbedding
 
-logger = logging.getLogger('beak_note.embeddings')
+logger = logging.getLogger('beak_cortex.embeddings')
 
 MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'
 EMBEDDING_DIM = 384

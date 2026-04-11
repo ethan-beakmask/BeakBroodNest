@@ -30,7 +30,7 @@ from core.models import KnowledgeAtom, AtomRelation
 from sqlalchemy import Integer, String, Text, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
-logger = logging.getLogger('beak_note.lifecycle')
+logger = logging.getLogger('beak_cortex.lifecycle')
 
 HEARTBEAT_DIR = '/opt/tmp/heartbeat'
 HEARTBEAT_BASE = 'lifecycle'
@@ -204,7 +204,7 @@ def run_transitions(dry_run=False, verbose=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakNote lifecycle 自動轉換引擎',
+        description='BeakCortex lifecycle 自動轉換引擎',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -219,7 +219,7 @@ def main():
     parser.add_argument('--config', '-c', type=str, default=None, help='組態檔路徑')
 
     if len(sys.argv) == 1:
-        print('BeakNote lifecycle 自動轉換引擎')
+        print('BeakCortex lifecycle 自動轉換引擎')
         print()
         print('必要參數（擇一）:')
         print('  --run       執行自動轉換')
@@ -235,7 +235,7 @@ def main():
         print(f'  *       -> terminal : 被 contradicts 關係否定')
         print()
         print('排程建議: 緊跟在 vitality.py 之後執行')
-        print('  5 * * * * ethan /opt/BeakNote/venv/bin/python /opt/BeakNote/core/lifecycle.py --run')
+        print('  5 * * * * ethan /opt/BeakCortex/venv/bin/python /opt/BeakCortex/core/lifecycle.py --run')
         sys.exit(1)
 
     args = parser.parse_args()

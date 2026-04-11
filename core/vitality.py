@@ -54,7 +54,7 @@ def _write_heartbeat(suffix=None):
 from core.db import init_engine, session_scope
 from core.models import KnowledgeAtom, AtomRelation
 
-logger = logging.getLogger('beak_note.vitality')
+logger = logging.getLogger('beak_cortex.vitality')
 
 # 權重與參數
 W_DECAY = 0.5
@@ -168,7 +168,7 @@ def recalc_all(verbose=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakNote vitality_score 計算引擎',
+        description='BeakCortex vitality_score 計算引擎',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -181,7 +181,7 @@ def main():
     parser.add_argument('--config', '-c', type=str, default=None, help='組態檔路徑')
 
     if len(sys.argv) == 1:
-        print('BeakNote vitality_score 計算引擎')
+        print('BeakCortex vitality_score 計算引擎')
         print()
         print('必要參數:')
         print('  --recalc    重算所有 active/aging 原子的 vitality_score')
@@ -197,7 +197,7 @@ def main():
         print('  refute:  被 contradicts 關係否定時 -0.5')
         print()
         print('排程建議: 每小時執行一次')
-        print('  0 * * * * ethan /opt/BeakNote/venv/bin/python /opt/BeakNote/core/vitality.py --recalc')
+        print('  0 * * * * ethan /opt/BeakCortex/venv/bin/python /opt/BeakCortex/core/vitality.py --recalc')
         sys.exit(1)
 
     args = parser.parse_args()

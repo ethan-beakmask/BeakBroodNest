@@ -1,16 +1,16 @@
-# BeakNote -- 知識白板與 AI 共用知識庫
+# BeakCortex -- 知識白板與 AI 共用知識庫
 
 ## 專案概述
-- 路徑: /opt/BeakNote/
+- 路徑: /opt/BeakCortex/
 - 技術棧: Python Flask + PostgreSQL + SQLAlchemy + MCP SDK
 - Port: 5170 (http://192.168.0.16:5170)
-- DB: beak_note (user: beak_note, pw: postgres123)
+- DB: beak_cortex (user: beak_cortex, pw: postgres123)
 - 規劃文件: docs/VISION.md
 - 舊 MVP 參考: OLD/test9_Heptabase/
 
 ## 每次對話必做
-1. 呼叫 `mcp__beak_note__note_overview` 取得知識庫概覽（原子數、標籤、最近更新、阻塞項目）
-2. 呼叫 `mcp__beak_note__note_search` 搜尋 tag=「待辦」+ tag=「BeakNote」取得當前專案待辦
+1. 呼叫 `mcp__beak_cortex__note_overview` 取得知識庫概覽（原子數、標籤、最近更新、阻塞項目）
+2. 呼叫 `mcp__beak_cortex__note_search` 搜尋 tag=「待辦」+ tag=「BeakCortex」取得當前專案待辦
 3. 根據知識庫回傳的內容理解專案狀態，不要重新掃描目錄結構
 4. 若用戶指定任務，用 `note_get` 讀取對應原子的完整內容再開工
 5. 完成任務後用 `note_update` 更新對應原子狀態，或用 `note_forget` 歸檔已完成項目

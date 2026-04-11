@@ -71,7 +71,7 @@ def create_task(
     title: str,
     instruction: str,
     model: str = 'sonnet',
-    working_dir: str = '/opt/BeakNote',
+    working_dir: str = '/opt/BeakCortex',
     priority: int = 5,
     timeout_seconds: int = 600,
     main_pane: str = '',
@@ -153,7 +153,7 @@ def create_and_dispatch(
     title: str,
     instruction: str,
     model: str = 'sonnet',
-    working_dir: str = '/opt/BeakNote',
+    working_dir: str = '/opt/BeakCortex',
     priority: int = 5,
     timeout_seconds: int = 600,
 ) -> dict:

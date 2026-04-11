@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakNote -- 人類介面 Flask 入口
+BeakCortex -- 人類介面 Flask 入口
 Phase 0: 知識原子 / 因果鍊 / 白板 / 標籤 CRUD API
 """
 import argparse
@@ -30,7 +30,7 @@ from core import embeddings as embed_service
 
 
 app = Flask(__name__)
-logger = logging.getLogger('beak_note')
+logger = logging.getLogger('beak_cortex')
 
 
 # ============================================================
@@ -700,7 +700,7 @@ def delete_tag(tag_id):
 
 def create_argument_parser():
     parser = argparse.ArgumentParser(
-        description='BeakNote 人類介面 -- 知識白板與筆記系統',
+        description='BeakCortex 人類介面 -- 知識白板與筆記系統',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -727,7 +727,7 @@ def seed_test_data():
 
     with ss() as s:
         # 標籤
-        t1 = Tag(name='BeakNote', color='#3b82f6', tag_type='domain')
+        t1 = Tag(name='BeakCortex', color='#3b82f6', tag_type='domain')
         t2 = Tag(name='架構設計', color='#10b981', tag_type='tag')
         t3 = Tag(name='待討論', color='#f59e0b', tag_type='tag')
         s.add_all([t1, t2, t3])
@@ -742,7 +742,7 @@ def seed_test_data():
         )
         a2 = KnowledgeAtom(
             title='因果鍊讓知識有方向性',
-            content='Obsidian 的雙向連結只知道「A 和 B 有關」，BeakNote 的連結知道「A 導致了 B」。',
+            content='Obsidian 的雙向連結只知道「A 和 B 有關」，BeakCortex 的連結知道「A 導致了 B」。',
             atom_type='D',
             source='human',
         )
@@ -775,7 +775,7 @@ def seed_test_data():
         rel_service.create_relation(s, a3.id, a4.id, 'blocks', label='資料層是 UI 的前置條件')
 
         # 白板
-        canvas = Canvas(name='BeakNote 規劃', description='Phase 0~1 規劃白板')
+        canvas = Canvas(name='BeakCortex 規劃', description='Phase 0~1 規劃白板')
         s.add(canvas)
         s.flush()
 
@@ -792,7 +792,7 @@ def main():
     parser = create_argument_parser()
 
     if len(sys.argv) == 1:
-        print('BeakNote -- 知識白板與 AI 共用知識庫')
+        print('BeakCortex -- 知識白板與 AI 共用知識庫')
         print()
         print('必要動作（擇一）:')
         print('  --serve      啟動 Web 伺服器')
@@ -855,7 +855,7 @@ def main():
         debug = cfg.getboolean('flask', 'debug', fallback=True)
         app.config['SECRET_KEY'] = cfg.get('flask', 'secret_key', fallback='dev')
 
-        logger.info(f'BeakNote 啟動於 http://{host}:{port}')
+        logger.info(f'BeakCortex 啟動於 http://{host}:{port}')
         app.run(host=host, port=port, debug=debug)
 
 
