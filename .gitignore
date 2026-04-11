@@ -10,6 +10,12 @@ build/
 # Config (含密碼，不入版控)
 config.ini
 
+# MCP 本機設定
+.mcp.json
+
+# 暫存
+temp/
+
 # 舊 MVP 資料庫
 OLD/test9_Heptabase/heptabase.db
 
