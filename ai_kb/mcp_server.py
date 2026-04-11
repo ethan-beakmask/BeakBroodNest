@@ -27,6 +27,7 @@ from core.models import (
     KnowledgeAtom, AtomRelation, Tag, atom_tags, Canvas, CanvasAtom,
 )
 from core import relations as rel_service
+from core import consistency as consistency_service
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
@@ -456,6 +457,85 @@ def note_blocked(atom_id: int, max_depth: int = 10) -> str:
 
 
 # ============================================================
+# note_trace -- 圖譜遍歷
+# ============================================================
+
+@mcp.tool()
+def note_trace(
+    atom_id: int,
+    direction: str = 'both',
+    relation_types: list[str] | None = None,
+    max_depth: int = 3,
+    include_archived: bool = False,
+) -> str:
+    """從起點原子沿關係展開 N 層，回傳子圖（nodes + edges）。
+
+    用途：一次取得完整脈絡，而非逐個 note_get 手動追。
+
+    direction: outgoing（我指向誰）/ incoming（誰指向我）/ both（雙向）
+    relation_types: 過濾關係類型，如 ["causes", "supports"]，None 表示全部
+    max_depth: 展開層數（1~10，預設 3）
+    include_archived: 是否包含 archived/terminal 原子（預設 False）
+
+    回傳的 nodes 不含 content（避免子圖過大），需要細節用 note_get 取單個。
+    """
+    max_depth = max(1, min(max_depth, 10))
+
+    valid_directions = ('outgoing', 'incoming', 'both')
+    if direction not in valid_directions:
+        return json.dumps({'error': f'無效的 direction: {direction}，允許值: {", ".join(valid_directions)}'})
+
+    if relation_types:
+        invalid = [t for t in relation_types if t not in AtomRelation.VALID_TYPES]
+        if invalid:
+            return json.dumps({'error': f'無效的關係類型: {", ".join(invalid)}'})
+
+    with session_scope() as s:
+        result = rel_service.trace_subgraph(
+            s, atom_id,
+            direction=direction,
+            relation_types=relation_types,
+            max_depth=max_depth,
+            include_archived=include_archived,
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+
+# ============================================================
+# note_check -- 一致性檢查
+# ============================================================
+
+@mcp.tool()
+def note_check(
+    content: str,
+    check_scope: str = 'all',
+    limit: int = 10,
+) -> str:
+    """比對一段文字與既有知識庫，回報重複、矛盾、相關原子。
+
+    用途：新想法進來時，檢查是否與既有知識重複或矛盾。
+
+    content: 要檢查的文字內容
+    check_scope: 'all' 或指定 tag 名稱縮小檢查範圍
+    limit: 回傳相似原子上限（預設 10，最大 50）
+
+    回傳:
+      similar: 相似度最高的原子列表（含 similarity 分數）
+      contradictions: 相似原子的 contradicts/refutes 關係鏈
+      suggestion: 'duplicate_suspect' / 'contradiction_found' / 'novel'
+
+    suggestion 是純規則判斷（similarity>0.8 或有矛盾鏈），AI 自行決定是否採信。
+    """
+    with session_scope() as s:
+        result = consistency_service.check_consistency(
+            s, content,
+            check_scope=check_scope,
+            limit=min(limit, 50),
+        )
+        return json.dumps(result, ensure_ascii=False)
+
+
+# ============================================================
 # note_overview -- 知識庫概覽
 # ============================================================
 
@@ -605,6 +685,8 @@ def main():
         print('  note_relate    建立因果關係')
         print('  note_forget    歸檔/終止/刪除知識')
         print('  note_blocked   追溯阻塞鍊')
+        print('  note_trace     圖譜遍歷（子圖展開）')
+        print('  note_check     一致性檢查（重複/矛盾偵測）')
         print('  note_overview  知識庫概覽')
         print()
         print('Claude Code 設定範例 (~/.claude/settings.json):')

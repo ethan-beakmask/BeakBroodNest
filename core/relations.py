@@ -121,3 +121,125 @@ def delete_relation(session: Session, relation_id: int) -> bool:
         session.delete(rel)
         return True
     return False
+
+
+def trace_subgraph(
+    session: Session,
+    atom_id: int,
+    direction: str = 'both',
+    relation_types: list[str] | None = None,
+    max_depth: int = 3,
+    include_archived: bool = False,
+) -> dict:
+    """
+    從起點原子出發，沿指定方向/關係類型展開 N 層，回傳子圖。
+
+    direction: 'outgoing' / 'incoming' / 'both'
+    relation_types: 過濾關係類型，None 表示全部
+    max_depth: 最大展開層數（呼叫端應限制上限）
+    include_archived: 是否包含 archived/terminal 原子
+
+    回傳 {'root': {...}, 'nodes': [...], 'edges': [...], 'stats': {...}}
+    """
+    root_atom = (
+        session.query(KnowledgeAtom)
+        .filter(KnowledgeAtom.id == atom_id, KnowledgeAtom.is_deleted == False)
+        .first()
+    )
+    if not root_atom:
+        return {'error': f'原子 {atom_id} 不存在'}
+
+    lifecycle_filter = ['active', 'aging']
+    if include_archived:
+        lifecycle_filter.extend(['archived', 'terminal'])
+
+    # 收集結果（用 dict 避免重複）
+    nodes = {}  # atom_id -> {node_data}
+    edges = []  # [{from, to, type, label, confidence}]
+    seen_edges = set()  # (from_id, to_id, type) 去重
+    visited = set()
+
+    def _expand(current_id: int, depth: int):
+        if current_id in visited or depth > max_depth:
+            return
+        visited.add(current_id)
+
+        queries = []
+
+        if direction in ('outgoing', 'both'):
+            q_out = session.query(AtomRelation).filter(
+                AtomRelation.from_atom_id == current_id
+            )
+            if relation_types:
+                q_out = q_out.filter(AtomRelation.relation_type.in_(relation_types))
+            queries.append(('outgoing', q_out.all()))
+
+        if direction in ('incoming', 'both'):
+            q_in = session.query(AtomRelation).filter(
+                AtomRelation.to_atom_id == current_id
+            )
+            if relation_types:
+                q_in = q_in.filter(AtomRelation.relation_type.in_(relation_types))
+            queries.append(('incoming', q_in.all()))
+
+        for dir_label, rels in queries:
+            for rel in rels:
+                neighbor_id = rel.to_atom_id if dir_label == 'outgoing' else rel.from_atom_id
+
+                # 去重 edge
+                edge_key = (rel.from_atom_id, rel.to_atom_id, rel.relation_type)
+                if edge_key in seen_edges:
+                    continue
+
+                # 取鄰居原子
+                if neighbor_id not in nodes and neighbor_id != atom_id:
+                    neighbor = session.get(KnowledgeAtom, neighbor_id)
+                    if not neighbor or neighbor.is_deleted:
+                        continue
+                    if neighbor.lifecycle not in lifecycle_filter:
+                        continue
+                    nodes[neighbor_id] = {
+                        'id': neighbor.id,
+                        'title': neighbor.title,
+                        'atom_type': neighbor.atom_type,
+                        'lifecycle': neighbor.lifecycle,
+                        'vitality_score': neighbor.vitality_score,
+                        'depth': depth,
+                    }
+
+                # 即使鄰居已在 nodes 中（被更淺的路徑加入），edge 仍要記錄
+                if neighbor_id in nodes or neighbor_id == atom_id:
+                    seen_edges.add(edge_key)
+                    edges.append({
+                        'from': rel.from_atom_id,
+                        'to': rel.to_atom_id,
+                        'type': rel.relation_type,
+                        'label': rel.label,
+                        'confidence': rel.confidence,
+                    })
+
+                # 遞迴展開鄰居
+                if neighbor_id in nodes:
+                    _expand(neighbor_id, depth + 1)
+
+    _expand(atom_id, 1)
+
+    actual_max_depth = max(
+        (n['depth'] for n in nodes.values()), default=0
+    )
+
+    return {
+        'root': {
+            'id': root_atom.id,
+            'title': root_atom.title,
+            'atom_type': root_atom.atom_type,
+            'lifecycle': root_atom.lifecycle,
+        },
+        'nodes': sorted(nodes.values(), key=lambda n: (n['depth'], n['id'])),
+        'edges': edges,
+        'stats': {
+            'total_nodes': len(nodes) + 1,  # +1 for root
+            'total_edges': len(edges),
+            'max_depth_reached': actual_max_depth,
+        },
+    }
