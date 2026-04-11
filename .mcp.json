@@ -1,0 +1,4 @@
+{
+  "_comment": "此檔案僅用於消除 claude doctor 的 schema validation 警告。beak_note MCP server 實際註冊在 user scope (claude mcp add -s user)，不依賴此檔案運作。",
+  "mcpServers": {}
+}

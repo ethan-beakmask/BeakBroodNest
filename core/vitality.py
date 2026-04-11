@@ -20,7 +20,7 @@ vitality_score 計算引擎
     score = active_relations / total_relations (無關聯則 1.0)
 
   penalty (矛盾懲罰):
-    被 refutes 關係否定時 -0.5
+    被 contradicts 關係否定時 -0.5
 
 權重: decay=0.5, reuse=0.2, chain=0.2, penalty 直接扣除
 最終 clamp 到 [0.0, 1.0]
@@ -142,12 +142,12 @@ def recalc_all(verbose=False):
             else:
                 chain_ratio = 1.0  # 無關聯的孤立原子不扣分
 
-            # 檢查是否被 refutes
+            # 檢查是否被 contradicts
             is_refuted = (
                 s.query(AtomRelation)
                 .filter(
                     AtomRelation.to_atom_id == atom.id,
-                    AtomRelation.relation_type == 'refutes',
+                    AtomRelation.relation_type == 'contradicts',
                 )
                 .first()
             ) is not None
@@ -194,7 +194,7 @@ def main():
         print('  decay:   時間衰減 (半衰期 30 天)')
         print('  reuse:   再利用率 (access_count / 20)')
         print('  chain:   因果鍊活性 (上下游 active 占比)')
-        print('  refute:  被 refutes 關係否定時 -0.5')
+        print('  refute:  被 contradicts 關係否定時 -0.5')
         print()
         print('排程建議: 每小時執行一次')
         print('  0 * * * * ethan /opt/BeakNote/venv/bin/python /opt/BeakNote/core/vitality.py --recalc')

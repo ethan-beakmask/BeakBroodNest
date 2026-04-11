@@ -594,14 +594,22 @@ def create_canvas_connection():
 
         # 依關係類型決定連線樣式
         rel_styles = {
-            'blocks':       {'color': '#dc2626', 'line_style': 'solid'},
+            # 因果
             'causes':       {'color': '#ef4444', 'line_style': 'solid'},
+            'enables':      {'color': '#f97316', 'line_style': 'solid'},
+            # 論證
             'supports':     {'color': '#10b981', 'line_style': 'solid'},
             'contradicts':  {'color': '#f59e0b', 'line_style': 'dashed'},
-            'derives_from': {'color': '#8b5cf6', 'line_style': 'solid'},
-            'follows':      {'color': '#3b82f6', 'line_style': 'solid'},
+            # 結構
             'contains':     {'color': '#6b7280', 'line_style': 'dotted'},
-            'refutes':      {'color': '#ef4444', 'line_style': 'dashed'},
+            # 時序
+            'follows':      {'color': '#3b82f6', 'line_style': 'solid'},
+            # 衍生
+            'derives_from': {'color': '#8b5cf6', 'line_style': 'solid'},
+            'supersedes':   {'color': '#a855f7', 'line_style': 'dashed'},
+            'references':   {'color': '#64748b', 'line_style': 'dotted'},
+            # 工作流
+            'blocks':       {'color': '#dc2626', 'line_style': 'solid'},
         }
         style = rel_styles.get(data['relation_type'], {'color': '#94a3b8', 'line_style': 'solid'})
 

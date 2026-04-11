@@ -351,17 +351,19 @@ def note_relate(
     label: str = '',
     confidence: float = 1.0,
 ) -> str:
-    """在兩個知識原子之間建立因果關係。
+    """在兩個知識原子之間建立有向關係。
 
-    relation_type 允許值:
-      causes       -- A 導致了 B
-      supports     -- 證據 A 支持結論 B
-      contradicts  -- A 與 B 矛盾
-      derives_from -- B 從 A 衍生
-      follows      -- 流程順序 A 之後是 B
-      contains     -- A 包含 B
-      refutes      -- A 推翻 B
-      blocks       -- A 未完成前 B 無法開始
+    relation_type 允許值（按維度分類）:
+      因果: causes       -- A 導致了 B
+            enables      -- A 使 B 成為可能（比 causes 弱）
+      論證: supports     -- 證據 A 支持結論 B
+            contradicts  -- A 與 B 矛盾
+      結構: contains     -- A 包含 B
+      時序: follows      -- 時序上 A 在 B 之後
+      衍生: derives_from -- A 衍生自 B
+            supersedes   -- A 取代 B（新版取代舊版）
+            references   -- A 引用/提到 B（純引用，不帶因果）
+      工作流: blocks     -- A 未完成前 B 無法開始
 
     confidence: 0.0~1.0，AI 產生的關聯建議標低一些（如 0.7）。
     """
@@ -521,7 +523,7 @@ def note_check(
 
     回傳:
       similar: 相似度最高的原子列表（含 similarity 分數）
-      contradictions: 相似原子的 contradicts/refutes 關係鏈
+      contradictions: 相似原子的 contradicts 關係鏈
       suggestion: 'duplicate_suspect' / 'contradiction_found' / 'novel'
 
     suggestion 是純規則判斷（similarity>0.8 或有矛盾鏈），AI 自行決定是否採信。

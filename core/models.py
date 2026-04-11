@@ -184,7 +184,7 @@ class AtomRelation(Base):
     )
     relation_type: Mapped[str] = mapped_column(
         String(30), nullable=False
-    )  # causes, supports, contradicts, derives_from, follows, contains, refutes, blocks
+    )  # 見 VALID_TYPES
     label: Mapped[str] = mapped_column(Text, default='')
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
     created_by: Mapped[str] = mapped_column(String(20), default='human')
@@ -203,9 +203,20 @@ class AtomRelation(Base):
         Index('idx_relations_type', 'relation_type'),
     )
 
+    # 維度分類：
+    #   因果: causes, enables
+    #   論證: supports, contradicts
+    #   結構: contains
+    #   時序: follows
+    #   衍生: derives_from, supersedes, references
+    #   工作流: blocks
     VALID_TYPES = (
-        'causes', 'supports', 'contradicts', 'derives_from',
-        'follows', 'contains', 'refutes', 'blocks'
+        'causes', 'enables',
+        'supports', 'contradicts',
+        'contains',
+        'follows',
+        'derives_from', 'supersedes', 'references',
+        'blocks',
     )
 
     def to_dict(self, include_atoms=False):

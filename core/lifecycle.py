@@ -6,7 +6,7 @@ lifecycle 自動轉換引擎
 轉換規則:
   active  -> aging     : vitality_score < 0.3
   aging   -> archived  : vitality_score < 0.1 且 aging 超過 AGING_GRACE_DAYS 天
-  任何狀態 -> terminal  : 被 refutes 關係否定
+  任何狀態 -> terminal  : 被 contradicts 關係否定
 
 所有轉換記錄寫入 lifecycle_transitions 表供稽核追溯。
 
@@ -142,8 +142,8 @@ def run_transitions(dry_run=False, verbose=False):
                               f'aging {days_aging:.1f} 天 >= {AGING_GRACE_DAYS} 天'),
                 })
 
-        # 3. 被 refutes 否定 -> terminal
-        refuted_atoms = (
+        # 3. 被 contradicts 否定 -> terminal
+        contradicted_atoms = (
             s.query(KnowledgeAtom)
             .join(
                 AtomRelation,
@@ -152,17 +152,17 @@ def run_transitions(dry_run=False, verbose=False):
             .filter(
                 KnowledgeAtom.is_deleted == False,
                 KnowledgeAtom.lifecycle.in_(['active', 'aging']),
-                AtomRelation.relation_type == 'refutes',
+                AtomRelation.relation_type == 'contradicts',
             )
             .all()
         )
 
-        for atom in refuted_atoms:
+        for atom in contradicted_atoms:
             transitions.append({
                 'atom': atom,
                 'from': atom.lifecycle,
                 'to': 'terminal',
-                'reason': '被 refutes 關係否定',
+                'reason': '被 contradicts 關係否定',
             })
 
         # 去重（同一原子可能同時命中多個規則，取最終狀態）
@@ -232,7 +232,7 @@ def main():
         print('轉換規則:')
         print(f'  active  -> aging    : vitality_score < {THRESHOLD_AGING}')
         print(f'  aging   -> archived : vitality_score < {THRESHOLD_ARCHIVED} 且 aging >= {AGING_GRACE_DAYS} 天')
-        print(f'  *       -> terminal : 被 refutes 關係否定')
+        print(f'  *       -> terminal : 被 contradicts 關係否定')
         print()
         print('排程建議: 緊跟在 vitality.py 之後執行')
         print('  5 * * * * ethan /opt/BeakNote/venv/bin/python /opt/BeakNote/core/lifecycle.py --run')

@@ -16,7 +16,7 @@ def check_consistency(
     """
     給定一段文字，比對既有知識庫回報：
     - similar: pg_trgm 相似度最高的原子
-    - contradictions: 相似原子的 contradicts/refutes 關係鏈
+    - contradictions: 相似原子的 contradicts 關係鏈
     - suggestion: duplicate_suspect / contradiction_found / novel
 
     check_scope: 'all' 或指定 tag 名稱縮小範圍
@@ -62,14 +62,13 @@ def check_consistency(
         })
         similar_ids.append(atom.id)
 
-    # 矛盾偵測：檢查相似原子的 contradicts / refutes 關係
+    # 矛盾偵測：檢查相似原子的 contradicts 關係
     contradictions = []
     if similar_ids:
-        # 從相似原子出發，找 contradicts/refutes 的 outgoing 和 incoming
         conflict_rels = (
             session.query(AtomRelation)
             .filter(
-                AtomRelation.relation_type.in_(['contradicts', 'refutes']),
+                AtomRelation.relation_type == 'contradicts',
                 or_(
                     AtomRelation.from_atom_id.in_(similar_ids),
                     AtomRelation.to_atom_id.in_(similar_ids),
