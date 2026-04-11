@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey, UniqueConstraint, Index
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from core.db import Base
 
@@ -410,4 +411,29 @@ class AtomFieldValue(Base):
 
     __table_args__ = (
         UniqueConstraint('atom_id', 'field_id', name='uq_atom_field_value'),
+    )
+
+
+# ============================================================
+# 5.6 向量嵌入（語意搜尋用）
+# ============================================================
+
+class AtomEmbedding(Base):
+    __tablename__ = 'atom_embeddings'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    atom_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=False
+    )
+    embedding = mapped_column(Vector(384), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    atom: Mapped["KnowledgeAtom"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint('atom_id', 'model_name', name='uq_atom_embedding'),
+        Index('idx_embeddings_atom', 'atom_id'),
     )

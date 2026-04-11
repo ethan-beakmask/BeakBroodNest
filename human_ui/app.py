@@ -16,7 +16,7 @@ from pathlib import Path
 # 讓 core 可以被 import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
@@ -26,6 +26,7 @@ from core.models import (
     Tag, atom_tags, AtomSchema, SchemaField, AtomFieldValue,
 )
 from core import relations as rel_service
+from core import embeddings as embed_service
 
 
 app = Flask(__name__)
@@ -38,17 +39,21 @@ logger = logging.getLogger('beak_note')
 
 @app.route('/')
 def index():
-    return jsonify({
-        'name': 'BeakNote',
-        'phase': 0,
-        'status': 'running',
-        'endpoints': {
-            'atoms': '/api/atoms',
-            'relations': '/api/relations',
-            'canvases': '/api/canvases',
-            'tags': '/api/tags',
-        }
-    })
+    """首頁：導向第一個白板，若無則自動建立"""
+    with session_scope() as s:
+        canvas = s.query(Canvas).order_by(Canvas.id).first()
+        if not canvas:
+            canvas = Canvas(name='預設白板', description='')
+            s.add(canvas)
+            s.flush()
+        canvas_id = canvas.id
+    return redirect(f'/canvas/{canvas_id}')
+
+
+@app.route('/canvas/<int:canvas_id>')
+def canvas_page(canvas_id):
+    """白板頁面"""
+    return render_template('whiteboard.html', canvas_id=canvas_id)
 
 
 # ============================================================
@@ -160,6 +165,13 @@ def create_atom():
 
         s.flush()
         result = atom.to_dict(include_tags=True)
+
+        # Auto-embed（背景容錯，不阻塞回應）
+        try:
+            embed_service.embed_atom(s, atom.id)
+        except Exception as e:
+            logger.warning(f'Auto-embed failed for atom {atom.id}: {e}')
+
         return jsonify(result), 201
 
 
@@ -220,6 +232,14 @@ def update_atom(atom_id):
             atom.tags = tags
 
         s.flush()
+
+        # 若 title 或 content 有變更，重新 embed
+        if 'title' in data or 'content' in data:
+            try:
+                embed_service.embed_atom(s, atom_id)
+            except Exception as e:
+                logger.warning(f'Auto-embed failed for atom {atom_id}: {e}')
+
         return jsonify(atom.to_dict(include_tags=True))
 
 
@@ -232,6 +252,89 @@ def delete_atom(atom_id):
             return jsonify({'error': '原子不存在'}), 404
         atom.is_deleted = True
         return jsonify({'message': f'原子 {atom_id} 已刪除'})
+
+
+# ============================================================
+# Semantic Search API
+# ============================================================
+
+@app.route('/api/search/semantic', methods=['GET'])
+def semantic_search():
+    """語意搜尋：向量相似度"""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'error': '需要 q 參數'}), 400
+
+    limit = request.args.get('limit', 10, type=int)
+    limit = min(limit, 50)
+    lifecycle = request.args.get('lifecycle', '')
+
+    with session_scope() as s:
+        results = embed_service.search_similar(s, q, limit=limit, lifecycle=lifecycle)
+        return jsonify({
+            'query': q,
+            'total': len(results),
+            'items': results,
+        })
+
+
+@app.route('/api/search/hybrid', methods=['GET'])
+def hybrid_search():
+    """混合搜尋：向量相似度 + 文字 ILIKE，去重合併"""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify({'error': '需要 q 參數'}), 400
+
+    limit = request.args.get('limit', 10, type=int)
+    limit = min(limit, 50)
+
+    with session_scope() as s:
+        # 向量搜尋
+        semantic_results = embed_service.search_similar(s, q, limit=limit)
+
+        # 文字搜尋
+        pattern = f'%{q}%'
+        text_atoms = (
+            s.query(KnowledgeAtom)
+            .filter(
+                KnowledgeAtom.is_deleted == False,
+                KnowledgeAtom.title.ilike(pattern) |
+                KnowledgeAtom.content.ilike(pattern)
+            )
+            .order_by(KnowledgeAtom.vitality_score.desc())
+            .limit(limit)
+            .all()
+        )
+
+        # 合併去重（語意優先）
+        seen_ids = set()
+        merged = []
+        for r in semantic_results:
+            if r['id'] not in seen_ids:
+                r['match_type'] = 'semantic'
+                merged.append(r)
+                seen_ids.add(r['id'])
+
+        for a in text_atoms:
+            if a.id not in seen_ids:
+                merged.append({
+                    'id': a.id,
+                    'title': a.title,
+                    'content': a.content[:200] if a.content else '',
+                    'atom_type': a.atom_type,
+                    'lifecycle': a.lifecycle,
+                    'vitality_score': a.vitality_score,
+                    'source': a.source,
+                    'similarity': 0,
+                    'match_type': 'text',
+                })
+                seen_ids.add(a.id)
+
+        return jsonify({
+            'query': q,
+            'total': len(merged),
+            'items': merged[:limit],
+        })
 
 
 # ============================================================
@@ -318,7 +421,7 @@ def create_canvas():
 
 @app.route('/api/canvases/<int:canvas_id>', methods=['GET'])
 def get_canvas(canvas_id):
-    """取得白板完整資料（含原子與連線）"""
+    """取得白板完整資料（含原子+標籤、連線+關係類型）"""
     with session_scope() as s:
         canvas = (
             s.query(Canvas)
@@ -332,9 +435,49 @@ def get_canvas(canvas_id):
         if not canvas:
             return jsonify({'error': '白板不存在'}), 404
 
+        # 批次檢查阻塞狀態（單一查詢，避免 N+1）
+        atom_ids = [ca.atom_id for ca in canvas.atoms]
+        blocked_ids = set()
+        if atom_ids:
+            blocking_rels = (
+                s.query(AtomRelation.to_atom_id)
+                .join(KnowledgeAtom, KnowledgeAtom.id == AtomRelation.from_atom_id)
+                .filter(
+                    AtomRelation.to_atom_id.in_(atom_ids),
+                    AtomRelation.relation_type == 'blocks',
+                    KnowledgeAtom.lifecycle.in_(['active', 'aging']),
+                    KnowledgeAtom.is_deleted == False,
+                )
+                .distinct()
+                .all()
+            )
+            blocked_ids = {r[0] for r in blocking_rels}
+
         result = canvas.to_dict()
-        result['atoms'] = [ca.to_dict() for ca in canvas.atoms]
-        result['connections'] = [cc.to_dict() for cc in canvas.connections]
+        # 原子：含標籤 + 阻塞狀態
+        result['atoms'] = []
+        for ca in canvas.atoms:
+            d = {
+                'id': ca.id,
+                'canvas_id': ca.canvas_id,
+                'atom_id': ca.atom_id,
+                'pos_x': ca.pos_x,
+                'pos_y': ca.pos_y,
+                'width': ca.width,
+                'height': ca.height,
+                'z_index': ca.z_index,
+                'visual_style': ca.visual_style,
+                'atom': ca.atom.to_dict(include_tags=True) if ca.atom else None,
+                'is_blocked': ca.atom_id in blocked_ids,
+            }
+            result['atoms'].append(d)
+        # 連線：含關係類型
+        result['connections'] = []
+        for cc in canvas.connections:
+            d = cc.to_dict()
+            if cc.relation_id and cc.relation:
+                d['relation_type'] = cc.relation.relation_type
+            result['connections'].append(d)
         return jsonify(result)
 
 
@@ -410,6 +553,84 @@ def remove_atom_from_canvas(ca_id):
             return jsonify({'error': '不存在'}), 404
         s.delete(ca)
         return jsonify({'message': '已從白板移除'})
+
+
+# ============================================================
+# Canvas Connections API
+# ============================================================
+
+@app.route('/api/canvas-connections', methods=['POST'])
+def create_canvas_connection():
+    """建立視覺連線（同時建立或重用 AtomRelation）"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': '需要 JSON body'}), 400
+
+    required = ('canvas_id', 'source_atom_id', 'target_atom_id', 'relation_type')
+    for f in required:
+        if f not in data:
+            return jsonify({'error': f'缺少必要欄位: {f}'}), 400
+
+    with session_scope() as s:
+        # 查找或建立 AtomRelation
+        relation = s.query(AtomRelation).filter(
+            AtomRelation.from_atom_id == data['source_atom_id'],
+            AtomRelation.to_atom_id == data['target_atom_id'],
+            AtomRelation.relation_type == data['relation_type'],
+        ).first()
+
+        if not relation:
+            try:
+                relation = rel_service.create_relation(
+                    s,
+                    from_atom_id=data['source_atom_id'],
+                    to_atom_id=data['target_atom_id'],
+                    relation_type=data['relation_type'],
+                    label=data.get('label', ''),
+                    created_by='human',
+                )
+            except ValueError as e:
+                return jsonify({'error': str(e)}), 400
+
+        # 依關係類型決定連線樣式
+        rel_styles = {
+            'blocks':       {'color': '#dc2626', 'line_style': 'solid'},
+            'causes':       {'color': '#ef4444', 'line_style': 'solid'},
+            'supports':     {'color': '#10b981', 'line_style': 'solid'},
+            'contradicts':  {'color': '#f59e0b', 'line_style': 'dashed'},
+            'derives_from': {'color': '#8b5cf6', 'line_style': 'solid'},
+            'follows':      {'color': '#3b82f6', 'line_style': 'solid'},
+            'contains':     {'color': '#6b7280', 'line_style': 'dotted'},
+            'refutes':      {'color': '#ef4444', 'line_style': 'dashed'},
+        }
+        style = rel_styles.get(data['relation_type'], {'color': '#94a3b8', 'line_style': 'solid'})
+
+        conn = CanvasConnection(
+            canvas_id=data['canvas_id'],
+            source_atom_id=data['source_atom_id'],
+            target_atom_id=data['target_atom_id'],
+            relation_id=relation.id,
+            line_style=style['line_style'],
+            color=style['color'],
+            label=data.get('label', '') or relation.label,
+        )
+        s.add(conn)
+        s.flush()
+
+        result = conn.to_dict()
+        result['relation_type'] = data['relation_type']
+        return jsonify(result), 201
+
+
+@app.route('/api/canvas-connections/<int:conn_id>', methods=['DELETE'])
+def delete_canvas_connection(conn_id):
+    """刪除視覺連線（不刪除底層 AtomRelation）"""
+    with session_scope() as s:
+        conn = s.get(CanvasConnection, conn_id)
+        if not conn:
+            return jsonify({'error': '連線不存在'}), 404
+        s.delete(conn)
+        return jsonify({'message': f'連線 {conn_id} 已刪除'})
 
 
 # ============================================================

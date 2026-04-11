@@ -1,0 +1,483 @@
+{% extends "base.html" %}
+{% block title %}白板 - BeakNote{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/whiteboard.css">{% endblock %}
+{% block extra_js %}<script src="/static/js/whiteboard.js"></script>{% endblock %}
+
+{% block body %}
+<div x-data="whiteboardApp({{ canvas_id }})" x-init="init()"
+     @click="closeContextMenu()"
+     @keydown.escape.window="deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false">
+
+    <!-- Header -->
+    <div class="app-header">
+        <div class="logo">BeakNote</div>
+        <div class="header-right">
+            <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
+        </div>
+    </div>
+
+    <div class="app-layout">
+
+        <!-- 左側邊欄 -->
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="sidebar-title">白板</div>
+                    <button class="btn-ghost btn-sm" @click="showNewCanvasModal=true">+</button>
+                </div>
+                <template x-for="c in canvases" :key="c.id">
+                    <a :href="'/canvas/' + c.id"
+                       class="sidebar-item"
+                       :class="{ active: c.id == canvasId }">
+                        <span class="icon icon-wb">W</span>
+                        <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                        <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
+                                @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.id)"
+                                x-show="canvases.length > 1">x</button>
+                    </a>
+                </template>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="sidebar-title">標籤</div>
+                    <button class="btn-ghost btn-sm" @click="showTagModal=true">+</button>
+                </div>
+                <template x-for="t in tags" :key="t.id">
+                    <div class="sidebar-item">
+                        <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                    </div>
+                </template>
+                <div x-show="tags.length === 0" class="text-sm text-muted" style="padding:4px 8px;">尚無標籤</div>
+            </div>
+        </div>
+
+        <!-- 白板主區域 -->
+        <div class="wb-viewport"
+             x-ref="viewport"
+             :class="{ 'connect-mode': mode === 'connect' }"
+             @mousedown="onViewportMouseDown($event)"
+             @mousemove="onViewportMouseMove($event)"
+             @mouseup="onViewportMouseUp($event)"
+             @contextmenu="onCanvasContextMenu($event)">
+
+            <!-- 工具列 -->
+            <div class="wb-toolbar">
+                <button @click="openNewAtomModal()">+ 原子</button>
+                <button @click="openAddExistingModal()">+ 現有</button>
+                <div class="separator"></div>
+                <button :class="{ active: mode === 'connect' }" @click="toggleConnectMode()">連線</button>
+                <div class="separator"></div>
+                <button @click="fitView()">適應</button>
+            </div>
+
+            <!-- 畫布 -->
+            <div class="wb-canvas" x-ref="canvas" @contextmenu.prevent>
+                <svg class="wb-connections" x-ref="connSvg"></svg>
+
+                <!-- 原子卡片 -->
+                <template x-for="ca in atoms" :key="ca.id">
+                    <div class="wb-card"
+                         :id="'card-' + ca.atom_id"
+                         :class="{
+                             selected: selectedAtomId === ca.atom_id,
+                             dragging: dragCard && dragCard.atom_id === ca.atom_id,
+                             'conn-source': mode === 'connect' && connSourceAtomId === ca.atom_id,
+                             highlighted: highlightedAtomIds.includes(ca.atom_id),
+                         }"
+                         :style="getCardStyle(ca)"
+                         @click.stop="mode === 'connect' ? onCardClickForConnect($event, ca) : selectCard(ca.atom_id)"
+                         @contextmenu.prevent.stop="onCardContextMenu($event, ca)">
+
+                        <div class="wb-card-blocked" x-show="ca.is_blocked">BLOCKED</div>
+
+                        <div class="wb-card-anchor top"></div>
+                        <div class="wb-card-anchor bottom"></div>
+                        <div class="wb-card-anchor left"></div>
+                        <div class="wb-card-anchor right"></div>
+
+                        <div class="wb-card-header" @mousedown.stop="onCardMouseDown($event, ca)">
+                            <span class="wb-card-type"
+                                  :style="getTypeBadgeStyle(ca.atom ? ca.atom.atom_type : 'F')"
+                                  x-text="atomTypeConfig[ca.atom ? ca.atom.atom_type : 'F'] ? atomTypeConfig[ca.atom ? ca.atom.atom_type : 'F'].label : '?'"></span>
+                            <span class="wb-card-title" x-text="ca.atom ? ca.atom.title : '(無標題)'"></span>
+                        </div>
+
+                        <div class="wb-card-body">
+                            <div class="wb-card-content" x-text="truncate(ca.atom ? ca.atom.content : '', 120)"></div>
+                        </div>
+
+                        <div class="wb-card-footer" x-show="ca.atom && ca.atom.tags && ca.atom.tags.length > 0">
+                            <template x-for="t in (ca.atom && ca.atom.tags ? ca.atom.tags : [])" :key="t.id">
+                                <span class="tag-badge tag-sm" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- 縮放控制 -->
+            <div class="wb-zoom">
+                <button @click="zoomOut()">-</button>
+                <span x-text="zoomPercent + '%'" style="min-width:36px; text-align:center;"></span>
+                <button @click="zoomIn()">+</button>
+                <button @click="resetZoom()" style="margin-left:4px; font-size:11px;">重置</button>
+            </div>
+        </div>
+
+        <!-- 右側面板 -->
+        <div class="wb-panel" :class="{ hidden: !showPanel || !selectedAtom }">
+            <template x-if="selectedAtom">
+                <div>
+                    <div class="wb-panel-header">
+                        <h3 x-text="selectedAtom.atom ? selectedAtom.atom.title : '(無標題)'"></h3>
+                        <button class="modal-close" @click="deselectCard()">x</button>
+                    </div>
+                    <div class="wb-panel-body">
+                        <div class="wb-panel-section">
+                            <div class="wb-panel-section-title">原子資訊</div>
+                            <div class="form-group">
+                                <label>標題</label>
+                                <input class="form-control"
+                                       :value="selectedAtom.atom ? selectedAtom.atom.title : ''"
+                                       @change="updateAtomField(selectedAtom, 'title', $event.target.value)">
+                            </div>
+                            <div class="form-group">
+                                <label>內容</label>
+                                <textarea class="form-control" rows="5"
+                                          :value="selectedAtom.atom ? selectedAtom.atom.content : ''"
+                                          @change="updateAtomField(selectedAtom, 'content', $event.target.value)"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>類型</label>
+                                <select class="form-control"
+                                        :value="selectedAtom.atom ? selectedAtom.atom.atom_type : 'F'"
+                                        @change="updateAtomField(selectedAtom, 'atom_type', $event.target.value)">
+                                    <option value="A">A - 萬用</option>
+                                    <option value="B">B - 發散</option>
+                                    <option value="C">C - 流程</option>
+                                    <option value="D">D - 歸納</option>
+                                    <option value="E">E - 套表</option>
+                                    <option value="F">F - 碎片</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>生命週期</label>
+                                <select class="form-control"
+                                        :value="selectedAtom.atom ? selectedAtom.atom.lifecycle : 'active'"
+                                        @change="updateAtomField(selectedAtom, 'lifecycle', $event.target.value)">
+                                    <option value="active">active (活躍)</option>
+                                    <option value="aging">aging (老化)</option>
+                                    <option value="archived">archived (歸檔)</option>
+                                    <option value="terminal">terminal (終止)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="wb-panel-section">
+                            <div class="wb-panel-section-title">標籤</div>
+                            <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                                <template x-for="t in tags" :key="t.id">
+                                    <span class="tag-badge"
+                                          :style="getTagStyle(t.color) + 'cursor:pointer;'"
+                                          :class="{ selected: atomHasTag(selectedAtom, t.id) }"
+                                          @click="toggleAtomTag(selectedAtom, t.id)">
+                                        <span x-show="atomHasTag(selectedAtom, t.id)">v </span>
+                                        <span x-text="t.name"></span>
+                                    </span>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- 因果關係 -->
+                        <div class="wb-panel-section" x-show="selectedAtomDetails">
+                            <div class="wb-panel-section-title">因果關係</div>
+
+                            <!-- 出 -->
+                            <template x-if="selectedAtomDetails && selectedAtomDetails.relations_from && selectedAtomDetails.relations_from.length > 0">
+                                <div class="relation-list">
+                                    <div class="relation-list-title">出 --></div>
+                                    <template x-for="r in selectedAtomDetails.relations_from" :key="r.id">
+                                        <div class="relation-item"
+                                             :class="{ 'off-canvas': !isAtomOnCanvas(r.to_atom_id) }"
+                                             @click="isAtomOnCanvas(r.to_atom_id) && navigateToAtom(r.to_atom_id)">
+                                            <span class="relation-type-badge" x-text="relationLabelMap[r.relation_type] || r.relation_type"></span>
+                                            <span class="relation-target" x-text="r.to_atom ? r.to_atom.title : '#' + r.to_atom_id"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- 入 -->
+                            <template x-if="selectedAtomDetails && selectedAtomDetails.relations_to && selectedAtomDetails.relations_to.length > 0">
+                                <div class="relation-list mt-2">
+                                    <div class="relation-list-title">入 <--</div>
+                                    <template x-for="r in selectedAtomDetails.relations_to" :key="r.id">
+                                        <div class="relation-item"
+                                             :class="{ 'off-canvas': !isAtomOnCanvas(r.from_atom_id) }"
+                                             @click="isAtomOnCanvas(r.from_atom_id) && navigateToAtom(r.from_atom_id)">
+                                            <span class="relation-type-badge" x-text="relationLabelMap[r.relation_type] || r.relation_type"></span>
+                                            <span class="relation-target" x-text="r.from_atom ? r.from_atom.title : '#' + r.from_atom_id"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <div x-show="selectedAtomDetails && (!selectedAtomDetails.relations_from || selectedAtomDetails.relations_from.length === 0) && (!selectedAtomDetails.relations_to || selectedAtomDetails.relations_to.length === 0)"
+                                 class="text-sm text-muted mt-2">尚無關係</div>
+                        </div>
+
+                        <!-- 阻塞狀態 -->
+                        <div class="wb-panel-section" x-show="selectedAtomDetails && selectedAtomDetails.is_blocked">
+                            <div class="wb-panel-section-title">阻塞狀態</div>
+                            <div>
+                                <div class="block-status-badge">已阻塞</div>
+                                <div class="mt-2">
+                                    <template x-for="b in (selectedAtomDetails ? selectedAtomDetails.blockers : [])" :key="b.id">
+                                        <div class="blocker-item"
+                                             :class="{ 'off-canvas': !isAtomOnCanvas(b.id) }"
+                                             @click="isAtomOnCanvas(b.id) && navigateToAtom(b.id)">
+                                            <span x-text="b.title"></span>
+                                            <span class="text-sm text-muted" x-text="'(' + b.lifecycle + ')'"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                                <button class="btn btn-sm btn-secondary mt-2"
+                                        @click="traceBlockChain(selectedAtomDetails.id)">
+                                    追溯阻塞鍊
+                                </button>
+                            </div>
+
+                            <!-- 阻塞鍊結果 -->
+                            <template x-if="blockChain && blockChain.chain && blockChain.chain.length > 0">
+                                <div class="block-chain-result mt-2">
+                                    <div class="text-sm" style="font-weight:600; margin-bottom:4px;">阻塞鍊追溯</div>
+                                    <template x-for="node in blockChain.chain" :key="node.atom_id + '-' + node.depth">
+                                        <div class="block-chain-node"
+                                             :style="'padding-left:' + (node.depth * 16) + 'px;'"
+                                             :class="{ 'off-canvas': !isAtomOnCanvas(node.atom_id) }"
+                                             @click="isAtomOnCanvas(node.atom_id) && navigateToAtom(node.atom_id)">
+                                            <span x-text="'--'.repeat(node.depth) + ' '"></span>
+                                            <span x-text="node.title"></span>
+                                            <span class="text-muted text-sm" x-text="'(' + node.lifecycle + ')'"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="wb-panel-section">
+                            <div class="wb-panel-section-title">資訊</div>
+                            <div class="text-sm text-muted">
+                                <div>Vitality: <span x-text="selectedAtom.atom && selectedAtom.atom.vitality_score != null ? selectedAtom.atom.vitality_score.toFixed(2) : '-'"></span></div>
+                                <div>來源: <span x-text="selectedAtom.atom ? selectedAtom.atom.source : ''"></span></div>
+                                <div>建立: <span x-text="formatDate(selectedAtom.atom ? selectedAtom.atom.created_at : '')"></span></div>
+                                <div>更新: <span x-text="formatDate(selectedAtom.atom ? selectedAtom.atom.updated_at : '')"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+    </div>
+
+    <!-- ============================================ -->
+    <!-- Modals -->
+    <!-- ============================================ -->
+
+    <!-- 新增原子 -->
+    <template x-if="showNewAtomModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>新增原子</h3>
+                    <button class="modal-close" @click="showNewAtomModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>標題</label>
+                        <input class="form-control" x-model="newAtom.title" placeholder="輸入標題..."
+                               @keydown.enter="createNewAtom()">
+                    </div>
+                    <div class="form-group">
+                        <label>內容</label>
+                        <textarea class="form-control" x-model="newAtom.content" rows="3" placeholder="輸入內容..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>類型</label>
+                        <select class="form-control" x-model="newAtom.atom_type">
+                            <option value="A">A - 萬用</option>
+                            <option value="B">B - 發散</option>
+                            <option value="C">C - 流程</option>
+                            <option value="D">D - 歸納</option>
+                            <option value="E">E - 套表</option>
+                            <option value="F">F - 碎片</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showNewAtomModal=false">取消</button>
+                    <button class="btn btn-primary" @click="createNewAtom()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 放置現有原子 -->
+    <template x-if="showAddExistingModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>放置現有原子</h3>
+                    <button class="modal-close" @click="showAddExistingModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <input class="form-control" x-model="searchQuery" placeholder="搜尋原子..."
+                               @input.debounce.300ms="doSearch()">
+                    </div>
+                    <div style="max-height:300px; overflow-y:auto;">
+                        <template x-for="a in searchResults" :key="a.id">
+                            <div class="flex items-center justify-between" style="padding:8px; border-bottom:1px solid var(--border-light);">
+                                <div style="flex:1; min-width:0;">
+                                    <div style="font-size:13px; font-weight:500;" x-text="a.title"></div>
+                                    <div class="text-sm text-muted">
+                                        <span x-text="a.atom_type + ' / ' + a.lifecycle"></span>
+                                        <span x-show="a.similarity > 0" x-text="' / sim:' + (a.similarity ? a.similarity.toFixed(2) : '')" style="color:var(--accent);"></span>
+                                        <span x-show="a.match_type === 'text'" style="color:var(--warning);">[text]</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-primary" style="margin-left:8px; flex-shrink:0;" @click="addExistingAtom(a.id)">放置</button>
+                            </div>
+                        </template>
+                        <div x-show="searchResults.length === 0" class="empty-state" style="padding:20px;">
+                            <p>沒有可放置的原子</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showAddExistingModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 新增白板 -->
+    <template x-if="showNewCanvasModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>新增白板</h3>
+                    <button class="modal-close" @click="showNewCanvasModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>白板名稱</label>
+                        <input class="form-control" x-model="newCanvasName" placeholder="輸入名稱..."
+                               @keydown.enter="createCanvas()">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showNewCanvasModal=false">取消</button>
+                    <button class="btn btn-primary" @click="createCanvas()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 標籤管理 -->
+    <template x-if="showTagModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>標籤管理</h3>
+                    <button class="modal-close" @click="showTagModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="flex gap-2 mb-4">
+                        <input class="form-control" x-model="newTagName" placeholder="新標籤名稱..."
+                               @keydown.enter="createTag()" style="flex:1;">
+                        <input type="color" x-model="newTagColor"
+                               style="width:36px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
+                        <button class="btn btn-primary" @click="createTag()">建立</button>
+                    </div>
+                    <template x-for="t in tags" :key="t.id">
+                        <div class="flex items-center justify-between" style="padding:6px 0; border-bottom:1px solid var(--border-light);">
+                            <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                            <button class="btn-ghost btn-sm" @click="if(confirm('刪除標籤?')) deleteTag(t.id)">刪除</button>
+                        </div>
+                    </template>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showTagModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 關係類型選擇 -->
+    <template x-if="showRelationModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>建立關係</h3>
+                    <button class="modal-close" @click="showRelationModal=false; pendingConnection=null; mode='select'">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-4 text-sm" x-show="pendingConnection">
+                        <strong x-text="getAtomTitle(pendingConnection ? pendingConnection.sourceAtomId : 0)"></strong>
+                        <span class="text-muted"> --> </span>
+                        <strong x-text="getAtomTitle(pendingConnection ? pendingConnection.targetAtomId : 0)"></strong>
+                    </div>
+                    <div class="form-group">
+                        <label>關係類型</label>
+                        <template x-for="rt in relationTypeList" :key="rt.value">
+                            <label class="relation-option"
+                                   :class="{ selected: selectedRelationType === rt.value }">
+                                <input type="radio" name="relType" :value="rt.value"
+                                       x-model="selectedRelationType" style="margin-right:8px;">
+                                <span x-text="rt.label"></span>
+                                <span class="text-muted text-sm" style="margin-left:4px;" x-text="'(' + rt.value + ')'"></span>
+                            </label>
+                        </template>
+                    </div>
+                    <div class="form-group">
+                        <label>說明（選填）</label>
+                        <input class="form-control" x-model="relationLabel" placeholder="關係描述..."
+                               @keydown.enter="confirmConnection()">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showRelationModal=false; pendingConnection=null; mode='select'">取消</button>
+                    <button class="btn btn-primary" @click="confirmConnection()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 右鍵選單 -->
+    <template x-if="contextMenu">
+        <div class="context-menu" :style="'left:' + contextMenu.x + 'px; top:' + contextMenu.y + 'px;'" @click.stop>
+            <template x-if="contextMenu.type === 'canvas'">
+                <div>
+                    <div class="context-menu-item" @click="contextAddAtom()">新增原子</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="fitView(); closeContextMenu()">適應視圖</div>
+                    <div class="context-menu-item" @click="resetZoom(); closeContextMenu()">重置縮放</div>
+                </div>
+            </template>
+            <template x-if="contextMenu.type === 'card'">
+                <div>
+                    <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">編輯</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除</div>
+                    <div class="context-menu-item danger"
+                         @click="if(confirm('刪除此原子? 所有白板都會移除')) { deleteAtomEntirely(contextMenu.ca); closeContextMenu(); }">刪除原子</div>
+                </div>
+            </template>
+        </div>
+    </template>
+
+</div>
+{% endblock %}
