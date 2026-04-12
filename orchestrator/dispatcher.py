@@ -156,6 +156,7 @@ def create_and_dispatch(
     working_dir: str = '/opt/BeakCortex',
     priority: int = 5,
     timeout_seconds: int = 600,
+    main_pane: str = '',
 ) -> dict:
     """建立任務並立即派發（主線最常用的入口）"""
     task_id, task_dict = create_task(
@@ -165,6 +166,7 @@ def create_and_dispatch(
         working_dir=working_dir,
         priority=priority,
         timeout_seconds=timeout_seconds,
+        main_pane=main_pane,
     )
     result = dispatch_task(task_id)
     return result
