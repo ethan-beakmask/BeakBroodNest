@@ -1,0 +1,13 @@
+# BeakCortex Relay Receiver 設定檔
+
+server:
+  port: 5200
+  bind: "0.0.0.0"
+
+mobaxterm:
+  # MobaXterm 執行檔完整路徑
+  path: 'D:\MIS\Tools\MobaXterm_Portable_v25.3\MobaXterm_Personal_25.3.exe'
+  # 預設 bookmark（-bookmark 參數值）
+  default_bookmark: 'User sessions\192.168.0.16 ([X390])'
+  # 預設目標視窗識別字串（用於分頁切換比對）
+  default_target: "[X390]"

@@ -25,6 +25,9 @@ OLD/test9_Heptabase/heptabase.db
 *.swp
 *.swo
 
+# Go binary
+*.exe
+
 # OS
 .DS_Store
 Thumbs.db

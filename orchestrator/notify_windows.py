@@ -44,6 +44,31 @@ def send_message(message, host, port, action, target):
         return 1
 
 
+def launch_mobaxterm(host, port, bookmark):
+    """呼叫 Windows 端 /launch 端點啟動 MobaXterm"""
+    url = f"http://{host}:{port}/launch"
+    payload = {}
+    if bookmark:
+        payload["bookmark"] = bookmark
+    try:
+        resp = requests.post(url, json=payload, timeout=10)
+        if resp.status_code == 200:
+            print(f"MobaXterm 啟動成功：{url}")
+            return 0
+        else:
+            print(f"啟動失敗：HTTP {resp.status_code}  回應：{resp.text}", file=sys.stderr)
+            return 1
+    except requests.exceptions.ConnectionError as e:
+        print(f"連線錯誤：無法連線到 {url}  ({e})", file=sys.stderr)
+        return 1
+    except requests.exceptions.Timeout:
+        print(f"連線逾時：等待 {url} 超過 10 秒", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"未預期錯誤：{e}", file=sys.stderr)
+        return 1
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="notify_windows.py",
@@ -54,11 +79,14 @@ def main():
   python notify_windows.py -m "支線任務已完成"
   python notify_windows.py -m "訊息" --host 192.168.0.10 --port 5200
   python notify_windows.py -m "訊息" --action notify --target "MobaXterm-1"
+  python notify_windows.py --launch
+  python notify_windows.py --launch --bookmark "User sessions\\host ([X390])"
 
 動作類型說明：
   paste      貼上訊息到目標視窗（預設）
   notify     彈出通知提示
   clipboard  僅寫入剪貼簿
+  --launch   啟動 Windows 端 MobaXterm（可搭配 --bookmark）
 """
     )
     parser.add_argument("-m", "--message", metavar="訊息內容",
@@ -72,12 +100,24 @@ def main():
                         help="動作類型（預設 paste）")
     parser.add_argument("--target", default="[X390]", metavar="視窗識別字串",
                         help="目標視窗識別字串（預設 [X390]）")
+    parser.add_argument("--launch", action="store_true",
+                        help="啟動 MobaXterm（使用設定檔預設 bookmark）")
+    parser.add_argument("--bookmark", default="", metavar="BOOKMARK",
+                        help="指定 MobaXterm bookmark（搭配 --launch 使用）")
 
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(0)
 
     args = parser.parse_args()
+
+    if args.launch:
+        exit_code = launch_mobaxterm(
+            host=args.host,
+            port=args.port,
+            bookmark=args.bookmark
+        )
+        sys.exit(exit_code)
 
     if not args.message:
         print("錯誤：必須提供 -m 訊息內容", file=sys.stderr)
