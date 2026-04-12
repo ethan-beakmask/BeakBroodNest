@@ -5,6 +5,8 @@ notify_windows.py - 向 Windows 端 relay receiver 發送通知訊息
 用途：orchestrator 支線完成時通知主線（或其他用途）
 """
 
+import os
+import re
 import sys
 import argparse
 from datetime import datetime, timezone
@@ -44,6 +46,24 @@ def send_message(message, host, port, action, target):
         return 1
 
 
+def derive_project_name():
+    """從 $PWD 推導專案名稱：取最後一層目錄名，去掉 -dev 尾碼。
+    例如 /opt/BeakMeshWall-dev -> BeakMeshWall
+         /opt/BeakSeal -> BeakSeal
+    """
+    cwd = os.getcwd()
+    dirname = os.path.basename(cwd)
+    return re.sub(r'-dev$', '', dirname)
+
+
+def derive_target():
+    """從專案名稱推導 MobaXterm 分頁比對字串。
+    格式：([專案名稱])，對應 MobaXterm 標題中的 192.168.0.16 ([專案名稱])
+    """
+    name = derive_project_name()
+    return f"([{name}])"
+
+
 def launch_mobaxterm(host, port, bookmark):
     """呼叫 Windows 端 /launch 端點啟動 MobaXterm"""
     url = f"http://{host}:{port}/launch"
@@ -77,10 +97,13 @@ def main():
         epilog="""
 使用範例：
   python notify_windows.py -m "支線任務已完成"
-  python notify_windows.py -m "訊息" --host 192.168.0.10 --port 5200
-  python notify_windows.py -m "訊息" --action notify --target "MobaXterm-1"
+  python notify_windows.py -m "訊息" --target "([BeakSeal])"
   python notify_windows.py --launch
-  python notify_windows.py --launch --bookmark "User sessions\\host ([X390])"
+  python notify_windows.py --launch --bookmark "User sessions\\192.168.0.16 ([BeakSeal])"
+
+target/bookmark 自動推導（從 $PWD）：
+  /opt/BeakMeshWall-dev -> target=([BeakMeshWall]) bookmark=User sessions\\192.168.0.16 ([BeakMeshWall])
+  /opt/BeakSeal         -> target=([BeakSeal])     bookmark=User sessions\\192.168.0.16 ([BeakSeal])
 
 動作類型說明：
   paste      貼上訊息到目標視窗（預設）
@@ -98,12 +121,12 @@ def main():
     parser.add_argument("--action", default="paste",
                         choices=["notify", "paste", "clipboard"],
                         help="動作類型（預設 paste）")
-    parser.add_argument("--target", default="[X390]", metavar="視窗識別字串",
-                        help="目標視窗識別字串（預設 [X390]）")
+    parser.add_argument("--target", default="", metavar="視窗識別字串",
+                        help="目標分頁識別字串（預設從 $PWD 推導專案名稱）")
     parser.add_argument("--launch", action="store_true",
-                        help="啟動 MobaXterm（使用設定檔預設 bookmark）")
+                        help="啟動 MobaXterm（可搭配 --bookmark）")
     parser.add_argument("--bookmark", default="", metavar="BOOKMARK",
-                        help="指定 MobaXterm bookmark（搭配 --launch 使用）")
+                        help="指定 MobaXterm bookmark（預設從 $PWD 推導）")
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -111,11 +134,18 @@ def main():
 
     args = parser.parse_args()
 
+    # 自動推導 target 和 bookmark
+    target = args.target if args.target else derive_target()
+
     if args.launch:
+        bookmark = args.bookmark
+        if not bookmark:
+            name = derive_project_name()
+            bookmark = f"User sessions\\192.168.0.16 ([{name}])"
         exit_code = launch_mobaxterm(
             host=args.host,
             port=args.port,
-            bookmark=args.bookmark
+            bookmark=bookmark
         )
         sys.exit(exit_code)
 
@@ -129,7 +159,7 @@ def main():
         host=args.host,
         port=args.port,
         action=args.action,
-        target=args.target
+        target=target
     )
     sys.exit(exit_code)
 
