@@ -1,12 +1,14 @@
 # BeakCortex -- 知識白板與 AI 共用知識庫
 
 ## 專案概述
-- 路徑: /opt/BeakCortex/
+- 開發目錄: /opt/BeakCortex-dev/（版控，git + GitHub/Forgejo）
+- 運行目錄: /opt/BeakCortex/（無 .git，含 config.ini、venv、OLD）
 - 技術棧: Python Flask + PostgreSQL + SQLAlchemy + MCP SDK
 - Port: 5170 (http://192.168.0.16:5170)
 - DB: beak_cortex (user: beak_cortex, pw: postgres123)
+- MCP 設定: /opt/.mcp.json（指向運行目錄）
 - 規劃文件: docs/VISION.md
-- 舊 MVP 參考: OLD/test9_Heptabase/
+- 舊 MVP 參考: /opt/BeakCortex/OLD/（僅存於運行目錄，不入版控）
 
 ## 每次對話必做
 1. 呼叫 `mcp__beak_cortex__note_overview` 取得知識庫概覽（原子數、標籤、最近更新、阻塞項目）
@@ -38,12 +40,17 @@ orchestrator/       多 Agent 協作框架
   collector.py      結果收集 (output -> worker_reports)
   relay.py          中間層 (MVP: passthrough，未來: 審查/匯整)
 docs/               規劃文件
-OLD/                舊 MVP 歸檔
 ```
 
-## 啟動方式
+## 啟動方式（在運行目錄 /opt/BeakCortex/ 執行）
 ```bash
 source venv/bin/activate
 python human_ui/app.py --serve            # Web API
 python human_ui/app.py --init-db --seed   # 首次初始化
+```
+
+## 部署流程（dev -> 運行目錄）
+開發在 /opt/BeakCortex-dev/ 完成後，將程式碼同步到 /opt/BeakCortex/：
+```bash
+rsync -av --exclude='.git' --exclude='config.ini' --exclude='venv' --exclude='OLD' --exclude='temp' /opt/BeakCortex-dev/ /opt/BeakCortex/
 ```
