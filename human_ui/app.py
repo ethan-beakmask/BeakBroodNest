@@ -439,23 +439,60 @@ def create_canvas():
 
 @app.route('/api/canvases/<int:canvas_id>', methods=['GET'])
 def get_canvas(canvas_id):
-    """取得白板完整資料（含原子+標籤、連線+關係類型）"""
+    """取得白板完整資料（輕量查詢：不用 joinedload，content 截斷）"""
+    CONTENT_PREVIEW_LEN = 500  # 白板卡片預覽用，完整內容走 GET /api/atoms/<id>
+
     with session_scope() as s:
-        canvas = (
-            s.query(Canvas)
-            .options(
-                joinedload(Canvas.atoms).joinedload(CanvasAtom.atom),
-                joinedload(Canvas.connections),
-                joinedload(Canvas.groups).joinedload(CanvasGroup.atoms),
-            )
-            .filter(Canvas.id == canvas_id)
-            .first()
-        )
+        canvas = s.get(Canvas, canvas_id)
         if not canvas:
             return jsonify({'error': '白板不存在'}), 404
 
-        # 批次檢查阻塞狀態（單一查詢，避免 N+1）
-        atom_ids = [ca.atom_id for ca in canvas.atoms]
+        result = canvas.to_dict()
+
+        # --- 1. 原子：輕量查詢，content 在 DB 層截斷 ---
+        ca_rows = (
+            s.query(
+                CanvasAtom.id,
+                CanvasAtom.canvas_id,
+                CanvasAtom.atom_id,
+                CanvasAtom.pos_x,
+                CanvasAtom.pos_y,
+                CanvasAtom.width,
+                CanvasAtom.height,
+                CanvasAtom.z_index,
+                CanvasAtom.visual_style,
+                CanvasAtom.group_id,
+                KnowledgeAtom.id.label('ka_id'),
+                KnowledgeAtom.title,
+                func.left(KnowledgeAtom.content, CONTENT_PREVIEW_LEN).label('content_preview'),
+                KnowledgeAtom.content_type,
+                KnowledgeAtom.atom_type,
+                KnowledgeAtom.lifecycle,
+                KnowledgeAtom.vitality_score,
+                KnowledgeAtom.source,
+            )
+            .join(KnowledgeAtom, KnowledgeAtom.id == CanvasAtom.atom_id)
+            .filter(CanvasAtom.canvas_id == canvas_id)
+            .all()
+        )
+
+        atom_ids = [r.atom_id for r in ca_rows]
+
+        # --- 2. 批次載入標籤 ---
+        tags_map = {}  # atom_id -> [tag_dict, ...]
+        if atom_ids:
+            tag_rows = (
+                s.query(atom_tags.c.atom_id, Tag.id, Tag.name, Tag.color)
+                .join(Tag, Tag.id == atom_tags.c.tag_id)
+                .filter(atom_tags.c.atom_id.in_(atom_ids))
+                .all()
+            )
+            for aid, tid, tname, tcolor in tag_rows:
+                tags_map.setdefault(aid, []).append(
+                    {'id': tid, 'name': tname, 'color': tcolor}
+                )
+
+        # --- 3. 批次檢查阻塞狀態 ---
         blocked_ids = set()
         if atom_ids:
             blocking_rels = (
@@ -472,34 +509,93 @@ def get_canvas(canvas_id):
             )
             blocked_ids = {r[0] for r in blocking_rels}
 
-        result = canvas.to_dict()
-        # 原子：含標籤 + 阻塞狀態
+        # --- 組裝原子列表 ---
         result['atoms'] = []
-        for ca in canvas.atoms:
-            d = {
-                'id': ca.id,
-                'canvas_id': ca.canvas_id,
-                'atom_id': ca.atom_id,
-                'pos_x': ca.pos_x,
-                'pos_y': ca.pos_y,
-                'width': ca.width,
-                'height': ca.height,
-                'z_index': ca.z_index,
-                'visual_style': ca.visual_style,
-                'atom': ca.atom.to_dict(include_tags=True) if ca.atom else None,
-                'is_blocked': ca.atom_id in blocked_ids,
-                'group_id': ca.group_id,
-            }
-            result['atoms'].append(d)
-        # 群組
-        result['groups'] = [g.to_dict() for g in canvas.groups]
-        # 連線：含關係類型
-        result['connections'] = []
-        for cc in canvas.connections:
-            d = cc.to_dict()
-            if cc.relation_id and cc.relation:
-                d['relation_type'] = cc.relation.relation_type
-            result['connections'].append(d)
+        for r in ca_rows:
+            result['atoms'].append({
+                'id': r.id,
+                'canvas_id': r.canvas_id,
+                'atom_id': r.atom_id,
+                'pos_x': r.pos_x,
+                'pos_y': r.pos_y,
+                'width': r.width,
+                'height': r.height,
+                'z_index': r.z_index,
+                'visual_style': r.visual_style,
+                'group_id': r.group_id,
+                'atom': {
+                    'id': r.ka_id,
+                    'title': r.title,
+                    'content': r.content_preview or '',
+                    'content_type': r.content_type,
+                    'atom_type': r.atom_type,
+                    'lifecycle': r.lifecycle,
+                    'vitality_score': r.vitality_score,
+                    'source': r.source,
+                    'tags': tags_map.get(r.atom_id, []),
+                },
+                'is_blocked': r.atom_id in blocked_ids,
+            })
+
+        # --- 4. 群組：輕量查詢 ---
+        groups = s.query(CanvasGroup).filter(CanvasGroup.canvas_id == canvas_id).all()
+        # 批次取得群組成員
+        group_member_rows = (
+            s.query(CanvasAtom.group_id, CanvasAtom.atom_id)
+            .filter(
+                CanvasAtom.canvas_id == canvas_id,
+                CanvasAtom.group_id.isnot(None),
+            )
+            .all()
+        )
+        group_members = {}  # group_id -> [atom_id, ...]
+        for gid, aid in group_member_rows:
+            group_members.setdefault(gid, []).append(aid)
+
+        result['groups'] = [{
+            'id': g.id,
+            'canvas_id': g.canvas_id,
+            'name': g.name,
+            'color': g.color,
+            'pos_x': g.pos_x,
+            'pos_y': g.pos_y,
+            'width': g.width,
+            'height': g.height,
+            'z_index': g.z_index,
+            'atom_ids': group_members.get(g.id, []),
+        } for g in groups]
+
+        # --- 5. 連線：join 取 relation_type，避免 lazy load ---
+        conn_rows = (
+            s.query(
+                CanvasConnection.id,
+                CanvasConnection.canvas_id,
+                CanvasConnection.source_atom_id,
+                CanvasConnection.target_atom_id,
+                CanvasConnection.relation_id,
+                CanvasConnection.line_style,
+                CanvasConnection.color,
+                CanvasConnection.label,
+                CanvasConnection.animated,
+                AtomRelation.relation_type,
+            )
+            .outerjoin(AtomRelation, AtomRelation.id == CanvasConnection.relation_id)
+            .filter(CanvasConnection.canvas_id == canvas_id)
+            .all()
+        )
+        result['connections'] = [{
+            'id': cr.id,
+            'canvas_id': cr.canvas_id,
+            'source_atom_id': cr.source_atom_id,
+            'target_atom_id': cr.target_atom_id,
+            'relation_id': cr.relation_id,
+            'line_style': cr.line_style,
+            'color': cr.color,
+            'label': cr.label,
+            'animated': cr.animated,
+            'relation_type': cr.relation_type,
+        } for cr in conn_rows]
+
         return jsonify(result)
 
 
