@@ -68,6 +68,12 @@ def canvas_page(canvas_id):
     return render_template('whiteboard.html', canvas_id=canvas_id)
 
 
+@app.route('/help')
+def help_page():
+    """線上說明"""
+    return render_template('help.html')
+
+
 # ============================================================
 # Knowledge Atoms API
 # ============================================================
@@ -721,13 +727,34 @@ def create_canvas_connection():
 
 @app.route('/api/canvas-connections/<int:conn_id>', methods=['DELETE'])
 def delete_canvas_connection(conn_id):
-    """刪除視覺連線（不刪除底層 AtomRelation）"""
+    """刪除視覺連線，若底層 AtomRelation 無其他白板引用則一併刪除"""
     with session_scope() as s:
         conn = s.get(CanvasConnection, conn_id)
         if not conn:
             return jsonify({'error': '連線不存在'}), 404
+
+        relation_id = conn.relation_id
         s.delete(conn)
-        return jsonify({'message': f'連線 {conn_id} 已刪除'})
+        s.flush()
+
+        relation_kept = False
+        if relation_id:
+            # 檢查是否還有其他 CanvasConnection 引用同一條 AtomRelation
+            other_refs = s.query(CanvasConnection).filter(
+                CanvasConnection.relation_id == relation_id,
+            ).count()
+            if other_refs == 0:
+                rel = s.get(AtomRelation, relation_id)
+                if rel:
+                    s.delete(rel)
+            else:
+                relation_kept = True
+
+        return jsonify({
+            'message': f'連線 {conn_id} 已刪除',
+            'relation_kept': relation_kept,
+            'relation_kept_reason': '底層知識關係仍被其他白板引用' if relation_kept else None,
+        })
 
 
 # ============================================================

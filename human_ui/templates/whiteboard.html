@@ -8,10 +8,19 @@
      @click="closeContextMenu()"
      @keydown.escape.window="cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false">
 
+    <!-- Toast -->
+    <div class="toast-container">
+        <template x-for="(t, i) in toasts" :key="t.id">
+            <div class="toast" :class="'toast-' + t.type" x-text="t.msg"
+                 x-init="setTimeout(() => removeToast(t.id), t.duration || 4000)"></div>
+        </template>
+    </div>
+
     <!-- Header -->
     <div class="app-header">
         <div class="logo">BeakCortex</div>
         <div class="header-right">
+            <a href="/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
         </div>
     </div>

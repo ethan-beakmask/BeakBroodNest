@@ -107,6 +107,10 @@ function whiteboardApp(canvasId) {
         editingGroup: null,
         groupForm: { name: '', color: '#3b82f6' },
 
+        // Toast
+        toasts: [],
+        _toastSeq: 0,
+
         // -- Config --
         atomTypeConfig: {
             A: { label: '萬用', bg: '#f3f4f6', color: '#6b7280', border: '#9ca3af' },
@@ -833,13 +837,16 @@ function whiteboardApp(canvasId) {
             this.pendingConnection = null;
             this.mode = 'select';
             await this.loadData();
-            this.$nextTick(() => this.renderConnections());
+            this.renderConnections();
         },
 
         async deleteConnection(connId) {
-            await API.deleteConnection(connId);
+            var result = await API.deleteConnection(connId);
             await this.loadData();
-            this.$nextTick(() => this.renderConnections());
+            this.renderConnections();
+            if (result && result.relation_kept) {
+                this.showToast(result.relation_kept_reason || '底層知識關係仍被其他白板引用，BLOCKED 標章保留', 'warn', 5000);
+            }
         },
 
         // ============================================
@@ -997,12 +1004,10 @@ function whiteboardApp(canvasId) {
                 const tgtCa = self.atoms.find(ca => ca.atom_id === conn.target_atom_id);
                 if (!srcCa || !tgtCa) return;
 
-                const srcEl = document.getElementById('card-' + srcCa.atom_id);
-                const tgtEl = document.getElementById('card-' + tgtCa.atom_id);
-                const sw = srcEl ? srcEl.offsetWidth : 260;
-                const sh = srcEl ? srcEl.offsetHeight : 120;
-                const tw = tgtEl ? tgtEl.offsetWidth : 260;
-                const th = tgtEl ? tgtEl.offsetHeight : 120;
+                const sw = srcCa.width || 260;
+                const sh = srcCa.height || 120;
+                const tw = tgtCa.width || 260;
+                const th = tgtCa.height || 120;
 
                 // Edge-to-edge: line starts/ends at card border, not center
                 var scx = srcCa.pos_x + sw / 2;
@@ -1517,6 +1522,18 @@ function whiteboardApp(canvasId) {
 
         onMinimapMouseUp(e) {
             this._minimapDragging = false;
+        },
+
+        // ============================================
+        // Toast
+        // ============================================
+        showToast(msg, type, duration) {
+            var id = ++this._toastSeq;
+            this.toasts.push({ id: id, msg: msg, type: type || 'info', duration: duration || 4000 });
+        },
+
+        removeToast(id) {
+            this.toasts = this.toasts.filter(function(t) { return t.id !== id; });
         },
 
         // ============================================

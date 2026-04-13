@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% block title %}Help - BeakCortex{% endblock %}
+{% block extra_css %}
+<style>
+body { overflow: auto; }
+
+.help-page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+}
+
+.help-page h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.help-page .subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 32px;
+}
+
+.help-page h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-top: 36px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.help-page p, .help-page li {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+}
+
+.help-page ul { padding-left: 20px; margin: 8px 0; }
+.help-page li { margin-bottom: 4px; }
+
+.help-page .back-link {
+    display: inline-block;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--accent);
+    text-decoration: none;
+}
+.help-page .back-link:hover { text-decoration: underline; }
+
+/* 架構圖 */
+.arch-diagram {
+    display: flex;
+    gap: 24px;
+    margin: 20px 0;
+    align-items: stretch;
+}
+
+.arch-layer {
+    flex: 1;
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.arch-layer.knowledge {
+    background: #fef3c7;
+    border: 2px solid #f59e0b;
+}
+
+.arch-layer.visual {
+    background: #dbeafe;
+    border: 2px solid #3b82f6;
+}
+
+.arch-layer h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.arch-layer.knowledge h3 { color: #92400e; }
+.arch-layer.visual h3 { color: #1e40af; }
+
+.arch-layer ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.arch-layer li {
+    font-size: 13px;
+    padding: 4px 0;
+    color: var(--text-secondary);
+}
+
+.arch-layer li::before {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.arch-layer.knowledge li::before { background: #d97706; }
+.arch-layer.visual li::before { background: #2563eb; }
+
+/* 流程圖 */
+.flow-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 20px 0;
+    font-size: 13px;
+}
+
+.flow-step {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.flow-step .step-num {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.flow-step .step-content {
+    flex: 1;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+}
+
+.flow-step .step-content strong { color: var(--text-primary); }
+
+.flow-arrow {
+    display: flex;
+    justify-content: center;
+    padding: 0 0 0 8px;
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+.flow-branch {
+    display: flex;
+    gap: 12px;
+    margin-left: 40px;
+}
+
+.flow-branch .branch {
+    flex: 1;
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    font-size: 13px;
+}
+
+.branch.yes {
+    background: #dcfce7;
+    border: 1px solid #10b981;
+    color: #065f46;
+}
+
+.branch.no {
+    background: #fef2f2;
+    border: 1px solid #ef4444;
+    color: #991b1b;
+}
+
+.badge-demo {
+    display: inline-block;
+    background: #dc2626;
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    vertical-align: middle;
+}
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="help-page">
+    <a href="/" class="back-link">&larr; 回到白板</a>
+
+    <h1>BeakCortex Help</h1>
+    <p class="subtitle">知識白板與 AI 共用知識庫 -- 核心概念說明</p>
+
+    <!-- ===== 架構總覽 ===== -->
+    <h2>知識層與視覺層</h2>
+
+    <p>BeakCortex 將資料分為兩個獨立層級。理解這個分層是使用白板時最重要的概念：</p>
+
+    <div class="arch-diagram">
+        <div class="arch-layer knowledge">
+            <h3>知識層 (Knowledge Layer)</h3>
+            <ul>
+                <li>知識原子 (Atom) -- 最小知識單位</li>
+                <li>原子關係 (AtomRelation) -- 語意連結</li>
+                <li>標籤 (Tag) -- 分類系統</li>
+            </ul>
+            <p style="margin-top:auto; font-size:12px; color:#92400e;">
+                永久性資料，跨白板共用，AI 可存取
+            </p>
+        </div>
+        <div class="arch-layer visual">
+            <h3>視覺層 (Visual Layer)</h3>
+            <ul>
+                <li>白板 (Canvas) -- 空間佈局</li>
+                <li>卡片位置 (CanvasAtom) -- 座標與尺寸</li>
+                <li>視覺連線 (CanvasConnection) -- 線段呈現</li>
+            </ul>
+            <p style="margin-top:auto; font-size:12px; color:#1e40af;">
+                佈局資料，每張白板獨立
+            </p>
+        </div>
+    </div>
+
+    <p>同一個知識原子可以出現在多張白板上，各自有不同的位置和連線。
+       知識層記錄「事實」，視覺層記錄「如何呈現」。</p>
+
+    <!-- ===== 實例：刪線與 BLOCKED ===== -->
+    <h2>實例：刪除連線與 <span class="badge-demo">BLOCKED</span> 標章</h2>
+
+    <p>當兩個原子之間存在 <strong>blocks</strong>（阻塞）關係時，
+       被阻塞的卡片右上角會顯示 <span class="badge-demo">BLOCKED</span> 標章。
+       這個標章反映的是<strong>知識層</strong>的狀態。</p>
+
+    <p>當你在白板上刪除一條連線時，系統的判斷流程：</p>
+
+    <div class="flow-box">
+        <div class="flow-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+                你點擊連線，確認刪除
+            </div>
+        </div>
+        <div class="flow-arrow">&darr;</div>
+        <div class="flow-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+                <strong>視覺層</strong>：該白板上的連線立即移除
+            </div>
+        </div>
+        <div class="flow-arrow">&darr;</div>
+        <div class="flow-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+                <strong>系統檢查</strong>：底層的知識關係是否還被其他白板引用？
+            </div>
+        </div>
+        <div class="flow-arrow">&darr;</div>
+        <div class="flow-branch">
+            <div class="branch no">
+                <strong>無其他引用</strong><br>
+                知識關係一併刪除，<span class="badge-demo">BLOCKED</span> 標章消失
+            </div>
+            <div class="branch yes">
+                <strong>仍有其他白板引用</strong><br>
+                知識關係保留，<span class="badge-demo">BLOCKED</span> 標章仍顯示，
+                並以提示告知原因
+            </div>
+        </div>
+    </div>
+
+    <p>這確保了你在一張白板上的操作不會意外破壞其他白板上仍在使用的知識關係。</p>
+
+    <!-- ===== 快捷鍵 ===== -->
+    <h2>白板快捷操作</h2>
+    <ul>
+        <li><strong>滾輪</strong> -- 縮放</li>
+        <li><strong>右鍵拖曳</strong> -- 平移畫布</li>
+        <li><strong>雙擊卡片內容</strong> -- 進入編輯</li>
+        <li><strong>從錨點拖曳</strong> -- 建立連線（卡片邊緣的小圓點）</li>
+        <li><strong>點擊連線</strong> -- 刪除連線</li>
+        <li><strong>Shift + 拖曳空白區</strong> -- 框選多張卡片</li>
+        <li><strong>Esc</strong> -- 取消目前操作 / 關閉面板</li>
+        <li><strong>F</strong>（縮放列）-- Fit View，自動縮放到全覽</li>
+        <li><strong>M</strong>（縮放列）-- 切換小地圖</li>
+    </ul>
+
+</div>
+{% endblock %}
