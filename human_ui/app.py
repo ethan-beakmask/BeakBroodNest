@@ -25,6 +25,7 @@ from core.models import (
     KnowledgeAtom, AtomRelation, Canvas, CanvasAtom, CanvasConnection,
     Tag, atom_tags, AtomSchema, SchemaField, AtomFieldValue,
 )
+from orchestrator.models import WorkerTask, WorkerReport
 from core import relations as rel_service
 from core import embeddings as embed_service
 
@@ -639,6 +640,109 @@ def delete_canvas_connection(conn_id):
             return jsonify({'error': '連線不存在'}), 404
         s.delete(conn)
         return jsonify({'message': f'連線 {conn_id} 已刪除'})
+
+
+# ============================================================
+# Orchestrator Dashboard
+# ============================================================
+
+@app.route('/dashboard')
+def dashboard_page():
+    """Orchestrator 儀錶板"""
+    return render_template('dashboard.html')
+
+
+@app.route('/api/orchestrator/stats', methods=['GET'])
+def orchestrator_stats():
+    """Orchestrator 統計摘要"""
+    with session_scope() as s:
+        tasks = s.query(WorkerTask).all()
+
+        by_status = {}
+        sessions = set()
+        for t in tasks:
+            by_status[t.status] = by_status.get(t.status, 0) + 1
+            if t.session_id:
+                sessions.add(t.session_id)
+
+        # 活躍 session（含 non-terminal 任務的 session）
+        active_sessions = set()
+        terminal = ('completed', 'failed', 'timeout', 'cancelled')
+        for t in tasks:
+            if t.session_id and t.status not in terminal:
+                active_sessions.add(t.session_id)
+
+        return jsonify({
+            'total': len(tasks),
+            'by_status': by_status,
+            'session_count': len(sessions),
+            'active_session_count': len(active_sessions),
+        })
+
+
+@app.route('/api/orchestrator/tasks', methods=['GET'])
+def orchestrator_tasks():
+    """列出 Orchestrator 任務"""
+    with session_scope() as s:
+        q = s.query(WorkerTask)
+
+        status = request.args.get('status')
+        if status:
+            q = q.filter(WorkerTask.status == status)
+
+        session_id = request.args.get('session_id')
+        if session_id:
+            q = q.filter(WorkerTask.session_id == session_id)
+
+        # 排序：活躍任務優先，再按建立時間倒序
+        q = q.order_by(
+            WorkerTask.created_at.desc(),
+        )
+
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        per_page = min(per_page, 200)
+        total = q.count()
+
+        tasks = q.offset((page - 1) * per_page).limit(per_page).all()
+
+        # 附加 report_count（避免 N+1）
+        task_ids = [t.id for t in tasks]
+        report_counts = {}
+        if task_ids:
+            rows = (
+                s.query(WorkerReport.task_id, func.count(WorkerReport.id))
+                .filter(WorkerReport.task_id.in_(task_ids))
+                .group_by(WorkerReport.task_id)
+                .all()
+            )
+            report_counts = dict(rows)
+
+        items = []
+        for t in tasks:
+            d = t.to_dict()
+            d['report_count'] = report_counts.get(t.id, 0)
+            items.append(d)
+
+        return jsonify({
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'items': items,
+        })
+
+
+@app.route('/api/orchestrator/tasks/<int:task_id>', methods=['GET'])
+def orchestrator_task_detail(task_id):
+    """單一任務詳情含 reports"""
+    with session_scope() as s:
+        task = s.query(WorkerTask).filter(WorkerTask.id == task_id).first()
+        if not task:
+            return jsonify({'error': '任務不存在'}), 404
+
+        result = task.to_dict()
+        result['reports'] = [r.to_dict() for r in task.reports]
+        return jsonify(result)
 
 
 # ============================================================
