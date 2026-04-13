@@ -140,11 +140,13 @@ function whiteboardApp(canvasId) {
         // Init
         // ============================================
         async init() {
+            this.initMarked();
             await this.loadData();
             this.$nextTick(() => {
                 this.renderConnections();
                 this.setupWheelZoom();
                 if (this.atoms.length > 0) this.fitView();
+                this.renderMinimap();
             });
             // Cancel connection drag if mouse released outside viewport
             document.addEventListener('mouseup', () => {
@@ -192,6 +194,7 @@ function whiteboardApp(canvasId) {
                 this.zoom = canvas.viewport_zoom || 1;
                 this.updateTransform();
             }
+            this.$nextTick(() => this.renderMinimap());
         },
 
         // ============================================
@@ -463,6 +466,7 @@ function whiteboardApp(canvasId) {
         updateTransform() {
             const c = this.$refs.canvas;
             if (c) c.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+            this.renderMinimap();
         },
 
         saveViewport() {
@@ -1306,6 +1310,213 @@ function whiteboardApp(canvasId) {
 
         isAtomOnCanvas(atomId) {
             return this.atoms.some(function(ca) { return ca.atom_id === atomId; });
+        },
+
+        // ============================================
+        // Markdown Rendering
+        // ============================================
+        _markedInited: false,
+
+        initMarked() {
+            if (this._markedInited || typeof marked === 'undefined') return;
+            marked.use({
+                breaks: true,
+                gfm: true,
+            });
+            this._markedInited = true;
+        },
+
+        renderMarkdown(text, maxLen) {
+            if (!text) return '';
+            this.initMarked();
+            var src = maxLen && text.length > maxLen ? text.substring(0, maxLen) + '...' : text;
+            try {
+                return marked.parse(src);
+            } catch (e) {
+                // Fallback to escaped plain text
+                return src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+            }
+        },
+
+        // ============================================
+        // Minimap
+        // ============================================
+        _minimapVisible: true,
+
+        toggleMinimap() {
+            this._minimapVisible = !this._minimapVisible;
+            if (this._minimapVisible) {
+                this.$nextTick(() => this.renderMinimap());
+            }
+        },
+
+        renderMinimap() {
+            if (!this._minimapVisible) return;
+            var mc = this.$refs.minimapCanvas;
+            if (!mc) return;
+            var ctx = mc.getContext('2d');
+            var mw = mc.width;
+            var mh = mc.height;
+
+            ctx.clearRect(0, 0, mw, mh);
+
+            // Background
+            ctx.fillStyle = 'rgba(30, 30, 30, 0.85)';
+            ctx.fillRect(0, 0, mw, mh);
+
+            if (this.atoms.length === 0) return;
+
+            // Calculate content bounds (all atoms + groups)
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            var self = this;
+            this.atoms.forEach(function(ca) {
+                var w = ca.width || 260;
+                var h = ca.height || 120;
+                minX = Math.min(minX, ca.pos_x);
+                minY = Math.min(minY, ca.pos_y);
+                maxX = Math.max(maxX, ca.pos_x + w);
+                maxY = Math.max(maxY, ca.pos_y + h);
+            });
+            this.groups.forEach(function(g) {
+                minX = Math.min(minX, g.pos_x);
+                minY = Math.min(minY, g.pos_y);
+                maxX = Math.max(maxX, g.pos_x + g.width);
+                maxY = Math.max(maxY, g.pos_y + g.height);
+            });
+
+            // Add padding
+            var pad = 100;
+            minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+            var cw = maxX - minX;
+            var ch = maxY - minY;
+
+            // Scale to fit minimap
+            var scale = Math.min((mw - 8) / cw, (mh - 8) / ch);
+            var offX = (mw - cw * scale) / 2;
+            var offY = (mh - ch * scale) / 2;
+
+            function toMini(x, y) {
+                return { x: (x - minX) * scale + offX, y: (y - minY) * scale + offY };
+            }
+
+            // Draw groups
+            this.groups.forEach(function(g) {
+                var p = toMini(g.pos_x, g.pos_y);
+                var gw = g.width * scale;
+                var gh = g.height * scale;
+                ctx.strokeStyle = g.color + '80';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([2, 2]);
+                ctx.strokeRect(p.x, p.y, gw, gh);
+                ctx.setLineDash([]);
+            });
+
+            // Draw connections
+            ctx.lineWidth = 0.5;
+            this.connections.forEach(function(conn) {
+                var srcCa = self.atoms.find(function(a) { return a.atom_id === conn.source_atom_id; });
+                var tgtCa = self.atoms.find(function(a) { return a.atom_id === conn.target_atom_id; });
+                if (!srcCa || !tgtCa) return;
+                var sw = srcCa.width || 260, sh = srcCa.height || 120;
+                var tw = tgtCa.width || 260, th = tgtCa.height || 120;
+                var s = toMini(srcCa.pos_x + sw / 2, srcCa.pos_y + sh / 2);
+                var t = toMini(tgtCa.pos_x + tw / 2, tgtCa.pos_y + th / 2);
+                ctx.strokeStyle = (conn.color || '#94a3b8') + '60';
+                ctx.beginPath();
+                ctx.moveTo(s.x, s.y);
+                ctx.lineTo(t.x, t.y);
+                ctx.stroke();
+            });
+
+            // Draw atoms
+            this.atoms.forEach(function(ca) {
+                var type = ca.atom ? ca.atom.atom_type : 'F';
+                var cfg = self.atomTypeConfig[type] || self.atomTypeConfig.F;
+                var lifecycle = ca.atom ? ca.atom.lifecycle : 'active';
+                var alpha = { active: 'cc', aging: 'aa', archived: '66', terminal: '33' }[lifecycle] || 'cc';
+                var w = ca.width || 260;
+                var h = ca.height || 120;
+                var p = toMini(ca.pos_x, ca.pos_y);
+                var rw = Math.max(3, w * scale);
+                var rh = Math.max(2, h * scale);
+
+                ctx.fillStyle = cfg.border + alpha;
+                ctx.fillRect(p.x, p.y, rw, rh);
+
+                // Highlight selected
+                if (ca.atom_id === self.selectedAtomId) {
+                    ctx.strokeStyle = '#3b82f6';
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(p.x - 1, p.y - 1, rw + 2, rh + 2);
+                }
+            });
+
+            // Draw viewport rectangle
+            var vp = this.$refs.viewport;
+            if (!vp) return;
+            var rect = vp.getBoundingClientRect();
+            var vpLeft = (-this.panX) / this.zoom;
+            var vpTop = (-this.panY) / this.zoom;
+            var vpW = rect.width / this.zoom;
+            var vpH = rect.height / this.zoom;
+
+            var vp1 = toMini(vpLeft, vpTop);
+            var vpMW = vpW * scale;
+            var vpMH = vpH * scale;
+
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(vp1.x, vp1.y, vpMW, vpMH);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.fillRect(vp1.x, vp1.y, vpMW, vpMH);
+
+            // Store mapping for click-to-navigate
+            this._minimapMapping = { minX: minX, minY: minY, scale: scale, offX: offX, offY: offY };
+        },
+
+        _minimapMapping: null,
+
+        onMinimapClick(e) {
+            if (!this._minimapMapping) return;
+            var mc = this.$refs.minimapCanvas;
+            if (!mc) return;
+            var cr = mc.getBoundingClientRect();
+            var mx = e.clientX - cr.left;
+            var my = e.clientY - cr.top;
+            var m = this._minimapMapping;
+
+            // Convert minimap coords to canvas coords
+            var cx = (mx - m.offX) / m.scale + m.minX;
+            var cy = (my - m.offY) / m.scale + m.minY;
+
+            // Center viewport on clicked point
+            var vp = this.$refs.viewport;
+            if (!vp) return;
+            var rect = vp.getBoundingClientRect();
+            this.panX = rect.width / 2 - cx * this.zoom;
+            this.panY = rect.height / 2 - cy * this.zoom;
+            this.updateTransform();
+            this.renderConnections();
+            this.renderMinimap();
+            this.saveViewport();
+        },
+
+        _minimapDragging: false,
+
+        onMinimapMouseDown(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            this._minimapDragging = true;
+            this.onMinimapClick(e);
+        },
+
+        onMinimapMouseMove(e) {
+            if (!this._minimapDragging) return;
+            this.onMinimapClick(e);
+        },
+
+        onMinimapMouseUp(e) {
+            this._minimapDragging = false;
         },
 
         // ============================================

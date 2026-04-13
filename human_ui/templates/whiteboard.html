@@ -138,9 +138,9 @@
 
                         <div class="wb-card-body"
                              @mousedown.stop="editingAtomId !== ca.atom_id && onCardBodyMouseDown($event, ca)">
-                            <div class="wb-card-content"
+                            <div class="wb-card-content wb-markdown"
                                  x-show="editingAtomId !== ca.atom_id"
-                                 x-text="truncate(ca.atom ? ca.atom.content : '', 800)"></div>
+                                 x-html="renderMarkdown(ca.atom ? ca.atom.content : '', 800)"></div>
                             <template x-if="editingAtomId === ca.atom_id">
                                 <textarea :id="'edit-' + ca.atom_id"
                                           class="wb-card-edit"
@@ -167,8 +167,19 @@
             <!-- 框選矩形 -->
             <div class="wb-box-select" :style="boxSelectStyle"></div>
 
+            <!-- Minimap -->
+            <div class="wb-minimap" x-show="_minimapVisible"
+                 @mousedown.stop.prevent="onMinimapMouseDown($event)"
+                 @mousemove.stop="onMinimapMouseMove($event)"
+                 @mouseup.stop="onMinimapMouseUp($event)"
+                 @mouseleave="onMinimapMouseUp($event)">
+                <canvas x-ref="minimapCanvas" width="200" height="140"></canvas>
+            </div>
+
             <!-- 縮放控制 -->
             <div class="wb-zoom">
+                <button @click="toggleMinimap()" title="Minimap" style="font-size:11px;">M</button>
+                <div class="separator" style="width:1px; height:14px; background:var(--border-light); margin:0 2px;"></div>
                 <button @click="zoomOut()">-</button>
                 <span x-text="zoomPercent + '%'" style="min-width:36px; text-align:center;"></span>
                 <button @click="zoomIn()">+</button>

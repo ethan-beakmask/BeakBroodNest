@@ -144,7 +144,6 @@
     color: var(--text-secondary);
     line-height: 1.5;
     word-break: break-word;
-    white-space: pre-wrap;
 }
 
 /* ---- 卡片 Inline Edit ---- */
@@ -539,6 +538,127 @@
 
 .wb-group:hover .wb-group-resize { opacity: 0.6; }
 .wb-group-resize:hover { opacity: 1 !important; }
+
+/* ---- Minimap ---- */
+.wb-minimap {
+    position: absolute;
+    bottom: 44px; right: 12px;
+    width: 200px; height: 140px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    overflow: hidden;
+    z-index: 100;
+    cursor: crosshair;
+    box-shadow: var(--card-shadow);
+}
+
+.wb-minimap canvas {
+    display: block;
+    width: 200px; height: 140px;
+}
+
+/* ---- Markdown 卡片內容 ---- */
+.wb-markdown {
+    white-space: normal;
+}
+
+.wb-markdown h1, .wb-markdown h2, .wb-markdown h3,
+.wb-markdown h4, .wb-markdown h5, .wb-markdown h6 {
+    margin: 4px 0 2px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+.wb-markdown h1 { font-size: 14px; }
+.wb-markdown h2 { font-size: 13px; }
+.wb-markdown h3 { font-size: 12px; }
+.wb-markdown h4, .wb-markdown h5, .wb-markdown h6 { font-size: 11px; }
+
+.wb-markdown p {
+    margin: 2px 0;
+}
+
+.wb-markdown ul, .wb-markdown ol {
+    margin: 2px 0;
+    padding-left: 18px;
+}
+
+.wb-markdown li {
+    margin: 1px 0;
+}
+
+.wb-markdown code {
+    background: var(--bg-tertiary);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.wb-markdown pre {
+    background: var(--bg-tertiary);
+    padding: 4px 6px;
+    border-radius: 4px;
+    margin: 4px 0;
+    overflow-x: auto;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+.wb-markdown pre code {
+    background: none;
+    padding: 0;
+}
+
+.wb-markdown blockquote {
+    border-left: 3px solid var(--border-light);
+    padding-left: 8px;
+    margin: 4px 0;
+    color: var(--text-muted);
+}
+
+.wb-markdown table {
+    border-collapse: collapse;
+    margin: 4px 0;
+    font-size: 11px;
+    width: 100%;
+}
+
+.wb-markdown th, .wb-markdown td {
+    border: 1px solid var(--border-light);
+    padding: 2px 6px;
+    text-align: left;
+}
+
+.wb-markdown th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+}
+
+.wb-markdown hr {
+    border: none;
+    border-top: 1px solid var(--border-light);
+    margin: 4px 0;
+}
+
+.wb-markdown a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.wb-markdown a:hover {
+    text-decoration: underline;
+}
+
+.wb-markdown strong {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.wb-markdown img {
+    max-width: 100%;
+    height: auto;
+}
 
 /* ---- 框選矩形 ---- */
 .wb-box-select {
