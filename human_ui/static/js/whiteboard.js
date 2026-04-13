@@ -49,8 +49,16 @@ function whiteboardApp(canvasId) {
         searchQuery: '',
         searchResults: [],
         pendingConnection: null,
-        selectedRelationType: 'supports',
+        selectedRelationType: 'follows',
         relationLabel: '',
+
+        // Connection drag (from anchors)
+        isConnDragging: false,
+        connDragSourceAtomId: null,
+        connDragSourceAnchor: null,
+        connDragHoverAtomId: null,
+        connDragMouseX: 0,
+        connDragMouseY: 0,
 
         // Phase 3: Relations & Block Chain
         selectedAtomDetails: null,
@@ -68,20 +76,22 @@ function whiteboardApp(canvasId) {
         },
 
         relationTypeList: [
-            { value: 'causes',       label: '因果' },
-            { value: 'supports',     label: '支持' },
-            { value: 'contradicts',  label: '矛盾' },
-            { value: 'derives_from', label: '衍生' },
-            { value: 'follows',      label: '順序' },
-            { value: 'contains',     label: '包含' },
-            { value: 'refutes',      label: '否定' },
-            { value: 'blocks',       label: '阻塞' },
+            { value: 'follows',      label: '順序', desc: 'B 在 A 之後',  color: '#3b82f6' },
+            { value: 'blocks',       label: '阻塞', desc: 'A 擋住 B',    color: '#dc2626' },
+            { value: 'contains',     label: '包含', desc: 'A 包含 B',    color: '#6b7280' },
+            { value: 'supports',     label: '支持', desc: 'A 支持 B',    color: '#10b981' },
+            { value: 'contradicts',  label: '矛盾', desc: 'A 與 B 互斥', color: '#f59e0b' },
+            { value: 'derives_from', label: '衍生', desc: 'B 衍生自 A',  color: '#8b5cf6' },
+            { value: 'supersedes',   label: '取代', desc: 'A 取代 B',    color: '#a855f7' },
+            { value: 'causes',       label: '因果', desc: 'A 導致 B',    color: '#ef4444' },
+            { value: 'enables',      label: '啟用', desc: 'A 使 B 可能', color: '#f97316' },
+            { value: 'references',   label: '參考', desc: 'A 參考 B',    color: '#64748b' },
         ],
 
         relationLabelMap: {
-            causes: '因果', supports: '支持', contradicts: '矛盾',
-            derives_from: '衍生', follows: '順序', contains: '包含',
-            refutes: '否定', blocks: '阻塞',
+            causes: '因果', enables: '啟用', supports: '支持', contradicts: '矛盾',
+            derives_from: '衍生', supersedes: '取代', follows: '順序',
+            contains: '包含', references: '參考', blocks: '阻塞',
         },
 
         // ============================================
@@ -93,6 +103,10 @@ function whiteboardApp(canvasId) {
                 this.renderConnections();
                 this.setupWheelZoom();
                 if (this.atoms.length > 0) this.fitView();
+            });
+            // Cancel connection drag if mouse released outside viewport
+            document.addEventListener('mouseup', () => {
+                if (this.isConnDragging) this.cancelConnDrag();
             });
         },
 
@@ -164,6 +178,12 @@ function whiteboardApp(canvasId) {
         },
 
         onViewportMouseMove(e) {
+            if (this.isConnDragging) {
+                this.connDragMouseX = e.clientX;
+                this.connDragMouseY = e.clientY;
+                this.updatePreviewLine();
+                return;
+            }
             if (this.isPanning) {
                 this.panX = e.clientX - this.panStartX;
                 this.panY = e.clientY - this.panStartY;
@@ -181,6 +201,10 @@ function whiteboardApp(canvasId) {
         },
 
         onViewportMouseUp(e) {
+            if (this.isConnDragging) {
+                this.endConnDrag();
+                return;
+            }
             if (this.isPanning) {
                 this.isPanning = false;
                 this.saveViewport();
@@ -462,6 +486,125 @@ function whiteboardApp(canvasId) {
         },
 
         // ============================================
+        // Connection Drag (from anchors)
+        // ============================================
+        startConnDrag(e, ca, anchor) {
+            this.isConnDragging = true;
+            this.connDragSourceAtomId = ca.atom_id;
+            this.connDragSourceAnchor = anchor;
+            this.connDragHoverAtomId = null;
+            this.connDragMouseX = e.clientX;
+            this.connDragMouseY = e.clientY;
+            this.updatePreviewLine();
+        },
+
+        endConnDrag() {
+            if (this.connDragHoverAtomId && this.connDragHoverAtomId !== this.connDragSourceAtomId) {
+                this.pendingConnection = {
+                    sourceAtomId: this.connDragSourceAtomId,
+                    targetAtomId: this.connDragHoverAtomId,
+                };
+                this.selectedRelationType = 'follows';
+                this.relationLabel = '';
+                this.showRelationModal = true;
+            }
+            this.isConnDragging = false;
+            this.connDragSourceAtomId = null;
+            this.connDragSourceAnchor = null;
+            this.connDragHoverAtomId = null;
+            this.clearPreviewLine();
+        },
+
+        cancelConnDrag() {
+            this.isConnDragging = false;
+            this.connDragSourceAtomId = null;
+            this.connDragSourceAnchor = null;
+            this.connDragHoverAtomId = null;
+            this.clearPreviewLine();
+        },
+
+        getAnchorPos(atomId, anchor) {
+            var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
+            if (!ca) return { x: 0, y: 0 };
+            var el = document.getElementById('card-' + atomId);
+            var w = el ? el.offsetWidth : 260;
+            var h = el ? el.offsetHeight : 120;
+            switch (anchor) {
+                case 'top':    return { x: ca.pos_x + w / 2, y: ca.pos_y };
+                case 'bottom': return { x: ca.pos_x + w / 2, y: ca.pos_y + h };
+                case 'left':   return { x: ca.pos_x, y: ca.pos_y + h / 2 };
+                case 'right':  return { x: ca.pos_x + w, y: ca.pos_y + h / 2 };
+                default:       return { x: ca.pos_x + w / 2, y: ca.pos_y + h / 2 };
+            }
+        },
+
+        findNearestAnchor(atomId, canvasX, canvasY) {
+            var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
+            if (!ca) return { x: canvasX, y: canvasY };
+            var el = document.getElementById('card-' + atomId);
+            var w = el ? el.offsetWidth : 260;
+            var h = el ? el.offsetHeight : 120;
+            var anchors = [
+                { x: ca.pos_x + w / 2, y: ca.pos_y },
+                { x: ca.pos_x + w / 2, y: ca.pos_y + h },
+                { x: ca.pos_x, y: ca.pos_y + h / 2 },
+                { x: ca.pos_x + w, y: ca.pos_y + h / 2 },
+            ];
+            var nearest = anchors[0];
+            var minDist = Infinity;
+            for (var i = 0; i < anchors.length; i++) {
+                var d = Math.hypot(anchors[i].x - canvasX, anchors[i].y - canvasY);
+                if (d < minDist) { minDist = d; nearest = anchors[i]; }
+            }
+            return nearest;
+        },
+
+        updatePreviewLine() {
+            var line = this.$refs.previewLine;
+            if (!line || !this.isConnDragging) return;
+
+            var src = this.getAnchorPos(this.connDragSourceAtomId, this.connDragSourceAnchor);
+            var tgt = this.screenToCanvas(this.connDragMouseX, this.connDragMouseY);
+
+            if (this.connDragHoverAtomId) {
+                var snap = this.findNearestAnchor(this.connDragHoverAtomId, tgt.x, tgt.y);
+                tgt.x = snap.x;
+                tgt.y = snap.y;
+            }
+
+            var dx = tgt.x - src.x;
+            var cx1 = src.x + dx * 0.4;
+            var cx2 = src.x + dx * 0.6;
+
+            line.setAttribute('d',
+                'M ' + src.x + ' ' + src.y +
+                ' C ' + cx1 + ' ' + src.y +
+                ', ' + cx2 + ' ' + tgt.y +
+                ', ' + tgt.x + ' ' + tgt.y);
+            line.style.display = '';
+        },
+
+        clearPreviewLine() {
+            var line = this.$refs.previewLine;
+            if (line) {
+                line.setAttribute('d', '');
+                line.style.display = 'none';
+            }
+        },
+
+        onCardMouseEnterForConn(ca) {
+            if (this.isConnDragging && ca.atom_id !== this.connDragSourceAtomId) {
+                this.connDragHoverAtomId = ca.atom_id;
+            }
+        },
+
+        onCardMouseLeaveForConn(ca) {
+            if (this.connDragHoverAtomId === ca.atom_id) {
+                this.connDragHoverAtomId = null;
+            }
+        },
+
+        // ============================================
         // Render Connections (SVG)
         // ============================================
         renderConnections() {
@@ -504,20 +647,46 @@ function whiteboardApp(canvasId) {
                 const tw = tgtEl ? tgtEl.offsetWidth : 260;
                 const th = tgtEl ? tgtEl.offsetHeight : 120;
 
-                const sx = srcCa.pos_x + sw / 2;
-                const sy = srcCa.pos_y + sh / 2;
-                const tx = tgtCa.pos_x + tw / 2;
-                const ty = tgtCa.pos_y + th / 2;
+                // Edge-to-edge: line starts/ends at card border, not center
+                var scx = srcCa.pos_x + sw / 2;
+                var scy = srcCa.pos_y + sh / 2;
+                var tcx = tgtCa.pos_x + tw / 2;
+                var tcy = tgtCa.pos_y + th / 2;
+                var ddx = tcx - scx;
+                var ddy = tcy - scy;
+                var sx, sy, tx, ty, cx1, cy1, cx2, cy2;
 
-                const dx = tx - sx;
-                const cx1 = sx + dx * 0.4;
-                const cx2 = sx + dx * 0.6;
+                if (Math.abs(ddx) > Math.abs(ddy)) {
+                    // Horizontal arrangement
+                    if (ddx > 0) {
+                        sx = srcCa.pos_x + sw; sy = scy;
+                        tx = tgtCa.pos_x;      ty = tcy;
+                    } else {
+                        sx = srcCa.pos_x;       sy = scy;
+                        tx = tgtCa.pos_x + tw;  ty = tcy;
+                    }
+                    var gx = Math.max(Math.abs(tx - sx) * 0.4, 20);
+                    cx1 = sx + (ddx > 0 ? gx : -gx); cy1 = sy;
+                    cx2 = tx + (ddx > 0 ? -gx : gx); cy2 = ty;
+                } else {
+                    // Vertical arrangement
+                    if (ddy > 0) {
+                        sx = scx; sy = srcCa.pos_y + sh;
+                        tx = tcx; ty = tgtCa.pos_y;
+                    } else {
+                        sx = scx; sy = srcCa.pos_y;
+                        tx = tcx; ty = tgtCa.pos_y + th;
+                    }
+                    var gy = Math.max(Math.abs(ty - sy) * 0.4, 20);
+                    cx1 = sx; cy1 = sy + (ddy > 0 ? gy : -gy);
+                    cx2 = tx; cy2 = ty + (ddy > 0 ? -gy : gy);
+                }
 
                 const lc = conn.color || '#94a3b8';
                 const mid = 'arr-' + lc.replace('#', '');
 
                 const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', 'M ' + sx + ' ' + sy + ' C ' + cx1 + ' ' + sy + ', ' + cx2 + ' ' + ty + ', ' + tx + ' ' + ty);
+                path.setAttribute('d', 'M ' + sx + ' ' + sy + ' C ' + cx1 + ' ' + cy1 + ', ' + cx2 + ' ' + cy2 + ', ' + tx + ' ' + ty);
                 path.setAttribute('fill', 'none');
                 path.setAttribute('stroke', lc);
                 path.setAttribute('stroke-width', '2');

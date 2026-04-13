@@ -34,6 +34,17 @@ app = Flask(__name__)
 logger = logging.getLogger('beak_cortex')
 
 
+@app.context_processor
+def inject_cache_ver():
+    """靜態檔快取破除：用 static/ 目錄最新修改時間當版本號"""
+    try:
+        static_dir = Path(app.static_folder)
+        mtime = max(f.stat().st_mtime for f in static_dir.rglob('*') if f.is_file())
+        return {'cache_ver': int(mtime)}
+    except (ValueError, OSError):
+        return {'cache_ver': 0}
+
+
 # ============================================================
 # 首頁
 # ============================================================

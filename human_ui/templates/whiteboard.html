@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block title %}白板 - BeakCortex{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/static/css/whiteboard.css">{% endblock %}
-{% block extra_js %}<script src="/static/js/whiteboard.js"></script>{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/whiteboard.css?v={{ cache_ver }}">{% endblock %}
+{% block extra_js %}<script src="/static/js/whiteboard.js?v={{ cache_ver }}"></script>{% endblock %}
 
 {% block body %}
 <div x-data="whiteboardApp({{ canvas_id }})" x-init="init()"
      @click="closeContextMenu()"
-     @keydown.escape.window="deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false">
+     @keydown.escape.window="cancelConnDrag(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false">
 
     <!-- Header -->
     <div class="app-header">
@@ -55,7 +55,7 @@
         <!-- 白板主區域 -->
         <div class="wb-viewport"
              x-ref="viewport"
-             :class="{ 'connect-mode': mode === 'connect' }"
+             :class="{ 'connect-mode': mode === 'connect', 'conn-dragging': isConnDragging }"
              @mousedown="onViewportMouseDown($event)"
              @mousemove="onViewportMouseMove($event)"
              @mouseup="onViewportMouseUp($event)"
@@ -74,6 +74,18 @@
             <!-- 畫布 -->
             <div class="wb-canvas" x-ref="canvas" @contextmenu.prevent>
                 <svg class="wb-connections" x-ref="connSvg"></svg>
+                <!-- 連線預覽 -->
+                <svg class="wb-connections wb-preview-layer" x-ref="previewSvg">
+                    <defs>
+                        <marker id="preview-arrow" viewBox="0 0 10 10" refX="9" refY="5"
+                                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+                        </marker>
+                    </defs>
+                    <path x-ref="previewLine" d="" fill="none"
+                          stroke="#3b82f6" stroke-width="2.5" stroke-dasharray="6 4"
+                          marker-end="url(#preview-arrow)" style="display:none;"/>
+                </svg>
 
                 <!-- 原子卡片 -->
                 <template x-for="ca in atoms" :key="ca.id">
@@ -83,18 +95,21 @@
                              selected: selectedAtomId === ca.atom_id,
                              dragging: dragCard && dragCard.atom_id === ca.atom_id,
                              'conn-source': mode === 'connect' && connSourceAtomId === ca.atom_id,
+                             'conn-drop-target': isConnDragging && connDragHoverAtomId === ca.atom_id,
                              highlighted: highlightedAtomIds.includes(ca.atom_id),
                          }"
                          :style="getCardStyle(ca)"
                          @click.stop="mode === 'connect' ? onCardClickForConnect($event, ca) : selectCard(ca.atom_id)"
-                         @contextmenu.prevent.stop="onCardContextMenu($event, ca)">
+                         @contextmenu.prevent.stop="onCardContextMenu($event, ca)"
+                         @mouseenter="onCardMouseEnterForConn(ca)"
+                         @mouseleave="onCardMouseLeaveForConn(ca)">
 
                         <div class="wb-card-blocked" x-show="ca.is_blocked">BLOCKED</div>
 
-                        <div class="wb-card-anchor top"></div>
-                        <div class="wb-card-anchor bottom"></div>
-                        <div class="wb-card-anchor left"></div>
-                        <div class="wb-card-anchor right"></div>
+                        <div class="wb-card-anchor top" @mousedown.stop.prevent="startConnDrag($event, ca, 'top')"></div>
+                        <div class="wb-card-anchor bottom" @mousedown.stop.prevent="startConnDrag($event, ca, 'bottom')"></div>
+                        <div class="wb-card-anchor left" @mousedown.stop.prevent="startConnDrag($event, ca, 'left')"></div>
+                        <div class="wb-card-anchor right" @mousedown.stop.prevent="startConnDrag($event, ca, 'right')"></div>
 
                         <div class="wb-card-header" @mousedown.stop="onCardMouseDown($event, ca)">
                             <span class="wb-card-type"
@@ -437,8 +452,9 @@
                                    :class="{ selected: selectedRelationType === rt.value }">
                                 <input type="radio" name="relType" :value="rt.value"
                                        x-model="selectedRelationType" style="margin-right:8px;">
+                                <span class="relation-color-dot" :style="'background:' + rt.color"></span>
                                 <span x-text="rt.label"></span>
-                                <span class="text-muted text-sm" style="margin-left:4px;" x-text="'(' + rt.value + ')'"></span>
+                                <span class="text-muted text-sm" style="margin-left:4px;" x-text="rt.desc"></span>
                             </label>
                         </template>
                     </div>
