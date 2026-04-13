@@ -3,10 +3,11 @@
 
 流程:
   1. 在 DB 建立 WorkerTask (pending)
-  2. 將 instruction 寫入暫存檔
+  2. 將 instruction 寫入暫存檔（含 KB preamble）
   3. 在 tmux 新建 window 執行 wrapper.sh
   4. 更新狀態為 dispatched
 """
+import configparser
 import datetime
 import logging
 import os
@@ -15,6 +16,7 @@ import shlex
 import subprocess
 import tempfile
 import time
+from pathlib import Path
 
 from core.db import session_scope
 from orchestrator.models import WorkerTask
@@ -28,6 +30,35 @@ _SESSION_ID = '{host}_{ts}'.format(
 )
 
 WRAPPER_PATH = os.path.join(os.path.dirname(__file__), 'wrapper.sh')
+
+
+def _load_kb_url() -> str:
+    """從 config.ini 讀取 BeakCortex HTTP base URL"""
+    config_path = Path(__file__).resolve().parent.parent / 'config.ini'
+    cfg = configparser.ConfigParser()
+    cfg.read(str(config_path), encoding='utf-8')
+    host = cfg.get('flask', 'host', fallback='192.168.0.16')
+    port = cfg.getint('flask', 'port', fallback=5170)
+    return f'http://{host}:{port}'
+
+
+def _build_kb_preamble(worker_id: str, session_id: str) -> str:
+    """生成 KB 存取說明 preamble，注入到支線 instruction 前面"""
+    base_url = _load_kb_url()
+    return (
+        '[BeakCortex KB Access]\n'
+        '你可以透過以下 HTTP API 存取 BeakCortex 知識庫（使用 Bash curl）:\n'
+        f'  Base URL: {base_url}\n'
+        f'  認證 Header: -H "X-Worker-Id: {worker_id}" -H "X-Session-Id: {session_id}"\n'
+        '\n'
+        '可用端點:\n'
+        '  GET  /api/worker/kb/search?q=<keyword>&tag=<tag>&limit=<n>  搜尋原子\n'
+        '  GET  /api/worker/kb/atoms/<id>                              讀取原子\n'
+        '  POST /api/worker/kb/atoms  body: {"title":"...","content":"...","atom_type":"F","tags":["..."]}  寫入原子\n'
+        '\n'
+        '使用時機: 需要查詢專案知識或儲存研究結果時。不強制使用。\n'
+        '[/BeakCortex KB Access]\n\n'
+    )
 
 
 # ============================================================
@@ -129,12 +160,13 @@ def dispatch_task(task_id: int) -> dict:
 
         main_pane = task.main_pane or tmux_info.get('pane_id', '')
 
-        # 將 instruction 寫入暫存檔（避免 shell 引號問題）
+        # 將 instruction 寫入暫存檔（含 KB preamble，避免 shell 引號問題）
+        kb_preamble = _build_kb_preamble(task.worker_id, task.session_id)
         instr_file = tempfile.NamedTemporaryFile(
             mode='w', prefix=f'beak-task-{task_id}-', suffix='.txt',
             dir='/tmp', delete=False,
         )
-        instr_file.write(task.instruction)
+        instr_file.write(kb_preamble + task.instruction)
         instr_file.close()
 
         # 組裝 wrapper 指令

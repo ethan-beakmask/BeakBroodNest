@@ -746,6 +746,280 @@ def orchestrator_task_detail(task_id):
 
 
 # ============================================================
+# Report Review & Promote API (2.1)
+# ============================================================
+
+@app.route('/api/orchestrator/reports/<int:report_id>/review', methods=['PUT'])
+def review_report(report_id):
+    """審查支線報告：approve 或 reject"""
+    data = request.get_json()
+    if not data or 'action' not in data:
+        return jsonify({'error': '需要 action 欄位 (approve/reject)'}), 400
+
+    action = data['action']
+    if action not in ('approve', 'reject'):
+        return jsonify({'error': f'無效的 action: {action}，允許值: approve, reject'}), 400
+
+    with session_scope() as s:
+        report = s.query(WorkerReport).filter(WorkerReport.id == report_id).first()
+        if not report:
+            return jsonify({'error': f'報告 #{report_id} 不存在'}), 404
+
+        if report.review_status not in ('pending',):
+            return jsonify({
+                'error': f'報告 #{report_id} 目前狀態為 {report.review_status}，僅 pending 可審查',
+            }), 409
+
+        if action == 'approve':
+            report.review_status = 'approved'
+        else:
+            report.review_status = 'rejected'
+
+        report.reviewer_id = data.get('reviewer_id', 'human')
+        report.reviewed_at = datetime.datetime.now()
+        report.review_notes = data.get('notes', '')
+
+        return jsonify(report.to_dict())
+
+
+@app.route('/api/orchestrator/reports/<int:report_id>/promote', methods=['POST'])
+def promote_report(report_id):
+    """將報告提升為正式知識原子。
+
+    可選欄位（不傳則從 report/task 取預設值）：
+      title: 原子標題（預設用 task.title）
+      content: 原子內容（預設用 report.content）
+      atom_type: 預設 D（歸納）
+      tags: 標籤名稱列表（不存在的自動建立）
+      reviewer_id: 審查者 ID
+    """
+    data = request.get_json() or {}
+
+    with session_scope() as s:
+        report = (
+            s.query(WorkerReport)
+            .filter(WorkerReport.id == report_id)
+            .first()
+        )
+        if not report:
+            return jsonify({'error': f'報告 #{report_id} 不存在'}), 404
+
+        if report.review_status == 'promoted':
+            return jsonify({
+                'error': f'報告 #{report_id} 已被提升為原子 #{report.promoted_atom_id}',
+            }), 409
+
+        if report.review_status not in ('pending', 'approved'):
+            return jsonify({
+                'error': f'報告 #{report_id} 狀態為 {report.review_status}，僅 pending/approved 可提升',
+            }), 409
+
+        # 取得關聯 task 作為預設值來源
+        task = s.query(WorkerTask).filter(WorkerTask.id == report.task_id).first()
+
+        # 建立知識原子
+        atom = KnowledgeAtom(
+            title=data.get('title') or (task.title if task else f'Report #{report_id}'),
+            content=data.get('content') or report.content,
+            content_type=report.content_type or 'markdown',
+            atom_type=data.get('atom_type', 'D'),
+            lifecycle='active',
+            source='derived',
+            source_detail=f'promoted from report #{report_id}, task #{report.task_id}',
+        )
+        s.add(atom)
+        s.flush()
+
+        # 處理標籤
+        tag_names = data.get('tags', [])
+        if tag_names:
+            tag_objects = []
+            for tag_name in tag_names:
+                tag = s.query(Tag).filter(Tag.name == tag_name).first()
+                if not tag:
+                    tag = Tag(name=tag_name, tag_type='tag')
+                    s.add(tag)
+                    s.flush()
+                tag_objects.append(tag)
+            atom.tags = tag_objects
+
+        # 回填 report
+        report.review_status = 'promoted'
+        report.promoted_atom_id = atom.id
+        report.reviewer_id = data.get('reviewer_id', 'human')
+        report.reviewed_at = datetime.datetime.now()
+
+        s.flush()
+
+        result = report.to_dict()
+        result['promoted_atom'] = atom.to_dict(include_tags=True)
+
+        # Auto-embed（背景容錯）
+        try:
+            embed_service.embed_atom(s, atom.id)
+        except Exception as e:
+            logger.warning(f'Auto-embed failed for promoted atom {atom.id}: {e}')
+
+        return jsonify(result), 201
+
+
+# ============================================================
+# Worker KB API -- 支線情報共享 (2.2)
+# ============================================================
+
+def _authenticate_worker(s):
+    """驗證支線身份，回傳 (worker_task, error_response)。
+    支線以 X-Worker-Id + X-Session-Id header 認證。
+    """
+    worker_id = request.headers.get('X-Worker-Id', '').strip()
+    session_id = request.headers.get('X-Session-Id', '').strip()
+
+    if not worker_id or not session_id:
+        return None, (jsonify({'error': '缺少 X-Worker-Id 或 X-Session-Id header'}), 401)
+
+    task = (
+        s.query(WorkerTask)
+        .filter(
+            WorkerTask.worker_id == worker_id,
+            WorkerTask.session_id == session_id,
+            WorkerTask.status.in_(['dispatched', 'running']),
+        )
+        .first()
+    )
+    if not task:
+        return None, (jsonify({'error': '無效的 worker 憑證或任務已結束'}), 403)
+
+    return task, None
+
+
+@app.route('/api/worker/kb/search', methods=['GET'])
+def worker_kb_search():
+    """支線搜尋知識原子（需 worker 認證）"""
+    with session_scope() as s:
+        worker_task, err = _authenticate_worker(s)
+        if err:
+            return err
+
+        keyword = request.args.get('q', '').strip()
+        tag_name = request.args.get('tag', '').strip()
+        limit = min(request.args.get('limit', 20, type=int), 50)
+
+        q = s.query(KnowledgeAtom).filter(
+            KnowledgeAtom.is_deleted == False,
+            KnowledgeAtom.lifecycle.in_(['active', 'aging']),
+        )
+
+        if keyword:
+            pattern = f'%{keyword}%'
+            q = q.filter(
+                KnowledgeAtom.title.ilike(pattern) |
+                KnowledgeAtom.content.ilike(pattern)
+            )
+
+        if tag_name:
+            tag_subq = (
+                s.query(atom_tags.c.atom_id)
+                .join(Tag, Tag.id == atom_tags.c.tag_id)
+                .filter(Tag.name == tag_name)
+            )
+            q = q.filter(KnowledgeAtom.id.in_(tag_subq.subquery().select()))
+
+        atoms = (
+            q.order_by(KnowledgeAtom.vitality_score.desc(), KnowledgeAtom.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return jsonify({
+            'total': len(atoms),
+            'items': [
+                {
+                    'id': a.id,
+                    'title': a.title,
+                    'content': a.content[:500] if a.content else '',
+                    'atom_type': a.atom_type,
+                    'source': a.source,
+                    'updated_at': a.updated_at.isoformat() if a.updated_at else None,
+                }
+                for a in atoms
+            ],
+        })
+
+
+@app.route('/api/worker/kb/atoms/<int:atom_id>', methods=['GET'])
+def worker_kb_get_atom(atom_id):
+    """支線讀取單一知識原子（需 worker 認證）"""
+    with session_scope() as s:
+        worker_task, err = _authenticate_worker(s)
+        if err:
+            return err
+
+        atom = (
+            s.query(KnowledgeAtom)
+            .filter(KnowledgeAtom.id == atom_id, KnowledgeAtom.is_deleted == False)
+            .first()
+        )
+        if not atom:
+            return jsonify({'error': f'原子 #{atom_id} 不存在'}), 404
+
+        atom.last_accessed_at = datetime.datetime.now()
+        atom.access_count += 1
+
+        return jsonify(atom.to_dict(include_tags=True))
+
+
+@app.route('/api/worker/kb/atoms', methods=['POST'])
+def worker_kb_store_atom():
+    """支線寫入知識原子（需 worker 認證）。
+    source 固定為 derived，source_detail 自動帶 worker 資訊。
+    """
+    data = request.get_json()
+    if not data or 'title' not in data:
+        return jsonify({'error': '需要 title 欄位'}), 400
+
+    with session_scope() as s:
+        worker_task, err = _authenticate_worker(s)
+        if err:
+            return err
+
+        atom = KnowledgeAtom(
+            title=data['title'],
+            content=data.get('content', ''),
+            content_type=data.get('content_type', 'markdown'),
+            atom_type=data.get('atom_type', 'F'),
+            lifecycle='active',
+            source='derived',
+            source_detail=f'worker:{worker_task.worker_id}, task:{worker_task.id}',
+        )
+        s.add(atom)
+        s.flush()
+
+        # 處理標籤
+        tag_names = data.get('tags', [])
+        if tag_names:
+            tag_objects = []
+            for tag_name in tag_names:
+                tag = s.query(Tag).filter(Tag.name == tag_name).first()
+                if not tag:
+                    tag = Tag(name=tag_name, tag_type='tag')
+                    s.add(tag)
+                    s.flush()
+                tag_objects.append(tag)
+            atom.tags = tag_objects
+
+        s.flush()
+        result = atom.to_dict(include_tags=True)
+
+        # Auto-embed（背景容錯）
+        try:
+            embed_service.embed_atom(s, atom.id)
+        except Exception as e:
+            logger.warning(f'Auto-embed failed for worker atom {atom.id}: {e}')
+
+        return jsonify(result), 201
+
+
+# ============================================================
 # Tags API
 # ============================================================
 
