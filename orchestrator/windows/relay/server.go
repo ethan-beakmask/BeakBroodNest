@@ -34,14 +34,32 @@ func NewServer(cfg *Config, state *State) *Server {
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/launch", s.handleLaunch)
 
+	var handler http.Handler = mux
+	if cfg.Auth.Token != "" {
+		handler = s.authMiddleware(mux)
+	}
+
 	s.server = &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Bind, cfg.Server.Port),
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 
 	return s
+}
+
+func (s *Server) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		expected := "Bearer " + s.cfg.Auth.Token
+		if auth != expected {
+			log.Printf("[AUTH] 拒絕: %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+			jsonError(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) Start() {

@@ -5,7 +5,7 @@
 # 由 dispatcher.py 在 tmux window 中啟動。
 # 執行 claude -p，擷取輸出，呼叫 collector.py 儲存結果。
 #
-# 用法: wrapper.sh <task_id> <model> <working_dir> <instruction_file> <main_pane>
+# 用法: wrapper.sh <task_id> <model> <working_dir> <instruction_file> <main_pane> <session_id>
 # ============================================================
 set -uo pipefail
 
@@ -14,6 +14,7 @@ MODEL="$2"
 WORKING_DIR="$3"
 INSTRUCTION_FILE="$4"
 MAIN_PANE="${5:-}"
+SESSION_ID="${6:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_PYTHON="/opt/BeakCortex/venv/bin/python"
@@ -30,7 +31,8 @@ cd "$WORKING_DIR" || {
         --task-id "$TASK_ID" \
         --exit-code 1 \
         --output-file "$OUTPUT_FILE" \
-        --main-pane "$MAIN_PANE"
+        --main-pane "$MAIN_PANE" \
+        --session-id "$SESSION_ID"
     rm -f "$INSTRUCTION_FILE" "$OUTPUT_FILE"
     exit 1
 }
@@ -56,7 +58,8 @@ echo "[BeakCortex Worker] claude exited with code ${EXIT_CODE}"
     --task-id "$TASK_ID" \
     --exit-code "$EXIT_CODE" \
     --output-file "$OUTPUT_FILE" \
-    --main-pane "$MAIN_PANE"
+    --main-pane "$MAIN_PANE" \
+    --session-id "$SESSION_ID"
 
 # 清理
 rm -f "$INSTRUCTION_FILE" "$OUTPUT_FILE"

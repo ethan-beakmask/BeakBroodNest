@@ -11,7 +11,7 @@ import (
 
 const (
 	appName    = "BeakCortex Relay"
-	appVersion = "1.1.0"
+	appVersion = "1.2.1"
 )
 
 func main() {
@@ -26,10 +26,8 @@ func main() {
 	flag.BoolVar(&showHelp, "help", false, "顯示使用說明")
 	flag.Parse()
 
-	// 顯示說明（無論是否帶 --help，都會印出後繼續執行）
-	printUsage()
-
 	if showHelp {
+		printUsage()
 		os.Exit(0)
 	}
 

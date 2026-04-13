@@ -34,6 +34,9 @@ class WorkerTask(Base):
     status: Mapped[str] = mapped_column(String(20), default='pending', nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=5)
 
+    # 對話級別識別碼（同一主線對話內所有 dispatch 共用）
+    session_id: Mapped[str] = mapped_column(String(100), default='')
+
     # tmux 座標
     tmux_session: Mapped[str] = mapped_column(String(100), default='')
     tmux_pane: Mapped[str] = mapped_column(String(50), default='')
@@ -60,6 +63,7 @@ class WorkerTask(Base):
     __table_args__ = (
         Index('idx_worker_tasks_status', 'status'),
         Index('idx_worker_tasks_worker_id', 'worker_id'),
+        Index('idx_worker_tasks_session', 'session_id'),
     )
 
     def to_dict(self, brief: bool = False) -> dict:
@@ -70,6 +74,7 @@ class WorkerTask(Base):
             'model': self.model,
             'status': self.status,
             'priority': self.priority,
+            'session_id': self.session_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'dispatched_at': self.dispatched_at.isoformat() if self.dispatched_at else None,
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
@@ -94,6 +99,9 @@ class WorkerReport(Base):
     )
     worker_id: Mapped[str] = mapped_column(String(36), nullable=False)
     model: Mapped[str] = mapped_column(String(30), default='')
+
+    # 對話級別識別碼（從 WorkerTask 繼承）
+    session_id: Mapped[str] = mapped_column(String(100), default='')
 
     # 內容
     content: Mapped[str] = mapped_column(Text, default='')
@@ -121,6 +129,7 @@ class WorkerReport(Base):
     __table_args__ = (
         Index('idx_worker_reports_task_id', 'task_id'),
         Index('idx_worker_reports_review_status', 'review_status'),
+        Index('idx_worker_reports_session', 'session_id'),
     )
 
     def to_dict(self, include_raw: bool = False) -> dict:
@@ -128,6 +137,7 @@ class WorkerReport(Base):
             'id': self.id,
             'task_id': self.task_id,
             'worker_id': self.worker_id,
+            'session_id': self.session_id,
             'model': self.model,
             'content': self.content,
             'content_type': self.content_type,

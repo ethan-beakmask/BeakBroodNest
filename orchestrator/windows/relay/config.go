@@ -13,6 +13,10 @@ type ServerConfig struct {
 	Bind string `yaml:"bind"`
 }
 
+type AuthConfig struct {
+	Token string `yaml:"token"`
+}
+
 type MobaXtermConfig struct {
 	Path            string `yaml:"path"`
 	DefaultBookmark string `yaml:"default_bookmark"`
@@ -21,6 +25,7 @@ type MobaXtermConfig struct {
 
 type Config struct {
 	Server    ServerConfig    `yaml:"server"`
+	Auth      AuthConfig      `yaml:"auth"`
 	MobaXterm MobaXtermConfig `yaml:"mobaxterm"`
 }
 

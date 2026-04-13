@@ -10,14 +10,22 @@
 import datetime
 import logging
 import os
+import platform
 import shlex
 import subprocess
 import tempfile
+import time
 
 from core.db import session_scope
 from orchestrator.models import WorkerTask
 
 logger = logging.getLogger('orchestrator.dispatcher')
+
+# 對話級別 session_id（模組載入時產生一次，同一主線對話內共用）
+_SESSION_ID = '{host}_{ts}'.format(
+    host=platform.node().split('.')[0][:20],
+    ts=format(int(time.time()), 'x'),
+)
 
 WRAPPER_PATH = os.path.join(os.path.dirname(__file__), 'wrapper.sh')
 
@@ -67,6 +75,11 @@ def _create_tmux_window(session_name: str, window_name: str, cmd: str) -> str:
 # 任務建立 + 派發
 # ============================================================
 
+def get_session_id() -> str:
+    """取得目前對話的 session_id"""
+    return _SESSION_ID
+
+
 def create_task(
     title: str,
     instruction: str,
@@ -86,6 +99,7 @@ def create_task(
             priority=priority,
             timeout_seconds=timeout_seconds,
             main_pane=main_pane,
+            session_id=_SESSION_ID,
         )
         s.add(task)
         s.flush()
@@ -131,6 +145,7 @@ def dispatch_task(task_id: int) -> dict:
             f' {shlex.quote(task.working_dir)}'
             f' {shlex.quote(instr_file.name)}'
             f' {shlex.quote(main_pane)}'
+            f' {shlex.quote(task.session_id)}'
         )
 
         window_name = f'w-{task.worker_id}'

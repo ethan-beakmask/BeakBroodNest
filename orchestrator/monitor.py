@@ -106,8 +106,24 @@ def kill_tmux_pane(pane_id: str) -> bool:
 # 通知
 # ============================================================
 
-def send_notification(message: str, target: str, host: str, port: int) -> bool:
-    """透過 notify_windows.py 向 Windows relay 發送通知"""
+def load_relay_config(config_path: str = RUNTIME_CONFIG) -> dict:
+    """從 config.ini [relay] 讀取 relay 設定"""
+    import configparser
+    cfg = configparser.ConfigParser()
+    if os.path.exists(config_path):
+        cfg.read(config_path, encoding='utf-8')
+    relay = {}
+    if cfg.has_section('relay'):
+        relay = dict(cfg.items('relay'))
+    return {
+        'host': relay.get('host', '192.168.0.10'),
+        'port': int(relay.get('port', '5200')),
+        'token': relay.get('token', ''),
+    }
+
+
+def send_notification(message: str, target: str, host: str, port: int, token: str = '') -> bool:
+    """透過 notify_windows.py 向 Windows beakcortex.exe 發送通知"""
     from orchestrator.notify_windows import send_message
     rc = send_message(
         message=message,
@@ -115,6 +131,7 @@ def send_notification(message: str, target: str, host: str, port: int) -> bool:
         port=port,
         action='paste',
         target=target,
+        token=token,
     )
     if rc == 0:
         logger.info(f'通知已發送 -> {target}')
@@ -133,18 +150,24 @@ class TaskMonitor:
     def __init__(
         self,
         poll_interval: int = DEFAULT_POLL_INTERVAL,
-        notify_host: str = '192.168.0.10',
-        notify_port: int = 5200,
+        notify_host: str = '',
+        notify_port: int = 0,
         notify_target: str = '',
+        notify_token: str = '',
         dry_run: bool = False,
         config_path: str = RUNTIME_CONFIG,
     ):
         self.poll_interval = poll_interval
-        self.notify_host = notify_host
-        self.notify_port = notify_port
-        self.notify_target = notify_target or '([BeakCortex])'
         self.dry_run = dry_run
         self.config_path = config_path
+
+        # relay 設定：CLI 參數優先，fallback 到 config.ini [relay]
+        relay_cfg = load_relay_config(config_path)
+        self.notify_host = notify_host or relay_cfg['host']
+        self.notify_port = notify_port or relay_cfg['port']
+        self.notify_token = notify_token or relay_cfg['token']
+        self.notify_target = notify_target or '([BeakCortex])'
+
         # 已通知群組: {frozenset(task_ids): unix_timestamp}
         self._notified: dict[frozenset, float] = {}
 
@@ -258,13 +281,12 @@ class TaskMonitor:
     # ----------------------------------------------------------
 
     def _check_groups(self, session):
-        """按 main_pane 分群，全部完成時發送通知"""
+        """按 session_id 分群（fallback main_pane），全部完成時發送通知"""
         cutoff = datetime.datetime.now() - datetime.timedelta(hours=GROUP_WINDOW_HOURS)
 
         tasks = (
             session.query(WorkerTask)
             .filter(
-                WorkerTask.main_pane != '',
                 WorkerTask.status != 'cancelled',
                 WorkerTask.created_at > cutoff,
             )
@@ -273,9 +295,12 @@ class TaskMonitor:
 
         groups: dict[str, list[WorkerTask]] = defaultdict(list)
         for t in tasks:
-            groups[t.main_pane].append(t)
+            # 優先用 session_id 分群，無 session_id 時 fallback main_pane
+            key = t.session_id or t.main_pane
+            if key:
+                groups[key].append(t)
 
-        for main_pane, group_tasks in groups.items():
+        for group_id, group_tasks in groups.items():
             all_terminal = all(t.status in TERMINAL_STATUSES for t in group_tasks)
             if not all_terminal:
                 continue
@@ -284,11 +309,11 @@ class TaskMonitor:
             if group_key in self._notified:
                 continue
 
-            self._send_group_notification(main_pane, group_tasks, group_key)
+            self._send_group_notification(group_id, group_tasks, group_key)
 
     def _send_group_notification(
         self,
-        main_pane: str,
+        group_id: str,
         tasks: list[WorkerTask],
         group_key: frozenset,
     ):
@@ -317,7 +342,7 @@ class TaskMonitor:
             f'-- 請用 task_collect 驗收結果'
         )
 
-        logger.info(f'群組完成: pane={main_pane} | {message}')
+        logger.info(f'群組完成: group={group_id} | {message}')
 
         if not self.dry_run:
             send_notification(
@@ -325,6 +350,7 @@ class TaskMonitor:
                 target=self.notify_target,
                 host=self.notify_host,
                 port=self.notify_port,
+                token=self.notify_token,
             )
 
         self._notified[group_key] = time.time()
@@ -451,10 +477,10 @@ Log: {LOG_FILE}
                         metavar='SEC', help=f'輪詢間隔秒數 (預設 {DEFAULT_POLL_INTERVAL})')
     parser.add_argument('--target', default='', metavar='TGT',
                         help='Windows relay 目標分頁 (預設 ([BeakCortex]))')
-    parser.add_argument('--host', default='192.168.0.10', metavar='IP',
-                        help='Windows relay IP (預設 192.168.0.10)')
-    parser.add_argument('--port', type=int, default=5200, metavar='PORT',
-                        help='Windows relay port (預設 5200)')
+    parser.add_argument('--host', default='', metavar='IP',
+                        help='Windows relay IP (預設從 config.ini 讀取)')
+    parser.add_argument('--port', type=int, default=0, metavar='PORT',
+                        help='Windows relay port (預設從 config.ini 讀取)')
     parser.add_argument('--dry-run', action='store_true',
                         help='乾跑模式 (不執行 kill/通知，僅 log)')
     parser.add_argument('-c', '--config', default='', metavar='INI',
@@ -489,6 +515,11 @@ Log: {LOG_FILE}
         notify_target=args.target,
         dry_run=args.dry_run,
         config_path=config_path,
+    )
+    logger.info(
+        f'relay 設定: host={monitor.notify_host} '
+        f'port={monitor.notify_port} '
+        f'token={"***" if monitor.notify_token else "(無)"}'
     )
 
     if args.once:

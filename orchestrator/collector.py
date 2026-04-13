@@ -24,7 +24,7 @@ from orchestrator.models import WorkerTask, WorkerReport
 from orchestrator.relay import process_report
 
 
-def collect(task_id: int, exit_code: int, output_file: str, main_pane: str = ''):
+def collect(task_id: int, exit_code: int, output_file: str, main_pane: str = '', session_id: str = ''):
     """收集支線結果並儲存"""
     init_engine()
 
@@ -46,10 +46,11 @@ def collect(task_id: int, exit_code: int, output_file: str, main_pane: str = '')
         task.status = 'completed' if exit_code == 0 else 'failed'
         task.completed_at = datetime.datetime.now()
 
-        # 建立 report
+        # 建立 report（session_id 從 task 繼承，CLI 參數為備援）
         report = WorkerReport(
             task_id=task.id,
             worker_id=task.worker_id,
+            session_id=task.session_id or session_id,
             model=task.model,
             content=raw_output,
             content_type='text',
@@ -90,6 +91,7 @@ def main():
     parser.add_argument('--exit-code', type=int, required=True, help='claude process exit code')
     parser.add_argument('--output-file', type=str, default='', help='輸出檔路徑')
     parser.add_argument('--main-pane', type=str, default='', help='主線 tmux pane ID')
+    parser.add_argument('--session-id', type=str, default='', help='對話級別識別碼')
 
     if len(sys.argv) == 1:
         print('BeakCortex Worker 結果收集器')
@@ -100,7 +102,7 @@ def main():
         sys.exit(1)
 
     args = parser.parse_args()
-    collect(args.task_id, args.exit_code, args.output_file, args.main_pane)
+    collect(args.task_id, args.exit_code, args.output_file, args.main_pane, args.session_id)
 
 
 if __name__ == '__main__':
