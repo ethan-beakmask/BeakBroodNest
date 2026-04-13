@@ -22,7 +22,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import init_engine, get_session, session_scope, create_all_tables, Base, get_engine
 from core.models import (
-    KnowledgeAtom, AtomRelation, Canvas, CanvasAtom, CanvasConnection,
+    KnowledgeAtom, AtomRelation, Canvas, CanvasAtom, CanvasConnection, CanvasGroup,
     Tag, atom_tags, AtomSchema, SchemaField, AtomFieldValue,
 )
 from orchestrator.models import WorkerTask, WorkerReport
@@ -440,6 +440,7 @@ def get_canvas(canvas_id):
             .options(
                 joinedload(Canvas.atoms).joinedload(CanvasAtom.atom),
                 joinedload(Canvas.connections),
+                joinedload(Canvas.groups).joinedload(CanvasGroup.atoms),
             )
             .filter(Canvas.id == canvas_id)
             .first()
@@ -481,8 +482,11 @@ def get_canvas(canvas_id):
                 'visual_style': ca.visual_style,
                 'atom': ca.atom.to_dict(include_tags=True) if ca.atom else None,
                 'is_blocked': ca.atom_id in blocked_ids,
+                'group_id': ca.group_id,
             }
             result['atoms'].append(d)
+        # 群組
+        result['groups'] = [g.to_dict() for g in canvas.groups]
         # 連線：含關係類型
         result['connections'] = []
         for cc in canvas.connections:
@@ -549,7 +553,7 @@ def update_canvas_atom(ca_id):
         ca = s.get(CanvasAtom, ca_id)
         if not ca:
             return jsonify({'error': '不存在'}), 404
-        for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style'):
+        for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style', 'group_id'):
             if field in data:
                 setattr(ca, field, data[field])
         s.flush()
@@ -565,6 +569,79 @@ def remove_atom_from_canvas(ca_id):
             return jsonify({'error': '不存在'}), 404
         s.delete(ca)
         return jsonify({'message': '已從白板移除'})
+
+
+# ============================================================
+# Canvas Groups API
+# ============================================================
+
+@app.route('/api/canvases/<int:canvas_id>/groups', methods=['POST'])
+def create_canvas_group(canvas_id):
+    """建立群組"""
+    data = request.get_json() or {}
+    with session_scope() as s:
+        g = CanvasGroup(
+            canvas_id=canvas_id,
+            name=data.get('name', 'Group'),
+            color=data.get('color', '#3b82f6'),
+            pos_x=data.get('pos_x', 0),
+            pos_y=data.get('pos_y', 0),
+            width=data.get('width', 300),
+            height=data.get('height', 200),
+            z_index=data.get('z_index', 1),
+        )
+        s.add(g)
+        s.flush()
+        # 將指定的 canvas_atoms 加入群組
+        atom_ids = data.get('atom_ids', [])
+        if atom_ids:
+            s.query(CanvasAtom).filter(
+                CanvasAtom.canvas_id == canvas_id,
+                CanvasAtom.atom_id.in_(atom_ids),
+            ).update({CanvasAtom.group_id: g.id}, synchronize_session='fetch')
+            s.flush()
+        # 重新載入以取得 atoms 關係
+        s.refresh(g)
+        return jsonify(g.to_dict()), 201
+
+
+@app.route('/api/canvas-groups/<int:group_id>', methods=['PUT'])
+def update_canvas_group(group_id):
+    """更新群組"""
+    data = request.get_json()
+    with session_scope() as s:
+        g = s.get(CanvasGroup, group_id)
+        if not g:
+            return jsonify({'error': '群組不存在'}), 404
+        for field in ('name', 'color', 'pos_x', 'pos_y', 'width', 'height', 'z_index'):
+            if field in data:
+                setattr(g, field, data[field])
+        # 更新成員
+        if 'atom_ids' in data:
+            # 先清除舊成員
+            s.query(CanvasAtom).filter(
+                CanvasAtom.group_id == g.id,
+            ).update({CanvasAtom.group_id: None}, synchronize_session='fetch')
+            # 設定新成員
+            if data['atom_ids']:
+                s.query(CanvasAtom).filter(
+                    CanvasAtom.canvas_id == g.canvas_id,
+                    CanvasAtom.atom_id.in_(data['atom_ids']),
+                ).update({CanvasAtom.group_id: g.id}, synchronize_session='fetch')
+        s.flush()
+        s.refresh(g)
+        return jsonify(g.to_dict())
+
+
+@app.route('/api/canvas-groups/<int:group_id>', methods=['DELETE'])
+def delete_canvas_group(group_id):
+    """刪除群組（卡片保留）"""
+    with session_scope() as s:
+        g = s.get(CanvasGroup, group_id)
+        if not g:
+            return jsonify({'error': '群組不存在'}), 404
+        s.delete(g)
+        return jsonify({'message': '群組已刪除'})
 
 
 # ============================================================

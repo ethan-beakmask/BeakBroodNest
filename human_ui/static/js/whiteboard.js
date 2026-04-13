@@ -9,6 +9,7 @@ function whiteboardApp(canvasId) {
         canvas: null,
         atoms: [],
         connections: [],
+        groups: [],
         canvases: [],
         tags: [],
 
@@ -21,6 +22,11 @@ function whiteboardApp(canvasId) {
         dragCard: null,
         dragStartX: 0, dragStartY: 0,
         cardStartX: 0, cardStartY: 0,
+
+        // Resize
+        resizeCard: null,
+        resizeStartX: 0, resizeStartY: 0,
+        resizeStartW: 0, resizeStartH: 0,
 
         // Mode
         mode: 'select',
@@ -65,6 +71,42 @@ function whiteboardApp(canvasId) {
         highlightedAtomIds: [],
         blockChain: null,
 
+        // Inline edit
+        editingAtomId: null,
+        editContent: '',
+        bodyDragPending: false,
+        bodyDragStartX: 0,
+        bodyDragStartY: 0,
+        bodyDragCa: null,
+
+        // Right-click pan
+        rightDragPending: false,
+        rightDragStartX: 0, rightDragStartY: 0,
+        rightDragTarget: null,
+
+        // Box selection
+        isBoxSelecting: false,
+        boxSelectPending: false,
+        boxSelectStartX: 0, boxSelectStartY: 0,
+        boxSelectCurrentX: 0, boxSelectCurrentY: 0,
+        selectedAtomIds: [],
+
+        // Multi-drag
+        multiDragStarts: null,
+        _justDragged: false,
+
+        // Groups
+        dragGroup: null,
+        groupDragStartX: 0, groupDragStartY: 0,
+        groupDragStartPos: null,
+        groupDragMemberStarts: null,
+        resizeGroup: null,
+        resizeGroupStartX: 0, resizeGroupStartY: 0,
+        resizeGroupStartW: 0, resizeGroupStartH: 0,
+        showGroupModal: false,
+        editingGroup: null,
+        groupForm: { name: '', color: '#3b82f6' },
+
         // -- Config --
         atomTypeConfig: {
             A: { label: '萬用', bg: '#f3f4f6', color: '#6b7280', border: '#9ca3af' },
@@ -108,6 +150,28 @@ function whiteboardApp(canvasId) {
             document.addEventListener('mouseup', () => {
                 if (this.isConnDragging) this.cancelConnDrag();
             });
+            // Capture-phase: catch right-click before card/group handlers stop propagation
+            const self = this;
+            this.$refs.viewport.addEventListener('mousedown', function(e) {
+                if (e.button === 2) {
+                    self.rightDragPending = true;
+                    self.rightDragStartX = e.clientX;
+                    self.rightDragStartY = e.clientY;
+                    var cardEl = e.target.closest('.wb-card');
+                    var groupEl = e.target.closest('.wb-group');
+                    if (cardEl) {
+                        var atomId = parseInt(cardEl.id.replace('card-', ''), 10);
+                        self.rightDragTarget = self.atoms.find(function(a) { return a.atom_id === atomId; }) || null;
+                    } else if (groupEl) {
+                        var gid = parseInt(groupEl.id.replace('group-', ''), 10);
+                        var grp = self.groups.find(function(g) { return g.id === gid; });
+                        self.rightDragTarget = grp ? { _isGroup: true, group: grp } : null;
+                    } else {
+                        self.rightDragTarget = null;
+                    }
+                    e.preventDefault();
+                }
+            }, true);
         },
 
         async loadData() {
@@ -119,6 +183,7 @@ function whiteboardApp(canvasId) {
             this.canvas = canvas;
             this.atoms = canvas.atoms || [];
             this.connections = canvas.connections || [];
+            this.groups = canvas.groups || [];
             this.canvases = canvases;
             this.tags = tags;
             if (canvas.viewport_x || canvas.viewport_y || (canvas.viewport_zoom && canvas.viewport_zoom !== 1)) {
@@ -136,6 +201,7 @@ function whiteboardApp(canvasId) {
             const vp = this.$refs.viewport;
             if (!vp) return;
             vp.addEventListener('wheel', (e) => {
+                if (this.editingAtomId) return;
                 e.preventDefault();
                 const delta = e.deltaY > 0 ? 0.92 : 1.08;
                 const newZoom = Math.max(0.15, Math.min(3, this.zoom * delta));
@@ -151,6 +217,10 @@ function whiteboardApp(canvasId) {
         },
 
         onViewportMouseDown(e) {
+            // End inline edit on any viewport click
+            if (this.editingAtomId && document.activeElement) {
+                document.activeElement.blur();
+            }
             // Middle button: always pan
             if (e.button === 1) {
                 this.isPanning = true;
@@ -159,21 +229,28 @@ function whiteboardApp(canvasId) {
                 e.preventDefault();
                 return;
             }
-            // Connect mode: click on empty space cancels
-            if (this.mode === 'connect' && e.button === 0 && !e.target.closest('.wb-card')) {
-                this.connSourceAtomId = null;
-                this.mode = 'select';
-                return;
-            }
-            // Left button on empty area: pan
-            if (e.button === 0
-                && !e.target.closest('.wb-card')
-                && !e.target.closest('.wb-toolbar')
-                && !e.target.closest('.wb-zoom')) {
-                this.isPanning = true;
-                this.panStartX = e.clientX - this.panX;
-                this.panStartY = e.clientY - this.panY;
-                e.preventDefault();
+            // Right button handled by capture-phase listener
+            if (e.button === 2) return;
+            // Left button
+            if (e.button === 0) {
+                // Connect mode: click on empty space cancels
+                if (this.mode === 'connect' && !e.target.closest('.wb-card')) {
+                    this.connSourceAtomId = null;
+                    this.mode = 'select';
+                    return;
+                }
+                // Left button on empty area: box selection
+                if (!e.target.closest('.wb-card')
+                    && !e.target.closest('.wb-group')
+                    && !e.target.closest('.wb-toolbar')
+                    && !e.target.closest('.wb-zoom')) {
+                    this.boxSelectPending = true;
+                    this.boxSelectStartX = e.clientX;
+                    this.boxSelectStartY = e.clientY;
+                    this.boxSelectCurrentX = e.clientX;
+                    this.boxSelectCurrentY = e.clientY;
+                    e.preventDefault();
+                }
             }
         },
 
@@ -184,6 +261,17 @@ function whiteboardApp(canvasId) {
                 this.updatePreviewLine();
                 return;
             }
+            // Right-click drag -> pan
+            if (this.rightDragPending) {
+                var rdx = Math.abs(e.clientX - this.rightDragStartX);
+                var rdy = Math.abs(e.clientY - this.rightDragStartY);
+                if (rdx > 5 || rdy > 5) {
+                    this.rightDragPending = false;
+                    this.isPanning = true;
+                    this.panStartX = this.rightDragStartX - this.panX;
+                    this.panStartY = this.rightDragStartY - this.panY;
+                }
+            }
             if (this.isPanning) {
                 this.panX = e.clientX - this.panStartX;
                 this.panY = e.clientY - this.panStartY;
@@ -191,16 +279,125 @@ function whiteboardApp(canvasId) {
                 this.renderConnections();
                 return;
             }
+            // Box selection
+            if (this.boxSelectPending) {
+                var bsdx = Math.abs(e.clientX - this.boxSelectStartX);
+                var bsdy = Math.abs(e.clientY - this.boxSelectStartY);
+                if (bsdx > 5 || bsdy > 5) {
+                    this.boxSelectPending = false;
+                    this.isBoxSelecting = true;
+                }
+            }
+            if (this.isBoxSelecting) {
+                this.boxSelectCurrentX = e.clientX;
+                this.boxSelectCurrentY = e.clientY;
+                this.updateBoxSelection();
+                return;
+            }
+            if (this.bodyDragPending) {
+                var bdx = Math.abs(e.clientX - this.bodyDragStartX);
+                var bdy = Math.abs(e.clientY - this.bodyDragStartY);
+                if (bdx > 5 || bdy > 5) {
+                    this.bodyDragPending = false;
+                    var ca = this.bodyDragCa;
+                    this.bodyDragCa = null;
+                    this.startCardDrag(e, ca, this.bodyDragStartX, this.bodyDragStartY);
+                }
+            }
+            if (this.dragGroup) {
+                var gdx = (e.clientX - this.groupDragStartX) / this.zoom;
+                var gdy = (e.clientY - this.groupDragStartY) / this.zoom;
+                this.dragGroup.pos_x = this.groupDragStartPos.x + gdx;
+                this.dragGroup.pos_y = this.groupDragStartPos.y + gdy;
+                var self = this;
+                this.atoms.forEach(function(a) {
+                    if (self.groupDragMemberStarts[a.atom_id]) {
+                        a.pos_x = self.groupDragMemberStarts[a.atom_id].x + gdx;
+                        a.pos_y = self.groupDragMemberStarts[a.atom_id].y + gdy;
+                    }
+                });
+                this.renderConnections();
+                return;
+            }
+            if (this.resizeGroup) {
+                var grw = (e.clientX - this.resizeGroupStartX) / this.zoom;
+                var grh = (e.clientY - this.resizeGroupStartY) / this.zoom;
+                this.resizeGroup.width = Math.max(160, this.resizeGroupStartW + grw);
+                this.resizeGroup.height = Math.max(80, this.resizeGroupStartH + grh);
+                return;
+            }
+            if (this.resizeCard) {
+                var dw = (e.clientX - this.resizeStartX) / this.zoom;
+                var dh = (e.clientY - this.resizeStartY) / this.zoom;
+                this.resizeCard.width = Math.max(160, this.resizeStartW + dw);
+                this.resizeCard.height = Math.max(80, this.resizeStartH + dh);
+                if (this.resizeCard.group_id) this.recalcGroupBounds(this.resizeCard.group_id);
+                this.renderConnections();
+                return;
+            }
             if (this.dragCard) {
-                const dx = (e.clientX - this.dragStartX) / this.zoom;
-                const dy = (e.clientY - this.dragStartY) / this.zoom;
-                this.dragCard.pos_x = this.cardStartX + dx;
-                this.dragCard.pos_y = this.cardStartY + dy;
+                var dx = (e.clientX - this.dragStartX) / this.zoom;
+                var dy = (e.clientY - this.dragStartY) / this.zoom;
+                var affectedGroups = new Set();
+                if (this.multiDragStarts) {
+                    var self = this;
+                    this.atoms.forEach(function(a) {
+                        if (self.multiDragStarts[a.atom_id]) {
+                            a.pos_x = self.multiDragStarts[a.atom_id].x + dx;
+                            a.pos_y = self.multiDragStarts[a.atom_id].y + dy;
+                            if (a.group_id) affectedGroups.add(a.group_id);
+                        }
+                    });
+                } else {
+                    this.dragCard.pos_x = this.cardStartX + dx;
+                    this.dragCard.pos_y = this.cardStartY + dy;
+                    if (this.dragCard.group_id) affectedGroups.add(this.dragCard.group_id);
+                }
+                var self2 = this;
+                affectedGroups.forEach(function(gid) { self2.recalcGroupBounds(gid); });
                 this.renderConnections();
             }
         },
 
         onViewportMouseUp(e) {
+            // Right-click release: context menu or end pan
+            if (this.rightDragPending) {
+                this.rightDragPending = false;
+                // Didn't pan -> context menu
+                var tgt = this.rightDragTarget;
+                this.rightDragTarget = null;
+                if (tgt && tgt._isGroup) {
+                    this.contextMenu = { x: e.clientX, y: e.clientY, type: 'group', group: tgt.group };
+                } else if (tgt) {
+                    this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: tgt };
+                } else {
+                    this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' };
+                }
+                return;
+            }
+            // Box selection end
+            if (this.isBoxSelecting) {
+                this.isBoxSelecting = false;
+                this.boxSelectPending = false;
+                return;
+            }
+            if (this.boxSelectPending) {
+                // Click on empty without drag -> deselect all
+                this.boxSelectPending = false;
+                this.selectedAtomIds = [];
+                this.deselectCard();
+                return;
+            }
+            if (this.bodyDragPending) {
+                this.bodyDragPending = false;
+                var ca = this.bodyDragCa;
+                this.bodyDragCa = null;
+                if (ca) {
+                    this.selectCard(ca.atom_id);
+                    this.startInlineEdit(ca);
+                }
+                return;
+            }
             if (this.isConnDragging) {
                 this.endConnDrag();
                 return;
@@ -209,11 +406,56 @@ function whiteboardApp(canvasId) {
                 this.isPanning = false;
                 this.saveViewport();
             }
-            if (this.dragCard) {
-                API.updateCanvasAtom(this.dragCard.id, {
-                    pos_x: this.dragCard.pos_x,
-                    pos_y: this.dragCard.pos_y,
+            if (this.dragGroup) {
+                API.updateGroup(this.dragGroup.id, {
+                    pos_x: this.dragGroup.pos_x,
+                    pos_y: this.dragGroup.pos_y,
                 });
+                var self = this;
+                this.atoms.forEach(function(a) {
+                    if (self.groupDragMemberStarts && self.groupDragMemberStarts[a.atom_id]) {
+                        API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y });
+                    }
+                });
+                this.dragGroup = null;
+                this.groupDragMemberStarts = null;
+            }
+            if (this.resizeGroup) {
+                API.updateGroup(this.resizeGroup.id, {
+                    width: this.resizeGroup.width,
+                    height: this.resizeGroup.height,
+                });
+                this.resizeGroup = null;
+            }
+            if (this.resizeCard) {
+                API.updateCanvasAtom(this.resizeCard.id, {
+                    width: this.resizeCard.width,
+                    height: this.resizeCard.height,
+                });
+                if (this.resizeCard.group_id) this.autoResizeGroup(this.resizeCard.group_id);
+                this.resizeCard = null;
+            }
+            if (this.dragCard) {
+                this._justDragged = true;
+                var groupsToResize = new Set();
+                if (this.multiDragStarts) {
+                    var self = this;
+                    this.atoms.forEach(function(a) {
+                        if (self.multiDragStarts[a.atom_id]) {
+                            API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y });
+                            if (a.group_id) groupsToResize.add(a.group_id);
+                        }
+                    });
+                    this.multiDragStarts = null;
+                } else {
+                    API.updateCanvasAtom(this.dragCard.id, {
+                        pos_x: this.dragCard.pos_x,
+                        pos_y: this.dragCard.pos_y,
+                    });
+                    if (this.dragCard.group_id) groupsToResize.add(this.dragCard.group_id);
+                }
+                var self2 = this;
+                groupsToResize.forEach(function(gid) { self2.autoResizeGroup(gid); });
                 this.dragCard = null;
             }
         },
@@ -254,8 +496,8 @@ function whiteboardApp(canvasId) {
             this.atoms.forEach(ca => {
                 minX = Math.min(minX, ca.pos_x);
                 minY = Math.min(minY, ca.pos_y);
-                maxX = Math.max(maxX, ca.pos_x + 260);
-                maxY = Math.max(maxY, ca.pos_y + 160);
+                maxX = Math.max(maxX, ca.pos_x + (ca.width || 260));
+                maxY = Math.max(maxY, ca.pos_y + (ca.height || 160));
             });
             const pad = 80;
             const cw = maxX - minX + pad * 2;
@@ -284,14 +526,83 @@ function whiteboardApp(canvasId) {
         onCardMouseDown(e, ca) {
             if (e.button !== 0 || this.mode === 'connect') return;
             e.stopPropagation();
-            this.selectCard(ca.atom_id);
-            this.dragCard = ca;
-            this.dragStartX = e.clientX;
-            this.dragStartY = e.clientY;
-            this.cardStartX = ca.pos_x;
-            this.cardStartY = ca.pos_y;
-            const maxZ = Math.max(0, ...this.atoms.map(a => a.z_index || 0));
+            this.startCardDrag(e, ca, e.clientX, e.clientY);
+        },
+
+        startCardDrag(e, ca, startX, startY) {
+            if (this.selectedAtomIds.includes(ca.atom_id) && this.selectedAtomIds.length > 1) {
+                // Multi-drag
+                this.dragCard = ca;
+                this.dragStartX = startX;
+                this.dragStartY = startY;
+                this.multiDragStarts = {};
+                var self = this;
+                this.atoms.forEach(function(a) {
+                    if (self.selectedAtomIds.includes(a.atom_id)) {
+                        self.multiDragStarts[a.atom_id] = { x: a.pos_x, y: a.pos_y };
+                    }
+                });
+            } else {
+                // Single drag
+                this.selectedAtomIds = [];
+                this.selectCard(ca.atom_id);
+                this.dragCard = ca;
+                this.dragStartX = startX;
+                this.dragStartY = startY;
+                this.cardStartX = ca.pos_x;
+                this.cardStartY = ca.pos_y;
+            }
+            var maxZ = Math.max(0, ...this.atoms.map(function(a) { return a.z_index || 0; }));
             ca.z_index = maxZ + 1;
+        },
+
+        // Body: click-to-edit, drag-to-move
+        onCardBodyMouseDown(e, ca) {
+            if (e.button !== 0 || this.mode === 'connect') return;
+            if (this.editingAtomId === ca.atom_id) return;
+            e.stopPropagation();
+            this.bodyDragPending = true;
+            this.bodyDragStartX = e.clientX;
+            this.bodyDragStartY = e.clientY;
+            this.bodyDragCa = ca;
+        },
+
+        startInlineEdit(ca) {
+            if (!ca || !ca.atom) return;
+            this.editingAtomId = ca.atom_id;
+            this.editContent = ca.atom.content || '';
+            this.$nextTick(() => {
+                const el = document.getElementById('edit-' + ca.atom_id);
+                if (el) el.focus();
+            });
+        },
+
+        async finishInlineEdit(ca) {
+            if (!ca || !ca.atom || this.editingAtomId !== ca.atom_id) return;
+            const newContent = this.editContent;
+            this.editingAtomId = null;
+            if (newContent !== (ca.atom.content || '')) {
+                ca.atom.content = newContent;
+                await API.updateAtom(ca.atom_id, { content: newContent });
+            }
+        },
+
+        cancelInlineEdit() {
+            this.editingAtomId = null;
+            this.editContent = '';
+        },
+
+        // Resize
+        onResizeMouseDown(e, ca) {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            e.preventDefault();
+            this.resizeCard = ca;
+            this.resizeStartX = e.clientX;
+            this.resizeStartY = e.clientY;
+            const el = document.getElementById('card-' + ca.atom_id);
+            this.resizeStartW = el ? el.offsetWidth : (ca.width || 260);
+            this.resizeStartH = el ? el.offsetHeight : (ca.height || 120);
         },
 
         async selectCard(atomId) {
@@ -318,6 +629,45 @@ function whiteboardApp(canvasId) {
             this.highlightedAtomIds = [];
         },
 
+        onCardClick(ca) {
+            if (this._justDragged) {
+                this._justDragged = false;
+                return;
+            }
+            this.selectedAtomIds = [];
+            this.selectCard(ca.atom_id);
+        },
+
+        // Box selection
+        get boxSelectStyle() {
+            if (!this.isBoxSelecting) return 'display:none;';
+            var vp = this.$refs.viewport;
+            if (!vp) return 'display:none;';
+            var rect = vp.getBoundingClientRect();
+            var x1 = this.boxSelectStartX - rect.left;
+            var y1 = this.boxSelectStartY - rect.top;
+            var x2 = this.boxSelectCurrentX - rect.left;
+            var y2 = this.boxSelectCurrentY - rect.top;
+            return 'left:' + Math.min(x1, x2) + 'px; top:' + Math.min(y1, y2) + 'px; width:' + Math.abs(x2 - x1) + 'px; height:' + Math.abs(y2 - y1) + 'px;';
+        },
+
+        updateBoxSelection() {
+            var start = this.screenToCanvas(this.boxSelectStartX, this.boxSelectStartY);
+            var end = this.screenToCanvas(this.boxSelectCurrentX, this.boxSelectCurrentY);
+            var left = Math.min(start.x, end.x);
+            var top = Math.min(start.y, end.y);
+            var right = Math.max(start.x, end.x);
+            var bottom = Math.max(start.y, end.y);
+            this.selectedAtomIds = this.atoms
+                .filter(function(ca) {
+                    var w = ca.width || 260;
+                    var h = ca.height || 120;
+                    return ca.pos_x + w > left && ca.pos_x < right
+                        && ca.pos_y + h > top && ca.pos_y < bottom;
+                })
+                .map(function(ca) { return ca.atom_id; });
+        },
+
         get selectedAtom() {
             return this.atoms.find(ca => ca.atom_id === this.selectedAtomId) || null;
         },
@@ -330,7 +680,10 @@ function whiteboardApp(canvasId) {
             const border = type === 'F'
                 ? '2px dashed ' + cfg.border
                 : '2px solid ' + cfg.border;
-            return 'left:' + ca.pos_x + 'px; top:' + ca.pos_y + 'px; z-index:' + (ca.z_index || 10) + '; border:' + border + '; opacity:' + opacity + ';';
+            var s = 'left:' + ca.pos_x + 'px; top:' + ca.pos_y + 'px; z-index:' + (ca.z_index || 10) + '; border:' + border + '; opacity:' + opacity + ';';
+            if (ca.width) s += ' width:' + ca.width + 'px;';
+            if (ca.height) s += ' height:' + ca.height + 'px;';
+            return s;
         },
 
         getTypeBadgeStyle(type) {
@@ -792,6 +1145,135 @@ function whiteboardApp(canvasId) {
         contextAddAtom() {
             this.openNewAtomModal({ clientX: this.contextMenu.x, clientY: this.contextMenu.y });
             this.closeContextMenu();
+        },
+
+        // ============================================
+        // Groups
+        // ============================================
+        async createGroupFromSelection() {
+            if (this.selectedAtomIds.length === 0) return;
+            var pad = 20;
+            var self = this;
+            var selected = this.atoms.filter(function(ca) { return self.selectedAtomIds.includes(ca.atom_id); });
+            if (selected.length === 0) return;
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            selected.forEach(function(ca) {
+                minX = Math.min(minX, ca.pos_x);
+                minY = Math.min(minY, ca.pos_y);
+                maxX = Math.max(maxX, ca.pos_x + (ca.width || 260));
+                maxY = Math.max(maxY, ca.pos_y + (ca.height || 120));
+            });
+            await API.createGroup(this.canvasId, {
+                name: 'Group',
+                color: '#3b82f6',
+                pos_x: minX - pad,
+                pos_y: minY - pad - 24,
+                width: maxX - minX + pad * 2,
+                height: maxY - minY + pad * 2 + 24,
+                atom_ids: this.selectedAtomIds,
+            });
+            this.selectedAtomIds = [];
+            await this.loadData();
+            this.$nextTick(function() { self.renderConnections(); });
+        },
+
+        getGroupStyle(g) {
+            return 'left:' + g.pos_x + 'px; top:' + g.pos_y + 'px; width:' + g.width + 'px; height:' + g.height + 'px; z-index:' + (g.z_index || 1) + '; border-color:' + g.color + '; background:' + g.color + '08;';
+        },
+
+        getGroupLabelStyle(g) {
+            return 'color:' + g.color + ';';
+        },
+
+        onGroupMouseDown(e, g) {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            this.dragGroup = g;
+            this.groupDragStartX = e.clientX;
+            this.groupDragStartY = e.clientY;
+            this.groupDragStartPos = { x: g.pos_x, y: g.pos_y };
+            var self = this;
+            this.groupDragMemberStarts = {};
+            this.atoms.forEach(function(ca) {
+                if (ca.group_id === g.id) {
+                    self.groupDragMemberStarts[ca.atom_id] = { x: ca.pos_x, y: ca.pos_y };
+                }
+            });
+        },
+
+        onGroupResizeMouseDown(e, g) {
+            if (e.button !== 0) return;
+            e.stopPropagation();
+            e.preventDefault();
+            this.resizeGroup = g;
+            this.resizeGroupStartX = e.clientX;
+            this.resizeGroupStartY = e.clientY;
+            this.resizeGroupStartW = g.width;
+            this.resizeGroupStartH = g.height;
+        },
+
+        openGroupEditModal(g) {
+            this.editingGroup = g;
+            this.groupForm = { name: g.name, color: g.color };
+            this.showGroupModal = true;
+        },
+
+        async saveGroupEdit() {
+            if (!this.editingGroup) return;
+            await API.updateGroup(this.editingGroup.id, {
+                name: this.groupForm.name,
+                color: this.groupForm.color,
+            });
+            this.showGroupModal = false;
+            this.editingGroup = null;
+            await this.loadData();
+            this.$nextTick(() => this.renderConnections());
+        },
+
+        async deleteGroup(groupId) {
+            await API.deleteGroup(groupId);
+            await this.loadData();
+            this.$nextTick(() => this.renderConnections());
+        },
+
+        async ungroupAtoms(groupId) {
+            await API.deleteGroup(groupId);
+            await this.loadData();
+            this.$nextTick(() => this.renderConnections());
+        },
+
+        recalcGroupBounds(groupId) {
+            var group = this.groups.find(function(g) { return g.id === groupId; });
+            if (!group) return;
+            var members = this.atoms.filter(function(ca) { return ca.group_id === groupId; });
+            if (members.length === 0) return;
+            var pad = 20;
+            var labelH = 24;
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            members.forEach(function(ca) {
+                var el = document.getElementById('card-' + ca.atom_id);
+                var w = el ? el.offsetWidth : (ca.width || 260);
+                var h = el ? el.offsetHeight : (ca.height || 120);
+                minX = Math.min(minX, ca.pos_x);
+                minY = Math.min(minY, ca.pos_y);
+                maxX = Math.max(maxX, ca.pos_x + w);
+                maxY = Math.max(maxY, ca.pos_y + h);
+            });
+            group.pos_x = minX - pad;
+            group.pos_y = minY - pad - labelH;
+            group.width = maxX - minX + pad * 2;
+            group.height = maxY - minY + pad * 2 + labelH;
+        },
+
+        autoResizeGroup(groupId) {
+            this.recalcGroupBounds(groupId);
+            var group = this.groups.find(function(g) { return g.id === groupId; });
+            if (group) {
+                API.updateGroup(group.id, {
+                    pos_x: group.pos_x, pos_y: group.pos_y,
+                    width: group.width, height: group.height,
+                });
+            }
         },
 
         // ============================================

@@ -266,6 +266,9 @@ class Canvas(Base):
     connections: Mapped[list["CanvasConnection"]] = relationship(
         back_populates='canvas', cascade='all, delete-orphan'
     )
+    groups: Mapped[list["CanvasGroup"]] = relationship(
+        back_populates='canvas', cascade='all, delete-orphan'
+    )
 
     def to_dict(self):
         return {
@@ -298,9 +301,13 @@ class CanvasAtom(Base):
     height: Mapped[float | None] = mapped_column(Float, nullable=True)
     z_index: Mapped[int] = mapped_column(Integer, default=0)
     visual_style: Mapped[str] = mapped_column(Text, default='{}')
+    group_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('canvas_groups.id', ondelete='SET NULL'), nullable=True
+    )
 
     canvas: Mapped["Canvas"] = relationship(back_populates='atoms')
     atom: Mapped["KnowledgeAtom"] = relationship()
+    group: Mapped["CanvasGroup | None"] = relationship(back_populates='atoms')
 
     __table_args__ = (
         UniqueConstraint('canvas_id', 'atom_id', name='uq_canvas_atom'),
@@ -317,7 +324,41 @@ class CanvasAtom(Base):
             'height': self.height,
             'z_index': self.z_index,
             'visual_style': self.visual_style,
+            'group_id': self.group_id,
             'atom': self.atom.to_dict() if self.atom else None,
+        }
+
+
+class CanvasGroup(Base):
+    __tablename__ = 'canvas_groups'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    canvas_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='CASCADE'), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default='Group')
+    color: Mapped[str] = mapped_column(String(20), default='#3b82f6')
+    pos_x: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    pos_y: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    width: Mapped[float] = mapped_column(Float, nullable=False, default=300)
+    height: Mapped[float] = mapped_column(Float, nullable=False, default=200)
+    z_index: Mapped[int] = mapped_column(Integer, default=1)
+
+    canvas: Mapped["Canvas"] = relationship(back_populates='groups')
+    atoms: Mapped[list["CanvasAtom"]] = relationship(back_populates='group')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'canvas_id': self.canvas_id,
+            'name': self.name,
+            'color': self.color,
+            'pos_x': self.pos_x,
+            'pos_y': self.pos_y,
+            'width': self.width,
+            'height': self.height,
+            'z_index': self.z_index,
+            'atom_ids': [ca.atom_id for ca in self.atoms],
         }
 
 

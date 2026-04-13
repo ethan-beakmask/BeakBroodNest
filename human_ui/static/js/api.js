@@ -40,6 +40,11 @@ const API = {
     updateCanvasAtom(caId, data)    { return this.put('/api/canvas-atoms/' + caId, data); },
     removeCanvasAtom(caId)          { return this.del('/api/canvas-atoms/' + caId); },
 
+    // Canvas Groups
+    createGroup(canvasId, data) { return this.post('/api/canvases/' + canvasId + '/groups', data); },
+    updateGroup(id, data)      { return this.put('/api/canvas-groups/' + id, data); },
+    deleteGroup(id)            { return this.del('/api/canvas-groups/' + id); },
+
     // Canvas Connections
     createConnection(data)  { return this.post('/api/canvas-connections', data); },
     deleteConnection(id)    { return this.del('/api/canvas-connections/' + id); },

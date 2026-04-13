@@ -8,10 +8,11 @@
     position: relative;
     overflow: hidden;
     background: var(--bg-primary);
-    cursor: grab;
+    cursor: default;
 }
 
-.wb-viewport:active { cursor: grabbing; }
+.wb-viewport.panning { cursor: grabbing; }
+.wb-viewport.box-selecting { cursor: crosshair; }
 .wb-viewport.connect-mode { cursor: crosshair; }
 .wb-viewport.connect-mode .wb-card { cursor: crosshair; }
 
@@ -58,11 +59,14 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--card-shadow);
     width: 260px;
+    min-width: 160px;
+    min-height: 80px;
     z-index: 10;
     transition: box-shadow 0.15s, opacity 0.3s;
     display: flex;
     flex-direction: column;
     user-select: none;
+    overflow: hidden;
 }
 
 .wb-card:hover {
@@ -71,6 +75,10 @@
 
 .wb-card.selected {
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25), var(--card-shadow-hover);
+}
+
+.wb-card.multi-selected {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4), var(--card-shadow-hover);
 }
 
 .wb-card.dragging {
@@ -126,6 +134,9 @@
     padding: 6px 10px;
     min-height: 24px;
     flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .wb-card-content {
@@ -133,10 +144,31 @@
     color: var(--text-secondary);
     line-height: 1.5;
     word-break: break-word;
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    white-space: pre-wrap;
+}
+
+/* ---- 卡片 Inline Edit ---- */
+.wb-card-edit {
+    width: 100%;
+    flex: 1;
+    min-height: 40px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 12px;
+    font-family: var(--font-family);
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    line-height: 1.5;
+    resize: none;
+    outline: none;
+    user-select: auto;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.wb-card-edit:focus {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 /* ---- 卡片 Footer (Tags) ---- */
@@ -149,6 +181,30 @@
 }
 
 .wb-card-footer:empty { display: none; }
+
+/* ---- 卡片 Resize Handle ---- */
+.wb-card-resize {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 14px; height: 14px;
+    cursor: nwse-resize;
+    z-index: 16;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.wb-card-resize::after {
+    content: '';
+    position: absolute;
+    bottom: 3px; right: 3px;
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    border-radius: 0 0 2px 0;
+}
+
+.wb-card:hover .wb-card-resize { opacity: 0.6; }
+.wb-card-resize:hover { opacity: 1 !important; }
 
 /* ---- 連線錨點 ---- */
 .wb-card-anchor {
@@ -440,4 +496,55 @@
     flex-shrink: 0;
     margin-right: 6px;
     display: inline-block;
+}
+
+/* ---- 群組容器 ---- */
+.wb-group {
+    position: absolute;
+    border: 2px dashed #3b82f6;
+    border-radius: 8px;
+    pointer-events: auto;
+    cursor: move;
+}
+
+.wb-group-label {
+    position: absolute;
+    top: 4px; left: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    letter-spacing: 0.3px;
+}
+
+.wb-group-resize {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 14px; height: 14px;
+    cursor: nwse-resize;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.wb-group-resize::after {
+    content: '';
+    position: absolute;
+    bottom: 3px; right: 3px;
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    border-radius: 0 0 2px 0;
+}
+
+.wb-group:hover .wb-group-resize { opacity: 0.6; }
+.wb-group-resize:hover { opacity: 1 !important; }
+
+/* ---- 框選矩形 ---- */
+.wb-box-select {
+    position: absolute;
+    border: 1.5px dashed var(--accent);
+    background: rgba(59, 130, 246, 0.08);
+    z-index: 200;
+    pointer-events: none;
 }

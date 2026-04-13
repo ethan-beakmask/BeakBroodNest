@@ -6,7 +6,7 @@
 {% block body %}
 <div x-data="whiteboardApp({{ canvas_id }})" x-init="init()"
      @click="closeContextMenu()"
-     @keydown.escape.window="cancelConnDrag(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false">
+     @keydown.escape.window="cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false">
 
     <!-- Header -->
     <div class="app-header">
@@ -55,11 +55,11 @@
         <!-- 白板主區域 -->
         <div class="wb-viewport"
              x-ref="viewport"
-             :class="{ 'connect-mode': mode === 'connect', 'conn-dragging': isConnDragging }"
+             :class="{ 'connect-mode': mode === 'connect', 'conn-dragging': isConnDragging, 'panning': isPanning, 'box-selecting': isBoxSelecting }"
              @mousedown="onViewportMouseDown($event)"
              @mousemove="onViewportMouseMove($event)"
              @mouseup="onViewportMouseUp($event)"
-             @contextmenu="onCanvasContextMenu($event)">
+             @contextmenu.prevent>
 
             <!-- 工具列 -->
             <div class="wb-toolbar">
@@ -68,6 +68,8 @@
                 <div class="separator"></div>
                 <button :class="{ active: mode === 'connect' }" @click="toggleConnectMode()">連線</button>
                 <div class="separator"></div>
+                <button x-show="selectedAtomIds.length >= 2" @click="createGroupFromSelection()">群組</button>
+                <div class="separator" x-show="selectedAtomIds.length >= 2"></div>
                 <button @click="fitView()">適應</button>
             </div>
 
@@ -87,20 +89,36 @@
                           marker-end="url(#preview-arrow)" style="display:none;"/>
                 </svg>
 
+                <!-- 群組容器 -->
+                <template x-for="g in groups" :key="'g-' + g.id">
+                    <div class="wb-group"
+                         :id="'group-' + g.id"
+                         :style="getGroupStyle(g)"
+                         @mousedown.stop="onGroupMouseDown($event, g)"
+                         @contextmenu.prevent.stop>
+                        <div class="wb-group-label"
+                             :style="getGroupLabelStyle(g)"
+                             @dblclick.stop="openGroupEditModal(g)"
+                             x-text="g.name"></div>
+                        <div class="wb-group-resize" @mousedown.stop.prevent="onGroupResizeMouseDown($event, g)"></div>
+                    </div>
+                </template>
+
                 <!-- 原子卡片 -->
                 <template x-for="ca in atoms" :key="ca.id">
                     <div class="wb-card"
                          :id="'card-' + ca.atom_id"
                          :class="{
                              selected: selectedAtomId === ca.atom_id,
+                             'multi-selected': selectedAtomIds.includes(ca.atom_id),
                              dragging: dragCard && dragCard.atom_id === ca.atom_id,
                              'conn-source': mode === 'connect' && connSourceAtomId === ca.atom_id,
                              'conn-drop-target': isConnDragging && connDragHoverAtomId === ca.atom_id,
                              highlighted: highlightedAtomIds.includes(ca.atom_id),
                          }"
                          :style="getCardStyle(ca)"
-                         @click.stop="mode === 'connect' ? onCardClickForConnect($event, ca) : selectCard(ca.atom_id)"
-                         @contextmenu.prevent.stop="onCardContextMenu($event, ca)"
+                         @click.stop="mode === 'connect' ? onCardClickForConnect($event, ca) : onCardClick(ca)"
+                         @contextmenu.prevent.stop
                          @mouseenter="onCardMouseEnterForConn(ca)"
                          @mouseleave="onCardMouseLeaveForConn(ca)">
 
@@ -118,8 +136,21 @@
                             <span class="wb-card-title" x-text="ca.atom ? ca.atom.title : '(無標題)'"></span>
                         </div>
 
-                        <div class="wb-card-body">
-                            <div class="wb-card-content" x-text="truncate(ca.atom ? ca.atom.content : '', 120)"></div>
+                        <div class="wb-card-body"
+                             @mousedown.stop="editingAtomId !== ca.atom_id && onCardBodyMouseDown($event, ca)">
+                            <div class="wb-card-content"
+                                 x-show="editingAtomId !== ca.atom_id"
+                                 x-text="truncate(ca.atom ? ca.atom.content : '', 800)"></div>
+                            <template x-if="editingAtomId === ca.atom_id">
+                                <textarea :id="'edit-' + ca.atom_id"
+                                          class="wb-card-edit"
+                                          x-model="editContent"
+                                          x-init="$nextTick(() => $el.focus())"
+                                          @blur="finishInlineEdit(ca)"
+                                          @keydown.escape.stop.prevent="cancelInlineEdit()"
+                                          @mousedown.stop
+                                          @click.stop></textarea>
+                            </template>
                         </div>
 
                         <div class="wb-card-footer" x-show="ca.atom && ca.atom.tags && ca.atom.tags.length > 0">
@@ -127,9 +158,14 @@
                                 <span class="tag-badge tag-sm" :style="getTagStyle(t.color)" x-text="t.name"></span>
                             </template>
                         </div>
+
+                        <div class="wb-card-resize" @mousedown.stop.prevent="onResizeMouseDown($event, ca)"></div>
                     </div>
                 </template>
             </div>
+
+            <!-- 框選矩形 -->
+            <div class="wb-box-select" :style="boxSelectStyle"></div>
 
             <!-- 縮放控制 -->
             <div class="wb-zoom">
@@ -472,6 +508,34 @@
         </div>
     </template>
 
+    <!-- 群組編輯 -->
+    <template x-if="showGroupModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>編輯群組</h3>
+                    <button class="modal-close" @click="showGroupModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>名稱</label>
+                        <input class="form-control" x-model="groupForm.name"
+                               @keydown.enter="saveGroupEdit()">
+                    </div>
+                    <div class="form-group">
+                        <label>顏色</label>
+                        <input type="color" x-model="groupForm.color"
+                               style="width:60px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showGroupModal=false">取消</button>
+                    <button class="btn btn-primary" @click="saveGroupEdit()">儲存</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <!-- 右鍵選單 -->
     <template x-if="contextMenu">
         <div class="context-menu" :style="'left:' + contextMenu.x + 'px; top:' + contextMenu.y + 'px;'" @click.stop>
@@ -490,6 +554,13 @@
                     <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除</div>
                     <div class="context-menu-item danger"
                          @click="if(confirm('刪除此原子? 所有白板都會移除')) { deleteAtomEntirely(contextMenu.ca); closeContextMenu(); }">刪除原子</div>
+                </div>
+            </template>
+            <template x-if="contextMenu.type === 'group'">
+                <div>
+                    <div class="context-menu-item" @click="openGroupEditModal(contextMenu.group); closeContextMenu()">編輯群組</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="ungroupAtoms(contextMenu.group.id); closeContextMenu()">解散群組</div>
                 </div>
             </template>
         </div>
