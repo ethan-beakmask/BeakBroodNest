@@ -47,6 +47,7 @@ const API = {
 
     // Canvas Connections
     createConnection(data)  { return this.post('/api/canvas-connections', data); },
+    updateConnection(id, data) { return this.put('/api/canvas-connections/' + id, data); },
     deleteConnection(id)    { return this.del('/api/canvas-connections/' + id); },
 
     // Search

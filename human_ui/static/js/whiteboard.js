@@ -118,6 +118,34 @@ function whiteboardApp(canvasId) {
         toasts: [],
         _toastSeq: 0,
 
+        // Undo/Redo
+        undoStack: [],
+        redoStack: [],
+        _maxUndoDepth: 50,
+
+        // Filters
+        filterTypes: { A: true, B: true, C: true, D: true, E: true, F: true },
+        filterLifecycles: { active: true, aging: true, archived: true, terminal: true },
+        filterTagIds: [],   // empty = show all; populated = show only atoms with ANY of these tags
+        filterPanelOpen: false,
+
+        // Batch operations
+        showBatchPanel: false,
+        batchAtomType: '',
+        batchLifecycle: '',
+
+        // Connection inline edit
+        editingConnId: null,
+        editingConnLabel: '',
+        editingConnPos: { x: 0, y: 0 },
+
+        // Export/Import
+        showExportModal: false,
+        showImportModal: false,
+        exportFormat: 'json',
+        exportContent: '',
+        importFile: null,
+
         // Render test panel
         renderMode: 'normal',   // kept for URL default
         renderStats: { total: 0, rendered: 0 },
@@ -177,12 +205,14 @@ function whiteboardApp(canvasId) {
                 if (this.atoms.length > 0) this.fitView();
                 this.renderMinimap();
             });
+            // Keyboard shortcuts
+            const self = this;
+            document.addEventListener('keydown', function(e) { self.handleKeyDown(e); });
             // Cancel connection drag if mouse released outside viewport
             document.addEventListener('mouseup', () => {
                 if (this.isConnDragging) this.cancelConnDrag();
             });
             // Capture-phase: catch right-click before card/group handlers stop propagation
-            const self = this;
             this.$refs.viewport.addEventListener('mousedown', function(e) {
                 if (e.button === 2) {
                     self.rightDragPending = true;
@@ -470,21 +500,34 @@ function whiteboardApp(canvasId) {
             if (this.dragCard) {
                 this._justDragged = true;
                 var groupsToResize = new Set();
+                var movedIds = [];
+                var beforePos = [];
+                var afterPos = [];
                 if (this.multiDragStarts) {
                     var self = this;
                     this.atoms.forEach(function(a) {
                         if (self.multiDragStarts[a.atom_id]) {
+                            movedIds.push(a.atom_id);
+                            beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y });
+                            afterPos.push({ x: a.pos_x, y: a.pos_y });
                             API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y });
                             if (a.group_id) groupsToResize.add(a.group_id);
                         }
                     });
                     this.multiDragStarts = null;
                 } else {
+                    movedIds.push(this.dragCard.atom_id);
+                    beforePos.push({ x: this.cardStartX, y: this.cardStartY });
+                    afterPos.push({ x: this.dragCard.pos_x, y: this.dragCard.pos_y });
                     API.updateCanvasAtom(this.dragCard.id, {
                         pos_x: this.dragCard.pos_x,
                         pos_y: this.dragCard.pos_y,
                     });
                     if (this.dragCard.group_id) groupsToResize.add(this.dragCard.group_id);
+                }
+                // Record undo only if position actually changed
+                if (movedIds.length > 0 && (beforePos[0].x !== afterPos[0].x || beforePos[0].y !== afterPos[0].y)) {
+                    this.pushMoveUndo(movedIds, beforePos, afterPos);
                 }
                 var self2 = this;
                 groupsToResize.forEach(function(gid) { self2.autoResizeGroup(gid); });
@@ -1152,9 +1195,10 @@ function whiteboardApp(canvasId) {
         },
 
         // Filter connections for optimized mode (8-direction, max 10 per sector)
-        _filterOptimizedConnections() {
+        _filterOptimizedConnections(connList) {
             var vb = this._getViewportBounds();
-            if (!vb) return this.connections;
+            if (!vb) return connList || this.connections;
+            var sourceConns = connList || this.connections;
 
             var self = this;
             var atomMap = {};
@@ -1167,12 +1211,12 @@ function whiteboardApp(canvasId) {
             });
 
             // Threshold not met: render all
-            if (outsideCount <= 100) return this.connections;
+            if (outsideCount <= 100) return sourceConns;
 
             // Separate: both-endpoints-in-viewport vs at-least-one-outside
             var insideConns = [];
             var outsideConns = [];
-            this.connections.forEach(function(conn) {
+            sourceConns.forEach(function(conn) {
                 var src = atomMap[conn.source_atom_id];
                 var tgt = atomMap[conn.target_atom_id];
                 if (!src || !tgt) return;
@@ -1233,10 +1277,16 @@ function whiteboardApp(canvasId) {
                 return;
             }
 
+            // Filter out connections involving hidden atoms
+            var visibleIds = this.filteredAtomIds;
+            var baseConns = this.connections.filter(function(c) {
+                return visibleIds.includes(c.source_atom_id) && visibleIds.includes(c.target_atom_id);
+            });
+
             // Determine which connections to render
             var renderList = this.rtOptEnabled
-                ? this._filterOptimizedConnections()
-                : this.connections;
+                ? this._filterOptimizedConnections(baseConns)
+                : baseConns;
 
             this.renderStats = { total: this.connections.length, rendered: renderList.length };
 
@@ -1303,7 +1353,7 @@ function whiteboardApp(canvasId) {
                 });
                 svg.appendChild(path);
 
-                // Label
+                // Label (clickable for inline edit)
                 var labelText = conn.label || self.relationLabelMap[conn.relation_type] || '';
                 if (labelText) {
                     var mx = (ep.sx + ep.tx) / 2;
@@ -1312,9 +1362,15 @@ function whiteboardApp(canvasId) {
                     text.setAttribute('x', mx);
                     text.setAttribute('y', my - 8);
                     text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('class', 'conn-label');
+                    text.setAttribute('class', 'conn-label conn-label-editable');
                     text.setAttribute('fill', lc);
+                    text.style.cursor = 'text';
                     text.textContent = labelText;
+                    var cid = conn.id;
+                    text.addEventListener('dblclick', function(e) {
+                        e.stopPropagation();
+                        self.startEditConnection(cid, e.clientX, e.clientY);
+                    });
                     svg.appendChild(text);
                 }
             });
@@ -1366,11 +1422,33 @@ function whiteboardApp(canvasId) {
                         ' L ' + ax2 + ' ' + ay2 + ' Z ';
                 }
 
-                // Store geometry for hit test
-                geom.push({ connId: conn.id, sx: ep.sx, sy: ep.sy, tx: ep.tx, ty: ep.ty });
+                // Store geometry for hit test + label
+                var lt = conn.label || self.relationLabelMap[conn.relation_type] || '';
+                geom.push({ connId: conn.id, sx: ep.sx, sy: ep.sy, tx: ep.tx, ty: ep.ty, label: lt, color: lc });
             });
 
             this._connGeometry = geom;
+
+            // Render labels (individual per connection, even in grouped mode)
+            geom.forEach(function(g) {
+                if (!g.label) return;
+                var mx = (g.sx + g.tx) / 2;
+                var my = (g.sy + g.ty) / 2;
+                var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                text.setAttribute('x', mx);
+                text.setAttribute('y', my - 8);
+                text.setAttribute('text-anchor', 'middle');
+                text.setAttribute('class', 'conn-label conn-label-editable');
+                text.setAttribute('fill', g.color);
+                text.style.cursor = 'text';
+                text.textContent = g.label;
+                var cid = g.connId;
+                text.addEventListener('dblclick', function(e) {
+                    e.stopPropagation();
+                    self.startEditConnection(cid, e.clientX, e.clientY);
+                });
+                svg.appendChild(text);
+            });
 
             // Render each group as 2 elements: 1 combined line path + 1 combined arrow path
             var keys = Object.keys(groups);
@@ -1884,6 +1962,535 @@ function whiteboardApp(canvasId) {
 
         removeToast(id) {
             this.toasts = this.toasts.filter(function(t) { return t.id !== id; });
+        },
+
+        // ============================================
+        // Undo / Redo
+        // ============================================
+        pushUndo(action) {
+            // action = { type, desc, undo: async fn, redo: async fn }
+            this.undoStack.push(action);
+            if (this.undoStack.length > this._maxUndoDepth) this.undoStack.shift();
+            this.redoStack = [];
+        },
+
+        async doUndo() {
+            if (this.undoStack.length === 0) return;
+            var action = this.undoStack.pop();
+            try {
+                await action.undo();
+                this.redoStack.push(action);
+                this.showToast('復原: ' + action.desc, 'info', 2000);
+            } catch (e) {
+                console.error('Undo failed:', e);
+                this.showToast('復原失敗', 'error');
+            }
+        },
+
+        async doRedo() {
+            if (this.redoStack.length === 0) return;
+            var action = this.redoStack.pop();
+            try {
+                await action.redo();
+                this.undoStack.push(action);
+                this.showToast('重做: ' + action.desc, 'info', 2000);
+            } catch (e) {
+                console.error('Redo failed:', e);
+                this.showToast('重做失敗', 'error');
+            }
+        },
+
+        // Wrap a move operation for undo
+        pushMoveUndo(atomIds, beforePositions, afterPositions) {
+            var self = this;
+            this.pushUndo({
+                type: 'move',
+                desc: '移動 ' + atomIds.length + ' 個原子',
+                undo: async function() {
+                    for (var i = 0; i < atomIds.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === atomIds[i]; });
+                        if (ca) {
+                            ca.pos_x = beforePositions[i].x;
+                            ca.pos_y = beforePositions[i].y;
+                            await API.updateCanvasAtom(ca.id, { pos_x: ca.pos_x, pos_y: ca.pos_y });
+                        }
+                    }
+                    self.renderConnections();
+                    self.renderMinimap();
+                },
+                redo: async function() {
+                    for (var i = 0; i < atomIds.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === atomIds[i]; });
+                        if (ca) {
+                            ca.pos_x = afterPositions[i].x;
+                            ca.pos_y = afterPositions[i].y;
+                            await API.updateCanvasAtom(ca.id, { pos_x: ca.pos_x, pos_y: ca.pos_y });
+                        }
+                    }
+                    self.renderConnections();
+                    self.renderMinimap();
+                },
+            });
+        },
+
+        // ============================================
+        // Keyboard Shortcuts
+        // ============================================
+        handleKeyDown(e) {
+            // Skip when inside input/textarea/contenteditable or card editor
+            if (this.cardEditorOpen) return;
+            var tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            if (e.target.isContentEditable) return;
+
+            // Ctrl+Z = undo, Ctrl+Shift+Z / Ctrl+Y = redo
+            if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+                if (e.key === 'z' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.doUndo();
+                    return;
+                }
+                if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+                    e.preventDefault();
+                    this.doRedo();
+                    return;
+                }
+                // Ctrl+A = select all
+                if (e.key === 'a') {
+                    e.preventDefault();
+                    this.selectedAtomIds = this.filteredAtoms.map(function(ca) { return ca.atom_id; });
+                    return;
+                }
+            }
+
+            // Delete / Backspace = remove selected from canvas
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                this.deleteSelected();
+                return;
+            }
+        },
+
+        async deleteSelected() {
+            // Multi-select delete
+            if (this.selectedAtomIds.length > 0) {
+                var self = this;
+                var toDelete = this.atoms.filter(function(ca) {
+                    return self.selectedAtomIds.includes(ca.atom_id);
+                });
+                if (toDelete.length === 0) return;
+                // Store for undo
+                var removedData = toDelete.map(function(ca) {
+                    return { id: ca.id, atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y,
+                             width: ca.width, height: ca.height, z_index: ca.z_index, group_id: ca.group_id };
+                });
+                this.pushUndo({
+                    type: 'remove_multi',
+                    desc: '移除 ' + toDelete.length + ' 個原子',
+                    undo: async function() {
+                        for (var i = 0; i < removedData.length; i++) {
+                            var rd = removedData[i];
+                            await API.addAtomToCanvas(self.canvasId, {
+                                atom_id: rd.atom_id,
+                                pos_x: rd.pos_x, pos_y: rd.pos_y,
+                                width: rd.width, height: rd.height,
+                            });
+                        }
+                        await self.loadData();
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                    redo: async function() {
+                        for (var i = 0; i < removedData.length; i++) {
+                            var ca = self.atoms.find(function(a) { return a.atom_id === removedData[i].atom_id; });
+                            if (ca) await API.removeCanvasAtom(ca.id);
+                        }
+                        await self.loadData();
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                });
+                for (var i = 0; i < toDelete.length; i++) {
+                    await API.removeCanvasAtom(toDelete[i].id);
+                }
+                this.selectedAtomIds = [];
+                this.deselectCard();
+                await this.loadData();
+                this.$nextTick(function() { self.renderConnections(); });
+                return;
+            }
+            // Single select delete
+            if (this.selectedAtomId) {
+                var sid = this.selectedAtomId;
+                var ca = this.atoms.find(function(a) { return a.atom_id === sid; });
+                if (ca) this.removeFromCanvas(ca);
+            }
+        },
+
+        // ============================================
+        // Canvas Filters
+        // ============================================
+        get filteredAtoms() {
+            var self = this;
+            return this.atoms.filter(function(ca) {
+                if (!ca.atom) return true;
+                // Type filter
+                if (!self.filterTypes[ca.atom.atom_type]) return false;
+                // Lifecycle filter
+                if (!self.filterLifecycles[ca.atom.lifecycle]) return false;
+                // Tag filter
+                if (self.filterTagIds.length > 0) {
+                    var atomTagIds = (ca.atom.tags || []).map(function(t) { return t.id; });
+                    var hasMatch = self.filterTagIds.some(function(tid) { return atomTagIds.includes(tid); });
+                    if (!hasMatch) return false;
+                }
+                return true;
+            });
+        },
+
+        get filteredAtomIds() {
+            return this.filteredAtoms.map(function(ca) { return ca.atom_id; });
+        },
+
+        get hiddenAtomCount() {
+            return this.atoms.length - this.filteredAtoms.length;
+        },
+
+        isAtomVisible(ca) {
+            return this.filteredAtomIds.includes(ca.atom_id);
+        },
+
+        toggleFilterType(type) {
+            this.filterTypes[type] = !this.filterTypes[type];
+        },
+
+        toggleFilterLifecycle(lc) {
+            this.filterLifecycles[lc] = !this.filterLifecycles[lc];
+        },
+
+        toggleFilterTag(tagId) {
+            var idx = this.filterTagIds.indexOf(tagId);
+            if (idx >= 0) {
+                this.filterTagIds.splice(idx, 1);
+            } else {
+                this.filterTagIds.push(tagId);
+            }
+        },
+
+        resetFilters() {
+            this.filterTypes = { A: true, B: true, C: true, D: true, E: true, F: true };
+            this.filterLifecycles = { active: true, aging: true, archived: true, terminal: true };
+            this.filterTagIds = [];
+        },
+
+        get hasActiveFilters() {
+            var allTypes = Object.values(this.filterTypes).every(function(v) { return v; });
+            var allLc = Object.values(this.filterLifecycles).every(function(v) { return v; });
+            return !allTypes || !allLc || this.filterTagIds.length > 0;
+        },
+
+        // ============================================
+        // Batch Operations
+        // ============================================
+        async batchUpdateType(newType) {
+            if (this.selectedAtomIds.length === 0) return;
+            var self = this;
+            var oldValues = {};
+            this.atoms.forEach(function(ca) {
+                if (self.selectedAtomIds.includes(ca.atom_id) && ca.atom) {
+                    oldValues[ca.atom_id] = ca.atom.atom_type;
+                }
+            });
+            var ids = Object.keys(oldValues).map(Number);
+            this.pushUndo({
+                type: 'batch_type',
+                desc: '批次改類型為 ' + newType,
+                undo: async function() {
+                    for (var i = 0; i < ids.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
+                        if (ca && ca.atom) {
+                            ca.atom.atom_type = oldValues[ids[i]];
+                            await API.updateAtom(ids[i], { atom_type: oldValues[ids[i]] });
+                        }
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+                redo: async function() {
+                    for (var i = 0; i < ids.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
+                        if (ca && ca.atom) {
+                            ca.atom.atom_type = newType;
+                            await API.updateAtom(ids[i], { atom_type: newType });
+                        }
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+            });
+            for (var i = 0; i < ids.length; i++) {
+                var ca = this.atoms.find(function(a) { return a.atom_id === ids[i]; });
+                if (ca && ca.atom) {
+                    ca.atom.atom_type = newType;
+                    await API.updateAtom(ids[i], { atom_type: newType });
+                }
+            }
+            this.$nextTick(function() { self.renderConnections(); });
+            this.showToast(ids.length + ' 個原子已改為 ' + newType, 'success', 2000);
+        },
+
+        async batchUpdateLifecycle(newLc) {
+            if (this.selectedAtomIds.length === 0) return;
+            var self = this;
+            var oldValues = {};
+            this.atoms.forEach(function(ca) {
+                if (self.selectedAtomIds.includes(ca.atom_id) && ca.atom) {
+                    oldValues[ca.atom_id] = ca.atom.lifecycle;
+                }
+            });
+            var ids = Object.keys(oldValues).map(Number);
+            this.pushUndo({
+                type: 'batch_lifecycle',
+                desc: '批次改生命週期為 ' + newLc,
+                undo: async function() {
+                    for (var i = 0; i < ids.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
+                        if (ca && ca.atom) {
+                            ca.atom.lifecycle = oldValues[ids[i]];
+                            await API.updateAtom(ids[i], { lifecycle: oldValues[ids[i]] });
+                        }
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+                redo: async function() {
+                    for (var i = 0; i < ids.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
+                        if (ca && ca.atom) {
+                            ca.atom.lifecycle = newLc;
+                            await API.updateAtom(ids[i], { lifecycle: newLc });
+                        }
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+            });
+            for (var i = 0; i < ids.length; i++) {
+                var ca = this.atoms.find(function(a) { return a.atom_id === ids[i]; });
+                if (ca && ca.atom) {
+                    ca.atom.lifecycle = newLc;
+                    await API.updateAtom(ids[i], { lifecycle: newLc });
+                }
+            }
+            this.$nextTick(function() { self.renderConnections(); });
+            this.showToast(ids.length + ' 個原子已改為 ' + newLc, 'success', 2000);
+        },
+
+        async batchToggleTag(tagId) {
+            if (this.selectedAtomIds.length === 0) return;
+            var self = this;
+            var tag = this.tags.find(function(t) { return t.id === tagId; });
+            var tagName = tag ? tag.name : '#' + tagId;
+            // Determine: if majority have it, remove; else add
+            var haveCount = 0;
+            var targets = [];
+            this.atoms.forEach(function(ca) {
+                if (self.selectedAtomIds.includes(ca.atom_id) && ca.atom) {
+                    targets.push(ca);
+                    if ((ca.atom.tags || []).some(function(t) { return t.id === tagId; })) haveCount++;
+                }
+            });
+            var adding = haveCount < targets.length / 2;
+            var oldTagStates = {};
+            targets.forEach(function(ca) {
+                oldTagStates[ca.atom_id] = (ca.atom.tags || []).map(function(t) { return t.id; });
+            });
+            var ids = targets.map(function(ca) { return ca.atom_id; });
+            this.pushUndo({
+                type: 'batch_tag',
+                desc: (adding ? '加入' : '移除') + '標籤 ' + tagName,
+                undo: async function() {
+                    for (var i = 0; i < ids.length; i++) {
+                        await API.updateAtom(ids[i], { tag_ids: oldTagStates[ids[i]] });
+                    }
+                    await self.loadData();
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+                redo: async function() {
+                    for (var i = 0; i < ids.length; i++) {
+                        var cur = oldTagStates[ids[i]].slice();
+                        if (adding) { if (!cur.includes(tagId)) cur.push(tagId); }
+                        else { cur = cur.filter(function(id) { return id !== tagId; }); }
+                        await API.updateAtom(ids[i], { tag_ids: cur });
+                    }
+                    await self.loadData();
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+            });
+            for (var i = 0; i < ids.length; i++) {
+                var cur = oldTagStates[ids[i]].slice();
+                if (adding) { if (!cur.includes(tagId)) cur.push(tagId); }
+                else { cur = cur.filter(function(id) { return id !== tagId; }); }
+                await API.updateAtom(ids[i], { tag_ids: cur });
+            }
+            await this.loadData();
+            this.$nextTick(function() { self.renderConnections(); });
+            this.showToast(ids.length + ' 個原子' + (adding ? '加入' : '移除') + '標籤 ' + tagName, 'success', 2000);
+        },
+
+        // ============================================
+        // Connection Inline Edit
+        // ============================================
+        startEditConnection(connId, screenX, screenY) {
+            var conn = this.connections.find(function(c) { return c.id === connId; });
+            if (!conn) return;
+            this.editingConnId = connId;
+            this.editingConnLabel = conn.label || '';
+            this.editingConnPos = { x: screenX, y: screenY };
+        },
+
+        async saveConnectionLabel() {
+            if (!this.editingConnId) return;
+            var connId = this.editingConnId;
+            var newLabel = this.editingConnLabel;
+            var conn = this.connections.find(function(c) { return c.id === connId; });
+            var oldLabel = conn ? (conn.label || '') : '';
+            if (conn) conn.label = newLabel;
+            await API.updateConnection(connId, { label: newLabel });
+            var self = this;
+            this.pushUndo({
+                type: 'edit_conn_label',
+                desc: '編輯連線標籤',
+                undo: async function() {
+                    var c = self.connections.find(function(c) { return c.id === connId; });
+                    if (c) c.label = oldLabel;
+                    await API.updateConnection(connId, { label: oldLabel });
+                    self.renderConnections();
+                },
+                redo: async function() {
+                    var c = self.connections.find(function(c) { return c.id === connId; });
+                    if (c) c.label = newLabel;
+                    await API.updateConnection(connId, { label: newLabel });
+                    self.renderConnections();
+                },
+            });
+            this.editingConnId = null;
+            this.renderConnections();
+        },
+
+        cancelEditConnection() {
+            this.editingConnId = null;
+        },
+
+        // ============================================
+        // Export / Import
+        // ============================================
+        async exportCanvas(format) {
+            if (format === 'json') {
+                var data = {
+                    canvas: this.canvas,
+                    atoms: this.atoms.map(function(ca) {
+                        return {
+                            atom_id: ca.atom_id,
+                            pos_x: ca.pos_x, pos_y: ca.pos_y,
+                            width: ca.width, height: ca.height,
+                            z_index: ca.z_index, group_id: ca.group_id,
+                            atom: ca.atom,
+                        };
+                    }),
+                    connections: this.connections,
+                    groups: this.groups,
+                    exported_at: new Date().toISOString(),
+                };
+                this.exportContent = JSON.stringify(data, null, 2);
+            } else {
+                // Markdown
+                var lines = ['# ' + (this.canvas ? this.canvas.name : 'Canvas'), ''];
+                lines.push('匯出時間: ' + new Date().toLocaleString('zh-TW'), '');
+                lines.push('## 原子 (' + this.atoms.length + ')', '');
+                this.atoms.forEach(function(ca) {
+                    if (!ca.atom) return;
+                    var tags = (ca.atom.tags || []).map(function(t) { return t.name; }).join(', ');
+                    lines.push('### [' + ca.atom.atom_type + '] ' + ca.atom.title + ' (#' + ca.atom_id + ')');
+                    lines.push('');
+                    lines.push('- 類型: ' + ca.atom.atom_type + ' | 生命週期: ' + ca.atom.lifecycle + ' | 來源: ' + ca.atom.source);
+                    if (tags) lines.push('- 標籤: ' + tags);
+                    lines.push('');
+                    if (ca.atom.content) {
+                        lines.push(ca.atom.content);
+                        lines.push('');
+                    }
+                    lines.push('---');
+                    lines.push('');
+                });
+                if (this.connections.length > 0) {
+                    lines.push('## 連線 (' + this.connections.length + ')', '');
+                    var self = this;
+                    this.connections.forEach(function(conn) {
+                        var src = self.getAtomTitle(conn.source_atom_id);
+                        var tgt = self.getAtomTitle(conn.target_atom_id);
+                        var label = conn.label || self.relationLabelMap[conn.relation_type] || conn.relation_type;
+                        lines.push('- ' + src + ' --[' + label + ']--> ' + tgt);
+                    });
+                    lines.push('');
+                }
+                this.exportContent = lines.join('\n');
+            }
+            this.exportFormat = format;
+            this.showExportModal = true;
+        },
+
+        downloadExport() {
+            var ext = this.exportFormat === 'json' ? '.json' : '.md';
+            var mime = this.exportFormat === 'json' ? 'application/json' : 'text/markdown';
+            var name = (this.canvas ? this.canvas.name : 'canvas') + ext;
+            var blob = new Blob([this.exportContent], { type: mime + ';charset=utf-8' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url; a.download = name; a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        copyExport() {
+            navigator.clipboard.writeText(this.exportContent).then(() => {
+                this.showToast('已複製到剪貼簿', 'success', 2000);
+            });
+        },
+
+        async importCanvasFromFile(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var text = await file.text();
+            try {
+                var data = JSON.parse(text);
+                if (!data.atoms || !Array.isArray(data.atoms)) {
+                    this.showToast('JSON 格式不正確: 缺少 atoms 陣列', 'error');
+                    return;
+                }
+                var imported = 0;
+                for (var i = 0; i < data.atoms.length; i++) {
+                    var item = data.atoms[i];
+                    var atomId = item.atom_id;
+                    // Check if atom exists
+                    try {
+                        await API.getAtom(atomId);
+                    } catch (err) {
+                        // Atom doesn't exist, skip
+                        continue;
+                    }
+                    // Check if already on canvas
+                    var exists = this.atoms.some(function(ca) { return ca.atom_id === atomId; });
+                    if (exists) continue;
+                    await API.addAtomToCanvas(this.canvasId, {
+                        atom_id: atomId,
+                        pos_x: item.pos_x || 100 + i * 30,
+                        pos_y: item.pos_y || 100 + i * 30,
+                        width: item.width,
+                        height: item.height,
+                    });
+                    imported++;
+                }
+                await this.loadData();
+                this.$nextTick(() => this.renderConnections());
+                this.showToast('已匯入 ' + imported + ' 個原子', 'success');
+                this.showImportModal = false;
+            } catch (err) {
+                this.showToast('匯入失敗: ' + err.message, 'error');
+            }
         },
 
         // ============================================

@@ -829,6 +829,35 @@ def create_canvas_connection():
         return jsonify(result), 201
 
 
+@app.route('/api/canvas-connections/<int:conn_id>', methods=['PUT'])
+def update_canvas_connection(conn_id):
+    """更新視覺連線（標籤等）"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': '需要 JSON body'}), 400
+
+    with session_scope() as s:
+        conn = s.get(CanvasConnection, conn_id)
+        if not conn:
+            return jsonify({'error': '連線不存在'}), 404
+
+        if 'label' in data:
+            conn.label = data['label']
+            # 同步更新底層 AtomRelation 的 label
+            if conn.relation_id:
+                rel = s.get(AtomRelation, conn.relation_id)
+                if rel:
+                    rel.label = data['label']
+
+        if 'color' in data:
+            conn.color = data['color']
+        if 'line_style' in data:
+            conn.line_style = data['line_style']
+
+        s.flush()
+        return jsonify(conn.to_dict())
+
+
 @app.route('/api/canvas-connections/<int:conn_id>', methods=['DELETE'])
 def delete_canvas_connection(conn_id):
     """刪除視覺連線，若底層 AtomRelation 無其他白板引用則一併刪除"""
