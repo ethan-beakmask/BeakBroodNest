@@ -19,6 +19,9 @@ temp/
 # 舊 MVP 資料庫
 OLD/test9_Heptabase/heptabase.db
 
+# Node.js (Tiptap build)
+node_modules/
+
 # IDE
 .idea/
 .vscode/

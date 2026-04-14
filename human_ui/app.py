@@ -74,6 +74,12 @@ def help_page():
     return render_template('help.html')
 
 
+@app.route('/card-test')
+def card_test_page():
+    """Card Editor 獨立測試頁"""
+    return render_template('card_test.html')
+
+
 # ============================================================
 # Knowledge Atoms API
 # ============================================================
@@ -165,6 +171,7 @@ def create_atom():
         atom = KnowledgeAtom(
             title=data.get('title', ''),
             content=data.get('content', ''),
+            content_json=data.get('content_json'),
             content_type=data.get('content_type', 'markdown'),
             atom_type=data.get('atom_type', 'F'),
             schema_id=data.get('schema_id'),
@@ -240,8 +247,9 @@ def update_atom(atom_id):
         if not atom:
             return jsonify({'error': '原子不存在'}), 404
 
-        for field in ('title', 'content', 'content_type', 'atom_type',
-                       'schema_id', 'lifecycle', 'source', 'source_detail'):
+        for field in ('title', 'content', 'content_json', 'content_type',
+                       'atom_type', 'schema_id', 'lifecycle', 'source',
+                       'source_detail'):
             if field in data:
                 setattr(atom, field, data[field])
 

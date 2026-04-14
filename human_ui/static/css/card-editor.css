@@ -1,0 +1,309 @@
+/* ============================================================
+   BeakCortex -- Card Editor (Tiptap WYSIWYG)
+   ============================================================ */
+
+/* ---- 全螢幕彈窗 ---- */
+.card-editor-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card-editor-dialog {
+    background: #fff;
+    border-radius: 8px;
+    width: 92vw;
+    height: 90vh;
+    max-width: 1200px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+/* ---- Header ---- */
+.card-editor-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+}
+
+.card-editor-title-input {
+    flex: 1;
+    font-size: 18px;
+    font-weight: 600;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: #1e293b;
+    padding: 4px 0;
+}
+.card-editor-title-input::placeholder {
+    color: #94a3b8;
+}
+
+.card-editor-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #64748b;
+}
+
+.card-editor-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: none;
+    font-size: 18px;
+    color: #94a3b8;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.card-editor-close:hover {
+    background: #f1f5f9;
+    color: #475569;
+}
+
+/* ---- 工具列 ---- */
+.card-editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding: 6px 20px;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    background: #f8fafc;
+}
+
+.card-editor-toolbar .tb-sep {
+    width: 1px;
+    height: 20px;
+    background: #e2e8f0;
+    margin: 0 4px;
+}
+
+.card-editor-toolbar button {
+    padding: 4px 8px;
+    border: none;
+    background: none;
+    font-size: 13px;
+    color: #475569;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    min-width: 28px;
+    text-align: center;
+}
+.card-editor-toolbar button:hover {
+    background: #e2e8f0;
+    color: #1e293b;
+}
+.card-editor-toolbar button.active {
+    background: #1e293b;
+    color: #fff;
+}
+
+/* ---- 編輯區 ---- */
+.card-editor-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 24px;
+}
+
+/* Tiptap ProseMirror 內容樣式 */
+.card-editor-content {
+    outline: none;
+    font-size: 15px;
+    line-height: 1.7;
+    color: #1e293b;
+    min-height: 100%;
+}
+
+.card-editor-content > *:first-child {
+    margin-top: 0;
+}
+
+.card-editor-content h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin: 24px 0 12px;
+    color: #0f172a;
+}
+.card-editor-content h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 20px 0 10px;
+    color: #0f172a;
+}
+.card-editor-content h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 16px 0 8px;
+    color: #1e293b;
+}
+.card-editor-content h4 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 14px 0 6px;
+    color: #334155;
+}
+
+.card-editor-content p {
+    margin: 0 0 8px;
+}
+
+.card-editor-content strong {
+    font-weight: 700;
+}
+
+.card-editor-content em {
+    font-style: italic;
+}
+
+.card-editor-content u {
+    text-decoration: underline;
+}
+
+.card-editor-content s {
+    text-decoration: line-through;
+    color: #94a3b8;
+}
+
+.card-editor-content code {
+    background: #f1f5f9;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 13px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    color: #dc2626;
+}
+
+.card-editor-content pre {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 12px 0;
+}
+.card-editor-content pre code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    font-size: 13px;
+}
+
+.card-editor-content blockquote {
+    border-left: 3px solid #3b82f6;
+    padding-left: 16px;
+    margin: 12px 0;
+    color: #475569;
+}
+
+.card-editor-content hr {
+    border: none;
+    border-top: 1px solid #e2e8f0;
+    margin: 16px 0;
+}
+
+.card-editor-content ul,
+.card-editor-content ol {
+    padding-left: 24px;
+    margin: 8px 0;
+}
+.card-editor-content li {
+    margin: 2px 0;
+}
+
+/* Task list */
+.card-editor-content ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0;
+}
+.card-editor-content ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.card-editor-content ul[data-type="taskList"] li label {
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+.card-editor-content ul[data-type="taskList"] li > div {
+    flex: 1;
+}
+
+/* Table */
+.card-editor-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 12px 0;
+}
+.card-editor-content th,
+.card-editor-content td {
+    border: 1px solid #e2e8f0;
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 14px;
+}
+.card-editor-content th {
+    background: #f1f5f9;
+    font-weight: 600;
+}
+
+/* Link */
+.card-editor-content a,
+.card-editor-content .tiptap-link {
+    color: #3b82f6;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* Image */
+.card-editor-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+    margin: 8px 0;
+}
+
+/* Placeholder */
+.card-editor-content p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: #94a3b8;
+    pointer-events: none;
+    float: left;
+    height: 0;
+}
+
+/* ---- Footer ---- */
+.card-editor-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    border-top: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    background: #f8fafc;
+}
+
+.card-editor-footer .status-text {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.card-editor-footer .btn-group {
+    display: flex;
+    gap: 8px;
+}

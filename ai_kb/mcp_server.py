@@ -25,13 +25,15 @@ from mcp.server.fastmcp import FastMCP
 from core.db import init_engine, session_scope
 from core.models import (
     KnowledgeAtom, AtomRelation, Tag, atom_tags, Canvas, CanvasAtom,
+    CanvasConnection, CanvasGroup,
     AtomSchema, SchemaField, AtomFieldValue,
 )
 from core import relations as rel_service
 from core import consistency as consistency_service
+from core import embeddings as embed_service
 from orchestrator.models import WorkerTask, WorkerReport
 from orchestrator import dispatcher as orch_dispatcher
-from sqlalchemy import func
+from sqlalchemy import func, text as sa_text
 from sqlalchemy.orm import joinedload
 
 logger = logging.getLogger('beak_cortex.mcp')
@@ -126,6 +128,13 @@ def note_store(
                     ))
 
         s.flush()
+
+        # Auto-embed（背景容錯，不阻塞回應）
+        try:
+            embed_service.embed_atom(s, atom.id)
+        except Exception as e:
+            logger.warning(f'Auto-embed failed for atom {atom.id}: {e}')
+
         result = {
             'id': atom.id,
             'title': atom.title,
@@ -155,130 +164,273 @@ def note_search(
     source: str = '',
     schema_id: int | None = None,
     limit: int = 20,
+    search_mode: str = 'keyword',
+    sort: str = '',
 ) -> str:
     """搜尋知識庫中的原子。
 
-    query: 關鍵字搜尋（ILIKE 匹配 + pg_trgm 相似度排序）
+    query: 關鍵字搜尋(ILIKE 匹配 + pg_trgm 相似度排序)
     atom_type: 篩選類型 (A/B/C/D/E/F)
     lifecycle: 篩選生命週期 (active/aging/archived/terminal)
-    tag: 篩選單一標籤名稱（向下相容）
-    tags: 多標籤 AND 篩選，原子必須同時擁有所有指定標籤
+    tag: 篩選單一標籤名稱(向下相容)
+    tags: 多標籤 AND 篩選,原子必須同時擁有所有指定標籤
     source: 篩選來源 (human/ai/import/derived)
     schema_id: 篩選 E 類型的 schema ID
-    limit: 回傳上限（預設 20，最大 100）
+    limit: 回傳上限(預設 20,最大 100)
+    search_mode: 搜尋模式
+      keyword  -- ILIKE + pg_trgm(預設,向下相容)
+      semantic -- pgvector 向量語意搜尋(需 query 非空)
+      hybrid   -- 關鍵字 + 語意混合搜尋,召回率最高(需 query 非空)
+    sort: 排序方式(空字串=依 search_mode 預設排序)
+      vitality   -- 依 vitality_score 排序(高到低)
+      created_at -- 依建立時間排序(新到舊)
+      updated_at -- 依更新時間排序(新到舊)
 
-    tag 與 tags 同時提供時，tag 會併入 tags 一起做 AND 篩選。
-    ILIKE 保證召回率，pg_trgm similarity 輔助排序（查詢>2字時啟用）。
+    tag 與 tags 同時提供時,tag 會併入 tags 一起做 AND 篩選。
+    semantic/hybrid 模式需要 query 非空,否則自動退回 keyword 模式。
     E 類型原子會附帶 field_values 結構化欄位值。
     """
     limit = min(limit, 100)
 
+    if search_mode not in ('keyword', 'semantic', 'hybrid'):
+        search_mode = 'keyword'
+    if search_mode in ('semantic', 'hybrid') and not query.strip():
+        search_mode = 'keyword'
+
     with session_scope() as s:
-        use_trgm = query and len(query) > 2
-
-        sim_expr = None
-        if use_trgm:
-            sim_expr = func.greatest(
-                func.similarity(KnowledgeAtom.title, query),
-                func.similarity(KnowledgeAtom.content, query),
-            )
-            pattern = f'%{query}%'
-            q = (
-                s.query(KnowledgeAtom, sim_expr.label('sim'))
-                .options(joinedload(KnowledgeAtom.tags))
-                .filter(KnowledgeAtom.is_deleted == False)
-                .filter(
-                    KnowledgeAtom.title.ilike(pattern) |
-                    KnowledgeAtom.content.ilike(pattern)
-                )
-            )
-        else:
-            q = (
-                s.query(KnowledgeAtom)
-                .options(joinedload(KnowledgeAtom.tags))
-                .filter(KnowledgeAtom.is_deleted == False)
-            )
-
-            if query:
-                pattern = f'%{query}%'
-                q = q.filter(
-                    KnowledgeAtom.title.ilike(pattern) |
-                    KnowledgeAtom.content.ilike(pattern)
-                )
-
-        if atom_type:
-            q = q.filter(KnowledgeAtom.atom_type == atom_type)
-
-        if lifecycle:
-            q = q.filter(KnowledgeAtom.lifecycle == lifecycle)
-
-        if source:
-            q = q.filter(KnowledgeAtom.source == source)
-
-        if schema_id is not None:
-            q = q.filter(KnowledgeAtom.schema_id == schema_id)
-
-        # 合併 tag / tags 為統一的標籤篩選列表
+        # 合併 tag/tags
         all_tags = list(tags) if tags else []
         if tag and tag not in all_tags:
             all_tags.append(tag)
 
+        # 若有 tag 篩選，先取得符合的 atom IDs（供 keyword 和 semantic 共用）
+        tag_filtered_ids = None
         if all_tags:
-            # AND 交集：原子必須同時擁有所有指定標籤
-            tag_subq = (
+            tag_rows = (
                 s.query(atom_tags.c.atom_id)
                 .join(Tag, Tag.id == atom_tags.c.tag_id)
                 .filter(Tag.name.in_(all_tags))
                 .group_by(atom_tags.c.atom_id)
                 .having(func.count(func.distinct(Tag.name)) == len(all_tags))
+                .all()
             )
-            q = q.filter(KnowledgeAtom.id.in_(tag_subq.subquery().select()))
+            tag_filtered_ids = [r[0] for r in tag_rows]
+            if not tag_filtered_ids:
+                return json.dumps({
+                    'total': 0, 'returned': 0,
+                    'search_mode': search_mode, 'items': [],
+                }, ensure_ascii=False)
 
-        if use_trgm:
-            q = q.order_by(
-                sim_expr.desc(),
-                KnowledgeAtom.vitality_score.desc(),
-                KnowledgeAtom.updated_at.desc(),
-            )
-        else:
-            q = q.order_by(
-                KnowledgeAtom.vitality_score.desc(),
-                KnowledgeAtom.updated_at.desc(),
-            )
-
-        rows = q.limit(limit).all()
-        total = q.count() if len(rows) == limit else len(rows)
-
-        if use_trgm:
-            atoms = [row[0] for row in rows]
-        else:
-            atoms = rows
-
-        results = []
-        for a in atoms:
+        # ---- 格式化原子 ----
+        def _format_atom(a, match_type='keyword', similarity=0):
+            content = a.content or ''
             item = {
                 'id': a.id,
                 'title': a.title,
-                'content': a.content[:200] + ('...' if len(a.content) > 200 else ''),
+                'content': (content[:200] + '...') if len(content) > 200 else content,
                 'atom_type': a.atom_type,
                 'lifecycle': a.lifecycle,
                 'vitality_score': a.vitality_score,
                 'source': a.source,
                 'tags': [t.name for t in a.tags],
                 'updated_at': a.updated_at.isoformat() if a.updated_at else None,
+                'match_type': match_type,
             }
-            # E 類型附帶結構化欄位值
+            if similarity:
+                item['similarity'] = round(similarity, 4)
             if a.atom_type == 'E' and a.schema_id:
                 fvs = s.query(AtomFieldValue).options(
                     joinedload(AtomFieldValue.field)
                 ).filter(AtomFieldValue.atom_id == a.id).all()
                 item['field_values'] = {fv.field.name: fv.value for fv in fvs if fv.field}
                 item['schema_id'] = a.schema_id
-            results.append(item)
+            return item
+
+        # ---- 共用 ORM 篩選 ----
+        def _apply_filters(q):
+            if atom_type:
+                q = q.filter(KnowledgeAtom.atom_type == atom_type)
+            if lifecycle:
+                q = q.filter(KnowledgeAtom.lifecycle == lifecycle)
+            if source:
+                q = q.filter(KnowledgeAtom.source == source)
+            if schema_id is not None:
+                q = q.filter(KnowledgeAtom.schema_id == schema_id)
+            if tag_filtered_ids is not None:
+                q = q.filter(KnowledgeAtom.id.in_(tag_filtered_ids))
+            return q
+
+        # ---- keyword 搜尋 ----
+        def _keyword_search():
+            use_trgm = query and len(query) > 2
+
+            if use_trgm:
+                sim_expr = func.greatest(
+                    func.similarity(KnowledgeAtom.title, query),
+                    func.similarity(KnowledgeAtom.content, query),
+                )
+                pattern = f'%{query}%'
+                q = (
+                    s.query(KnowledgeAtom, sim_expr.label('sim'))
+                    .options(joinedload(KnowledgeAtom.tags))
+                    .filter(KnowledgeAtom.is_deleted == False)
+                    .filter(
+                        KnowledgeAtom.title.ilike(pattern) |
+                        KnowledgeAtom.content.ilike(pattern)
+                    )
+                )
+            else:
+                sim_expr = None
+                q = (
+                    s.query(KnowledgeAtom)
+                    .options(joinedload(KnowledgeAtom.tags))
+                    .filter(KnowledgeAtom.is_deleted == False)
+                )
+                if query:
+                    pattern = f'%{query}%'
+                    q = q.filter(
+                        KnowledgeAtom.title.ilike(pattern) |
+                        KnowledgeAtom.content.ilike(pattern)
+                    )
+
+            q = _apply_filters(q)
+
+            if sort == 'vitality':
+                q = q.order_by(KnowledgeAtom.vitality_score.desc(), KnowledgeAtom.updated_at.desc())
+            elif sort == 'created_at':
+                q = q.order_by(KnowledgeAtom.created_at.desc())
+            elif sort == 'updated_at':
+                q = q.order_by(KnowledgeAtom.updated_at.desc())
+            elif use_trgm:
+                q = q.order_by(sim_expr.desc(), KnowledgeAtom.vitality_score.desc(), KnowledgeAtom.updated_at.desc())
+            else:
+                q = q.order_by(KnowledgeAtom.vitality_score.desc(), KnowledgeAtom.updated_at.desc())
+
+            rows = q.limit(limit).all()
+            results = []
+            if use_trgm:
+                for row_atom, sim_val in rows:
+                    results.append(_format_atom(row_atom, 'keyword'))
+            else:
+                for a in rows:
+                    results.append(_format_atom(a, 'keyword'))
+            return results
+
+        # ---- semantic 搜尋 ----
+        def _semantic_search():
+            from core.embeddings import generate_embedding, MODEL_NAME
+            query_vec = generate_embedding(query)
+
+            conditions = ["a.is_deleted = FALSE", "e.model_name = :model_name"]
+            params = {
+                'query_vec': str(query_vec),
+                'model_name': MODEL_NAME,
+                'limit': limit,
+            }
+            if atom_type:
+                conditions.append("a.atom_type = :atom_type")
+                params['atom_type'] = atom_type
+            if lifecycle:
+                conditions.append("a.lifecycle = :lifecycle")
+                params['lifecycle'] = lifecycle
+            if source:
+                conditions.append("a.source = :source")
+                params['source'] = source
+            if schema_id is not None:
+                conditions.append("a.schema_id = :schema_id")
+                params['schema_id'] = schema_id
+            if tag_filtered_ids is not None:
+                conditions.append("a.id = ANY(:tag_ids)")
+                params['tag_ids'] = tag_filtered_ids
+
+            where_sql = " AND ".join(conditions)
+
+            if sort == 'vitality':
+                order_sql = "a.vitality_score DESC, a.updated_at DESC"
+            elif sort == 'created_at':
+                order_sql = "a.created_at DESC"
+            elif sort == 'updated_at':
+                order_sql = "a.updated_at DESC"
+            else:
+                order_sql = "e.embedding <=> :query_vec"
+
+            sql = sa_text(f"""
+                SELECT
+                    a.id, a.title, a.content, a.atom_type, a.lifecycle,
+                    a.vitality_score, a.source, a.updated_at, a.schema_id,
+                    1 - (e.embedding <=> :query_vec) AS similarity
+                FROM atom_embeddings e
+                JOIN knowledge_atoms a ON a.id = e.atom_id
+                WHERE {where_sql}
+                ORDER BY {order_sql}
+                LIMIT :limit
+            """)
+            rows = s.execute(sql, params).fetchall()
+
+            # 載入 tag 資訊
+            atom_ids = [row[0] for row in rows]
+            atoms_map = {}
+            if atom_ids:
+                loaded = (
+                    s.query(KnowledgeAtom)
+                    .options(joinedload(KnowledgeAtom.tags))
+                    .filter(KnowledgeAtom.id.in_(atom_ids))
+                    .all()
+                )
+                atoms_map = {a.id: a for a in loaded}
+
+            results = []
+            for row in rows:
+                aid = row[0]
+                atom_obj = atoms_map.get(aid)
+                content = row[2] or ''
+                item = {
+                    'id': aid,
+                    'title': row[1],
+                    'content': (content[:200] + '...') if len(content) > 200 else content,
+                    'atom_type': row[3],
+                    'lifecycle': row[4],
+                    'vitality_score': row[5],
+                    'source': row[6],
+                    'tags': [t.name for t in atom_obj.tags] if atom_obj else [],
+                    'updated_at': row[7].isoformat() if row[7] else None,
+                    'similarity': round(float(row[9]), 4),
+                    'match_type': 'semantic',
+                }
+                if row[3] == 'E' and row[8] and atom_obj:
+                    item['schema_id'] = row[8]
+                    fvs = s.query(AtomFieldValue).options(
+                        joinedload(AtomFieldValue.field)
+                    ).filter(AtomFieldValue.atom_id == aid).all()
+                    item['field_values'] = {fv.field.name: fv.value for fv in fvs if fv.field}
+                results.append(item)
+            return results
+
+        # ---- 執行搜尋 ----
+        if search_mode == 'keyword':
+            results = _keyword_search()
+        elif search_mode == 'semantic':
+            results = _semantic_search()
+        else:  # hybrid
+            sem_results = _semantic_search()
+            kw_results = _keyword_search()
+            seen_ids = set()
+            merged = []
+            for item in sem_results:
+                if item['id'] not in seen_ids:
+                    merged.append(item)
+                    seen_ids.add(item['id'])
+            for item in kw_results:
+                if item['id'] not in seen_ids:
+                    item['similarity'] = 0
+                    merged.append(item)
+                    seen_ids.add(item['id'])
+            results = merged[:limit]
 
         return json.dumps({
-            'total': total,
+            'total': len(results),
             'returned': len(results),
+            'search_mode': search_mode,
             'items': results,
         }, ensure_ascii=False)
 
@@ -401,6 +553,14 @@ def note_update(
             atom.tags = tag_objects
 
         s.flush()
+
+        # 若 title 或 content 有變更，重新 embed
+        if title or content or append_content:
+            try:
+                embed_service.embed_atom(s, atom.id)
+            except Exception as e:
+                logger.warning(f'Auto-embed failed for atom {atom.id}: {e}')
+
         return json.dumps({
             'id': atom.id,
             'title': atom.title,
@@ -454,6 +614,76 @@ def note_relate(
             }, ensure_ascii=False)
         except ValueError as e:
             return json.dumps({'error': str(e)})
+
+
+# ============================================================
+# note_relate_batch -- 批次建立因果關係
+# ============================================================
+
+@mcp.tool()
+def note_relate_batch(
+    relations: list[dict],
+) -> str:
+    """批次建立多條因果關係。
+
+    relations: 關係列表，每個元素為 dict:
+      {
+        "from_atom_id": int,
+        "to_atom_id": int,
+        "relation_type": str,  -- 同 note_relate 的允許值
+        "label": str,          -- 選填
+        "confidence": float    -- 選填，預設 1.0
+      }
+
+    回傳每條關係的建立結果（成功或錯誤）。
+    用途：一次建立多條關係，避免逐條呼叫的往返開銷。
+    """
+    if not relations:
+        return json.dumps({'error': 'relations 不可為空'})
+
+    results = []
+    with session_scope() as s:
+        for i, r in enumerate(relations):
+            from_id = r.get('from_atom_id')
+            to_id = r.get('to_atom_id')
+            rel_type = r.get('relation_type', '')
+            label = r.get('label', '')
+            confidence = r.get('confidence', 1.0)
+
+            if not from_id or not to_id or not rel_type:
+                results.append({
+                    'index': i,
+                    'error': '缺少必要欄位 (from_atom_id, to_atom_id, relation_type)',
+                })
+                continue
+
+            try:
+                rel = rel_service.create_relation(
+                    s, from_id, to_id, rel_type,
+                    label=label, confidence=confidence, created_by='ai',
+                )
+                results.append({
+                    'index': i,
+                    'id': rel.id,
+                    'from_atom_id': rel.from_atom_id,
+                    'to_atom_id': rel.to_atom_id,
+                    'relation_type': rel.relation_type,
+                    'status': 'created',
+                })
+            except ValueError as e:
+                results.append({'index': i, 'error': str(e)})
+            except Exception as e:
+                results.append({'index': i, 'error': f'建立失敗: {str(e)}'})
+
+    created = sum(1 for r in results if r.get('status') == 'created')
+    failed = len(results) - created
+
+    return json.dumps({
+        'total': len(results),
+        'created': created,
+        'failed': failed,
+        'results': results,
+    }, ensure_ascii=False)
 
 
 # ============================================================
@@ -976,6 +1206,276 @@ def task_collect(task_id: int, include_raw: bool = False) -> str:
 
 
 # ============================================================
+# canvas_list -- 列出畫布
+# ============================================================
+
+@mcp.tool()
+def canvas_list() -> str:
+    """列出所有畫布及其基本資訊。"""
+    with session_scope() as s:
+        canvases = s.query(Canvas).order_by(Canvas.updated_at.desc()).all()
+        return json.dumps({
+            'total': len(canvases),
+            'items': [c.to_dict() for c in canvases],
+        }, ensure_ascii=False)
+
+
+# ============================================================
+# canvas_create -- 建立畫布
+# ============================================================
+
+@mcp.tool()
+def canvas_create(
+    name: str,
+    description: str = '',
+    canvas_type: str = 'whiteboard',
+) -> str:
+    """建立新畫布。
+
+    canvas_type: whiteboard / mindmap / flowchart / cornell / template
+    """
+    valid_types = ('whiteboard', 'mindmap', 'flowchart', 'cornell', 'template')
+    if canvas_type not in valid_types:
+        return json.dumps({'error': f'無效的 canvas_type: {canvas_type}'})
+
+    with session_scope() as s:
+        canvas = Canvas(
+            name=name,
+            description=description,
+            canvas_type=canvas_type,
+        )
+        s.add(canvas)
+        s.flush()
+        return json.dumps({
+            'id': canvas.id,
+            'name': canvas.name,
+            'canvas_type': canvas.canvas_type,
+            'message': f'畫布已建立 (id={canvas.id})',
+        }, ensure_ascii=False)
+
+
+# ============================================================
+# canvas_get -- 取得畫布內容
+# ============================================================
+
+@mcp.tool()
+def canvas_get(canvas_id: int) -> str:
+    """取得畫布的完整內容（所有原子位置、連線、群組）。
+
+    用途：了解畫布上有哪些原子及其空間配置。
+    """
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.id == canvas_id).first()
+        if not canvas:
+            return json.dumps({'error': f'畫布 {canvas_id} 不存在'})
+
+        atoms = (
+            s.query(CanvasAtom)
+            .options(joinedload(CanvasAtom.atom))
+            .filter(CanvasAtom.canvas_id == canvas_id)
+            .all()
+        )
+        connections = (
+            s.query(CanvasConnection)
+            .filter(CanvasConnection.canvas_id == canvas_id)
+            .all()
+        )
+        groups = (
+            s.query(CanvasGroup)
+            .filter(CanvasGroup.canvas_id == canvas_id)
+            .all()
+        )
+
+        return json.dumps({
+            'canvas': canvas.to_dict(),
+            'atoms': [ca.to_dict() for ca in atoms],
+            'connections': [c.to_dict() for c in connections],
+            'groups': [g.to_dict() for g in groups],
+        }, ensure_ascii=False)
+
+
+# ============================================================
+# canvas_place_atom -- 放置原子到畫布
+# ============================================================
+
+@mcp.tool()
+def canvas_place_atom(
+    canvas_id: int,
+    atom_id: int,
+    pos_x: float = 0,
+    pos_y: float = 0,
+    width: float | None = None,
+    height: float | None = None,
+) -> str:
+    """將原子放置到畫布的指定位置。
+
+    若原子已在畫布上，會更新其位置與尺寸。
+    """
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.id == canvas_id).first()
+        if not canvas:
+            return json.dumps({'error': f'畫布 {canvas_id} 不存在'})
+
+        atom = s.query(KnowledgeAtom).filter(
+            KnowledgeAtom.id == atom_id, KnowledgeAtom.is_deleted == False
+        ).first()
+        if not atom:
+            return json.dumps({'error': f'原子 {atom_id} 不存在'})
+
+        existing = s.query(CanvasAtom).filter(
+            CanvasAtom.canvas_id == canvas_id,
+            CanvasAtom.atom_id == atom_id,
+        ).first()
+
+        if existing:
+            existing.pos_x = pos_x
+            existing.pos_y = pos_y
+            if width is not None:
+                existing.width = width
+            if height is not None:
+                existing.height = height
+            s.flush()
+            return json.dumps({
+                'id': existing.id,
+                'canvas_id': canvas_id,
+                'atom_id': atom_id,
+                'pos_x': pos_x,
+                'pos_y': pos_y,
+                'message': f'原子 {atom_id} 位置已更新',
+            }, ensure_ascii=False)
+
+        ca = CanvasAtom(
+            canvas_id=canvas_id,
+            atom_id=atom_id,
+            pos_x=pos_x,
+            pos_y=pos_y,
+            width=width,
+            height=height,
+        )
+        s.add(ca)
+        s.flush()
+        return json.dumps({
+            'id': ca.id,
+            'canvas_id': canvas_id,
+            'atom_id': atom_id,
+            'pos_x': pos_x,
+            'pos_y': pos_y,
+            'message': f'原子 {atom_id} 已放置到畫布 {canvas_id}',
+        }, ensure_ascii=False)
+
+
+# ============================================================
+# canvas_remove_atom -- 從畫布移除原子
+# ============================================================
+
+@mcp.tool()
+def canvas_remove_atom(
+    canvas_id: int,
+    atom_id: int,
+) -> str:
+    """從畫布移除原子（不刪除原子本身，只移除畫布上的位置）。"""
+    with session_scope() as s:
+        ca = s.query(CanvasAtom).filter(
+            CanvasAtom.canvas_id == canvas_id,
+            CanvasAtom.atom_id == atom_id,
+        ).first()
+        if not ca:
+            return json.dumps({'error': f'原子 {atom_id} 不在畫布 {canvas_id} 上'})
+
+        s.delete(ca)
+        return json.dumps({
+            'canvas_id': canvas_id,
+            'atom_id': atom_id,
+            'message': f'原子 {atom_id} 已從畫布 {canvas_id} 移除',
+        }, ensure_ascii=False)
+
+
+# ============================================================
+# note_suggest_relations -- AI 自動建議關聯
+# ============================================================
+
+@mcp.tool()
+def note_suggest_relations(
+    atom_id: int,
+    limit: int = 5,
+    min_similarity: float = 0.5,
+) -> str:
+    """根據語意相似度，自動建議與指定原子可能相關的其他原子。
+
+    對每個語意相似原子，標記是否已建立關係。
+    回傳建議列表，可選擇性地用 note_relate 或 note_relate_batch 建立。
+
+    atom_id: 要分析的原子 ID
+    limit: 回傳建議數量上限（預設 5，最大 20）
+    min_similarity: 最低相似度閾值（預設 0.5）
+    """
+    limit = min(limit, 20)
+
+    with session_scope() as s:
+        atom = s.query(KnowledgeAtom).filter(
+            KnowledgeAtom.id == atom_id,
+            KnowledgeAtom.is_deleted == False,
+        ).first()
+        if not atom:
+            return json.dumps({'error': f'原子 {atom_id} 不存在'})
+
+        from core.embeddings import generate_embedding, MODEL_NAME
+        text_content = (atom.title or '') + '\n' + (atom.content or '')
+        query_vec = generate_embedding(text_content)
+
+        sql = sa_text("""
+            SELECT
+                a.id, a.title, a.atom_type, a.lifecycle,
+                1 - (e.embedding <=> :query_vec) AS similarity
+            FROM atom_embeddings e
+            JOIN knowledge_atoms a ON a.id = e.atom_id
+            WHERE a.is_deleted = FALSE
+              AND a.id != :atom_id
+              AND e.model_name = :model_name
+              AND 1 - (e.embedding <=> :query_vec) >= :min_sim
+            ORDER BY e.embedding <=> :query_vec
+            LIMIT :limit
+        """)
+
+        rows = s.execute(sql, {
+            'query_vec': str(query_vec),
+            'atom_id': atom_id,
+            'model_name': MODEL_NAME,
+            'min_sim': min_similarity,
+            'limit': limit,
+        }).fetchall()
+
+        # 檢查已存在的關係
+        existing_pairs = set()
+        outgoing = rel_service.get_relations_from(s, atom_id)
+        incoming = rel_service.get_relations_to(s, atom_id)
+        for r in outgoing:
+            existing_pairs.add(r.to_atom_id)
+        for r in incoming:
+            existing_pairs.add(r.from_atom_id)
+
+        suggestions = []
+        for row in rows:
+            target_id = row[0]
+            suggestions.append({
+                'target_id': target_id,
+                'target_title': row[1],
+                'target_type': row[2],
+                'target_lifecycle': row[3],
+                'similarity': round(float(row[4]), 4),
+                'already_related': target_id in existing_pairs,
+                'suggested_type': 'references',
+            })
+
+        return json.dumps({
+            'atom_id': atom_id,
+            'atom_title': atom.title,
+            'suggestions': suggestions,
+            'message': f'找到 {len(suggestions)} 個語意相似原子',
+        }, ensure_ascii=False)
+
+
+# ============================================================
 # 啟動
 # ============================================================
 
@@ -1010,22 +1510,31 @@ def main():
         print('  --config    組態檔路徑 (預設: ../config.ini)')
         print()
         print('知識庫工具:')
-        print('  note_store     儲存知識原子')
-        print('  note_search    搜尋知識原子')
-        print('  note_get       取得原子完整資訊（含關係與阻塞）')
-        print('  note_update    更新知識原子')
-        print('  note_relate    建立因果關係')
-        print('  note_forget    歸檔/終止/刪除知識')
-        print('  note_blocked   追溯阻塞鍊')
-        print('  note_trace     圖譜遍歷（子圖展開）')
-        print('  note_check     一致性檢查（重複/矛盾偵測）')
-        print('  note_overview  知識庫概覽')
+        print('  note_store              儲存知識原子')
+        print('  note_search             搜尋知識原子（keyword/semantic/hybrid）')
+        print('  note_get                取得原子完整資訊（含關係與阻塞）')
+        print('  note_update             更新知識原子')
+        print('  note_relate             建立因果關係')
+        print('  note_relate_batch       批次建立因果關係')
+        print('  note_forget             歸檔/終止/刪除知識')
+        print('  note_blocked            追溯阻塞鍊')
+        print('  note_trace              圖譜遍歷（子圖展開）')
+        print('  note_check              一致性檢查（重複/矛盾偵測）')
+        print('  note_overview           知識庫概覽')
+        print('  note_suggest_relations  AI 自動建議關聯')
+        print()
+        print('畫布工具:')
+        print('  canvas_list             列出所有畫布')
+        print('  canvas_create           建立新畫布')
+        print('  canvas_get              取得畫布內容')
+        print('  canvas_place_atom       放置/移動原子到畫布')
+        print('  canvas_remove_atom      從畫布移除原子')
         print()
         print('Orchestrator 工具:')
-        print('  task_dispatch  派發支線任務到 tmux')
-        print('  task_status    查詢任務狀態')
-        print('  task_list      列出所有任務')
-        print('  task_collect   取得任務報告')
+        print('  task_dispatch           派發支線任務到 tmux')
+        print('  task_status             查詢任務狀態')
+        print('  task_list               列出所有任務')
+        print('  task_collect            取得任務報告')
         print()
         print('Claude Code 設定範例 (~/.claude/settings.json):')
         print('  "mcpServers": {')

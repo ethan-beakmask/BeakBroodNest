@@ -1,12 +1,18 @@
 {% extends "base.html" %}
 {% block title %}白板 - BeakCortex{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="/static/css/whiteboard.css?v={{ cache_ver }}">{% endblock %}
-{% block extra_js %}<script src="/static/js/whiteboard.js?v={{ cache_ver }}"></script>{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/whiteboard.css?v={{ cache_ver }}">
+<link rel="stylesheet" href="/static/css/card-editor.css?v={{ cache_ver }}">
+{% endblock %}
+{% block extra_js %}
+<script src="/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
+<script src="/static/js/whiteboard.js?v={{ cache_ver }}"></script>
+{% endblock %}
 
 {% block body %}
 <div x-data="whiteboardApp({{ canvas_id }})" x-init="init()"
      @click="closeContextMenu()"
-     @keydown.escape.window="cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false">
+     @keydown.escape.window="if(cardEditorOpen){ closeCardEditor(); return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false">
 
     <!-- Toast -->
     <div class="toast-container">
@@ -245,6 +251,8 @@
                 <div>
                     <div class="wb-panel-header">
                         <h3 x-text="selectedAtom.atom ? selectedAtom.atom.title : '(無標題)'"></h3>
+                        <button class="btn btn-sm btn-primary" style="margin-right:8px; font-size:11px; padding:2px 10px;"
+                                @click="openCardEditor(selectedAtom.atom_id)">開啟卡片</button>
                         <button class="modal-close" @click="deselectCard()">x</button>
                     </div>
                     <div class="wb-panel-body">
@@ -599,6 +607,75 @@
         </div>
     </template>
 
+    <!-- Card Editor 彈窗 -->
+    <template x-if="cardEditorOpen">
+        <div class="card-editor-overlay" @keydown.escape.stop="closeCardEditor()">
+            <div class="card-editor-dialog" @click.stop>
+                <!-- Header -->
+                <div class="card-editor-header">
+                    <input class="card-editor-title-input"
+                           x-model="cardEditorTitle"
+                           placeholder="輸入標題..."
+                           @input="cardEditorDirty = true"
+                           @keydown.enter="$refs.tiptapHost && $refs.tiptapHost.focus()">
+                    <div class="card-editor-meta">
+                        <span x-text="cardEditorAtomType"></span>
+                        <span x-text="cardEditorAtomId ? '#' + cardEditorAtomId : ''"></span>
+                    </div>
+                    <button class="card-editor-close" @click="closeCardEditor()">x</button>
+                </div>
+                <!-- 工具列 -->
+                <div class="card-editor-toolbar">
+                    <button @click="ceCmd('bold')" :class="{ active: ceIsActive('bold') }" title="粗體"><b>B</b></button>
+                    <button @click="ceCmd('italic')" :class="{ active: ceIsActive('italic') }" title="斜體"><i>I</i></button>
+                    <button @click="ceCmd('underline')" :class="{ active: ceIsActive('underline') }" title="底線"><u>U</u></button>
+                    <button @click="ceCmd('strike')" :class="{ active: ceIsActive('strike') }" title="刪除線"><s>S</s></button>
+                    <button @click="ceCmd('code')" :class="{ active: ceIsActive('code') }" title="行內程式碼">&lt;&gt;</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('h1')" :class="{ active: ceIsActive('heading', {level:1}) }" title="標題 1">H1</button>
+                    <button @click="ceCmd('h2')" :class="{ active: ceIsActive('heading', {level:2}) }" title="標題 2">H2</button>
+                    <button @click="ceCmd('h3')" :class="{ active: ceIsActive('heading', {level:3}) }" title="標題 3">H3</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('bulletList')" :class="{ active: ceIsActive('bulletList') }" title="項目清單">-</button>
+                    <button @click="ceCmd('orderedList')" :class="{ active: ceIsActive('orderedList') }" title="編號清單">1.</button>
+                    <button @click="ceCmd('taskList')" :class="{ active: ceIsActive('taskList') }" title="任務清單">[]</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('blockquote')" :class="{ active: ceIsActive('blockquote') }" title="引用">"</button>
+                    <button @click="ceCmd('codeBlock')" :class="{ active: ceIsActive('codeBlock') }" title="程式區塊">{}</button>
+                    <button @click="ceCmd('hr')" title="分隔線">--</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('table')" title="插入表格">田</button>
+                    <template x-if="ceIsActive('table')">
+                        <span style="display:inline-flex; gap:2px;">
+                            <button @click="ceCmd('addRowAfter')" title="新增列">+行</button>
+                            <button @click="ceCmd('addColAfter')" title="新增欄">+欄</button>
+                            <button @click="ceCmd('deleteRow')" title="刪除列">-行</button>
+                            <button @click="ceCmd('deleteCol')" title="刪除欄">-欄</button>
+                            <button @click="ceCmd('deleteTable')" title="刪除表格">x表</button>
+                        </span>
+                    </template>
+                    <span class="tb-sep"></span>
+                    <button @click="ceInsertLink()" title="插入連結">Link</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('undo')" title="復原">&#8630;</button>
+                    <button @click="ceCmd('redo')" title="重做">&#8631;</button>
+                </div>
+                <!-- 編輯區 -->
+                <div class="card-editor-body">
+                    <div x-ref="tiptapHost"></div>
+                </div>
+                <!-- Footer -->
+                <div class="card-editor-footer">
+                    <span class="status-text" x-text="cardEditorDirty ? '已修改' : '已儲存'"></span>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" @click="closeCardEditor()">關閉</button>
+                        <button class="btn btn-primary" @click="saveCardEditor()" :disabled="!cardEditorDirty">儲存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <!-- 右鍵選單 -->
     <template x-if="contextMenu">
         <div class="context-menu" :style="'left:' + contextMenu.x + 'px; top:' + contextMenu.y + 'px;'" @click.stop>
@@ -612,7 +689,8 @@
             </template>
             <template x-if="contextMenu.type === 'card'">
                 <div>
-                    <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">編輯</div>
+                    <div class="context-menu-item" @click="openCardEditor(contextMenu.ca.atom_id); closeContextMenu()">開啟卡片</div>
+                    <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">側欄編輯</div>
                     <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除</div>
                     <div class="context-menu-item danger"

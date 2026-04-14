@@ -7,6 +7,7 @@ from sqlalchemy import (
     Integer, String, Text, Float, Boolean, DateTime,
     ForeignKey, UniqueConstraint, Index
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -90,6 +91,7 @@ class KnowledgeAtom(Base):
     # 內容
     title: Mapped[str] = mapped_column(Text, nullable=False, default='')
     content: Mapped[str] = mapped_column(Text, default='')
+    content_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     content_type: Mapped[str] = mapped_column(
         String(50), default='markdown'
     )  # markdown, text, checklist, table, image_ref, url, media_ref, ai_io
@@ -149,6 +151,7 @@ class KnowledgeAtom(Base):
             'id': self.id,
             'title': self.title,
             'content': self.content,
+            'content_json': self.content_json,
             'content_type': self.content_type,
             'atom_type': self.atom_type,
             'schema_id': self.schema_id,

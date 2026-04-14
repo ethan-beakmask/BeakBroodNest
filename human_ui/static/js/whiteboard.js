@@ -107,6 +107,13 @@ function whiteboardApp(canvasId) {
         editingGroup: null,
         groupForm: { name: '', color: '#3b82f6' },
 
+        // Card Editor (Tiptap 實例存在 window 層避開 Alpine Proxy)
+        cardEditorOpen: false,
+        cardEditorAtomId: null,
+        cardEditorAtomType: '',
+        cardEditorTitle: '',
+        cardEditorDirty: false,
+
         // Toast
         toasts: [],
         _toastSeq: 0,
@@ -595,27 +602,124 @@ function whiteboardApp(canvasId) {
 
         startInlineEdit(ca) {
             if (!ca || !ca.atom) return;
-            this.editingAtomId = ca.atom_id;
-            this.editContent = ca.atom.content || '';
-            this.$nextTick(() => {
-                const el = document.getElementById('edit-' + ca.atom_id);
-                if (el) el.focus();
-            });
+            this.openCardEditor(ca.atom_id);
         },
 
         async finishInlineEdit(ca) {
-            if (!ca || !ca.atom || this.editingAtomId !== ca.atom_id) return;
-            const newContent = this.editContent;
-            this.editingAtomId = null;
-            if (newContent !== (ca.atom.content || '')) {
-                ca.atom.content = newContent;
-                await API.updateAtom(ca.atom_id, { content: newContent });
-            }
+            // legacy: kept for keyboard escape handler compatibility
         },
 
         cancelInlineEdit() {
-            this.editingAtomId = null;
-            this.editContent = '';
+            // legacy: kept for keyboard escape handler compatibility
+        },
+
+        // ============================================
+        // Card Editor (Tiptap WYSIWYG)
+        // ============================================
+        async openCardEditor(atomId) {
+            // 從 API 取得完整原子資料
+            const resp = await API.getAtom(atomId);
+            if (!resp || resp.error) {
+                this.showToast('無法載入原子', 'error');
+                return;
+            }
+            const atom = resp;
+            const typeCfg = this.atomTypeConfig[atom.atom_type] || {};
+
+            this.cardEditorAtomId = atom.id;
+            this.cardEditorAtomType = typeCfg.label || atom.atom_type;
+            this.cardEditorTitle = atom.title || '';
+            this.cardEditorDirty = false;
+            this.cardEditorOpen = true;
+
+            // 等 DOM 渲染後初始化 Tiptap (實例存 window 層避開 Alpine Proxy)
+            this.$nextTick(() => {
+                const host = this.$refs.tiptapHost;
+                if (!host) return;
+
+                if (window._bcCardEditor) {
+                    window._bcCardEditor.destroy();
+                }
+                window._bcCardEditor = new window.CardEditor();
+                const self = this;
+                window._bcCardEditor.create(host, {
+                    contentJson: atom.content_json || null,
+                    content: atom.content || '',
+                    onChange: () => {
+                        self.cardEditorDirty = true;
+                    },
+                });
+            });
+        },
+
+        async saveCardEditor() {
+            const ce = window._bcCardEditor;
+            if (!ce || !this.cardEditorAtomId) return;
+            const md = ce.getMarkdown();
+            const json = ce.getJSON();
+            const title = this.cardEditorTitle;
+
+            const update = {
+                title: title,
+                content: md,
+                content_json: json,
+            };
+
+            await API.updateAtom(this.cardEditorAtomId, update);
+
+            // 同步白板上的卡片資料
+            const ca = this.atoms.find(a => a.atom_id === this.cardEditorAtomId);
+            if (ca && ca.atom) {
+                ca.atom.title = title;
+                ca.atom.content = md;
+                ca.atom.content_json = json;
+            }
+
+            // 同步右側面板
+            if (this.selectedAtomDetails && this.selectedAtomDetails.id === this.cardEditorAtomId) {
+                this.selectedAtomDetails.title = title;
+                this.selectedAtomDetails.content = md;
+            }
+
+            this.cardEditorDirty = false;
+            this.showToast('已儲存', 'success');
+        },
+
+        closeCardEditor() {
+            if (this.cardEditorDirty) {
+                if (!confirm('尚未儲存，確定關閉？')) return;
+            }
+            // 先關 dirty 防止 destroy 過程觸發 onChange
+            this.cardEditorDirty = false;
+            if (window._bcCardEditor) {
+                window._bcCardEditor.destroy();
+                window._bcCardEditor = null;
+            }
+            this.cardEditorOpen = false;
+            this.cardEditorAtomId = null;
+            // 清除可能殘留的拖拉狀態
+            this.dragCard = null;
+            this.bodyDragPending = false;
+            this.bodyDragCa = null;
+            this.$nextTick(() => {
+                this.renderConnections();
+            });
+        },
+
+        ceInsertLink() {
+            const url = prompt('輸入連結 URL:');
+            if (url && window._bcCardEditor) {
+                window._bcCardEditor.cmd('link', url);
+            }
+        },
+
+        ceCmd(command) {
+            if (window._bcCardEditor) window._bcCardEditor.cmd(command);
+        },
+
+        ceIsActive(name, attrs) {
+            if (!window._bcCardEditor) return false;
+            return window._bcCardEditor.isActive(name, attrs);
         },
 
         // Resize

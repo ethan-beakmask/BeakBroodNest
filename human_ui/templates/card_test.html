@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Card Editor 獨立測試</title>
+    <link rel="stylesheet" href="/static/css/card-editor.css?v={{ cache_ver }}">
+    <style>
+        body { margin: 0; font-family: -apple-system, sans-serif; background: #f1f5f9; }
+        .test-header { padding: 12px 20px; background: #1e293b; color: #fff; font-size: 14px; }
+        .test-container { max-width: 1000px; margin: 24px auto; }
+        .test-actions { margin-bottom: 16px; display: flex; gap: 8px; align-items: center; }
+        .test-actions button { padding: 6px 16px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; border-radius: 4px; font-size: 13px; }
+        .test-actions button:hover { background: #f1f5f9; }
+        .test-actions button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+        .test-output { margin-top: 16px; padding: 12px; background: #1e293b; color: #e2e8f0; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .editor-wrap { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+        .toolbar-wrap { padding: 8px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; display: flex; flex-wrap: wrap; gap: 2px; }
+        .toolbar-wrap button { padding: 4px 8px; border: none; background: none; font-size: 13px; color: #475569; cursor: pointer; border-radius: 3px; font-family: monospace; min-width: 28px; }
+        .toolbar-wrap button:hover { background: #e2e8f0; }
+        .toolbar-wrap button.active { background: #1e293b; color: #fff; }
+        .toolbar-wrap .sep { width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px; }
+        .editor-area { padding: 20px 24px; min-height: 400px; }
+        #status { font-size: 12px; color: #64748b; }
+    </style>
+</head>
+<body>
+    <div class="test-header">Card Editor 獨立測試 -- 無 Alpine.js，無白板</div>
+    <div class="test-container">
+        <div class="test-actions">
+            <button class="primary" onclick="doSave()">儲存 (看 JSON+MD)</button>
+            <button onclick="doLoad()">載入測試 Markdown</button>
+            <button onclick="doClear()">清空</button>
+            <span id="status">就緒</span>
+        </div>
+        <div class="editor-wrap">
+            <div class="toolbar-wrap" id="toolbar"></div>
+            <div class="editor-area">
+                <div id="editor-host"></div>
+            </div>
+        </div>
+        <div class="test-output" id="output">按「儲存」查看輸出</div>
+    </div>
+
+    <script src="/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
+    <script>
+        let ce = null;
+
+        const toolbarDef = [
+            { cmd: 'bold', label: '<b>B</b>', check: 'bold' },
+            { cmd: 'italic', label: '<i>I</i>', check: 'italic' },
+            { cmd: 'underline', label: '<u>U</u>', check: 'underline' },
+            { cmd: 'strike', label: '<s>S</s>', check: 'strike' },
+            { cmd: 'code', label: '&lt;&gt;', check: 'code' },
+            'sep',
+            { cmd: 'h1', label: 'H1', check: 'heading', attrs: {level:1} },
+            { cmd: 'h2', label: 'H2', check: 'heading', attrs: {level:2} },
+            { cmd: 'h3', label: 'H3', check: 'heading', attrs: {level:3} },
+            'sep',
+            { cmd: 'bulletList', label: '-', check: 'bulletList' },
+            { cmd: 'orderedList', label: '1.', check: 'orderedList' },
+            { cmd: 'taskList', label: '[]', check: 'taskList' },
+            'sep',
+            { cmd: 'blockquote', label: '"', check: 'blockquote' },
+            { cmd: 'codeBlock', label: '{}', check: 'codeBlock' },
+            { cmd: 'hr', label: '--' },
+            'sep',
+            { cmd: 'table', label: '田' },
+            'sep',
+            { cmd: 'undo', label: '&#8630;' },
+            { cmd: 'redo', label: '&#8631;' },
+        ];
+
+        function buildToolbar() {
+            const bar = document.getElementById('toolbar');
+            bar.innerHTML = '';
+            toolbarDef.forEach(item => {
+                if (item === 'sep') {
+                    const s = document.createElement('span');
+                    s.className = 'sep';
+                    bar.appendChild(s);
+                    return;
+                }
+                const btn = document.createElement('button');
+                btn.innerHTML = item.label;
+                btn.title = item.cmd;
+                btn.addEventListener('click', () => {
+                    ce.cmd(item.cmd);
+                    updateActiveStates();
+                });
+                btn.dataset.cmd = item.cmd;
+                if (item.check) {
+                    btn.dataset.check = item.check;
+                    if (item.attrs) btn.dataset.checkAttrs = JSON.stringify(item.attrs);
+                }
+                bar.appendChild(btn);
+            });
+        }
+
+        function updateActiveStates() {
+            if (!ce) return;
+            document.querySelectorAll('#toolbar button[data-check]').forEach(btn => {
+                const attrs = btn.dataset.checkAttrs ? JSON.parse(btn.dataset.checkAttrs) : undefined;
+                btn.classList.toggle('active', ce.isActive(btn.dataset.check, attrs));
+            });
+        }
+
+        function initEditor() {
+            ce = new window.CardEditor();
+            ce.create(document.getElementById('editor-host'), {
+                content: '',
+                onChange: (data) => {
+                    document.getElementById('status').textContent = '已修改';
+                    updateActiveStates();
+                },
+            });
+            document.getElementById('status').textContent = 'Tiptap 已初始化';
+            buildToolbar();
+        }
+
+        function doSave() {
+            if (!ce) return;
+            const md = ce.getMarkdown();
+            const json = ce.getJSON();
+            document.getElementById('output').textContent =
+                '=== Markdown ===\n' + md + '\n\n=== JSON (前 2000 字) ===\n' + JSON.stringify(json, null, 2).substring(0, 2000);
+            document.getElementById('status').textContent = '已輸出';
+        }
+
+        function doLoad() {
+            if (!ce) return;
+            ce.setContent('# 測試標題\n\n這是一段 **粗體** 和 *斜體* 文字。\n\n## 清單\n\n- 項目一\n- 項目二\n  - 子項目\n\n## 程式碼\n\n```python\nprint("hello")\n```\n\n## 表格\n\n| 欄位 | 值 |\n|------|----|\n| A | 1 |\n| B | 2 |\n\n> 引用文字\n\n---\n\n任務清單不知道能不能用。');
+            document.getElementById('status').textContent = '已載入測試內容';
+        }
+
+        function doClear() {
+            if (!ce) return;
+            ce.setContent('');
+            document.getElementById('status').textContent = '已清空';
+        }
+
+        // 頁面載入後初始化
+        window.addEventListener('DOMContentLoaded', initEditor);
+    </script>
+</body>
+</html>
