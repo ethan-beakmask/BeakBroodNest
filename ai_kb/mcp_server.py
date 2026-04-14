@@ -25,6 +25,7 @@ from mcp.server.fastmcp import FastMCP
 from core.db import init_engine, session_scope
 from core.models import (
     KnowledgeAtom, AtomRelation, Tag, atom_tags, Canvas, CanvasAtom,
+    AtomSchema, SchemaField, AtomFieldValue,
 )
 from core import relations as rel_service
 from core import consistency as consistency_service
@@ -59,6 +60,8 @@ def note_store(
     source_detail: str = '',
     tags: list[str] | None = None,
     lifecycle: str = 'active',
+    schema_id: int | None = None,
+    field_values: dict[str, str] | None = None,
 ) -> str:
     """儲存一筆知識原子到知識庫。
 
@@ -67,6 +70,8 @@ def note_store(
     lifecycle: active(活躍) / aging(老化) / archived(歸檔) / terminal(終止)
     source: human / ai / import / derived
     tags: 標籤名稱列表，不存在的標籤會自動建立
+    schema_id: E 類型時關聯的 schema ID
+    field_values: E 類型的結構化欄位值，格式 {"欄位name": "值"}
 
     回傳建立的原子 ID 與摘要。
     """
@@ -75,6 +80,12 @@ def note_store(
         return json.dumps({'error': f'無效的 atom_type: {atom_type}，允許值: {", ".join(valid_types)}'})
 
     with session_scope() as s:
+        # E 類型驗證 schema
+        if atom_type == 'E' and schema_id:
+            schema = s.query(AtomSchema).filter(AtomSchema.id == schema_id).first()
+            if not schema:
+                return json.dumps({'error': f'Schema {schema_id} 不存在'})
+
         atom = KnowledgeAtom(
             title=title,
             content=content,
@@ -83,6 +94,7 @@ def note_store(
             lifecycle=lifecycle,
             source=source,
             source_detail=source_detail,
+            schema_id=schema_id,
         )
         s.add(atom)
         s.flush()
@@ -99,15 +111,34 @@ def note_store(
                 tag_objects.append(tag)
             atom.tags = tag_objects
 
+        # 處理欄位值
+        if field_values and schema_id:
+            schema_fields = s.query(SchemaField).filter(
+                SchemaField.schema_id == schema_id
+            ).all()
+            field_map = {f.name: f for f in schema_fields}
+            for fname, fval in field_values.items():
+                if fname in field_map:
+                    s.add(AtomFieldValue(
+                        atom_id=atom.id,
+                        field_id=field_map[fname].id,
+                        value=str(fval) if fval is not None else None,
+                    ))
+
         s.flush()
-        return json.dumps({
+        result = {
             'id': atom.id,
             'title': atom.title,
             'atom_type': atom.atom_type,
             'lifecycle': atom.lifecycle,
             'tags': [t.name for t in atom.tags],
             'message': f'知識原子已建立 (id={atom.id})',
-        }, ensure_ascii=False)
+        }
+        if schema_id:
+            result['schema_id'] = schema_id
+        if field_values:
+            result['field_values'] = field_values
+        return json.dumps(result, ensure_ascii=False)
 
 
 # ============================================================
@@ -122,6 +153,7 @@ def note_search(
     tag: str = '',
     tags: list[str] | None = None,
     source: str = '',
+    schema_id: int | None = None,
     limit: int = 20,
 ) -> str:
     """搜尋知識庫中的原子。
@@ -132,10 +164,12 @@ def note_search(
     tag: 篩選單一標籤名稱（向下相容）
     tags: 多標籤 AND 篩選，原子必須同時擁有所有指定標籤
     source: 篩選來源 (human/ai/import/derived)
+    schema_id: 篩選 E 類型的 schema ID
     limit: 回傳上限（預設 20，最大 100）
 
     tag 與 tags 同時提供時，tag 會併入 tags 一起做 AND 篩選。
     ILIKE 保證召回率，pg_trgm similarity 輔助排序（查詢>2字時啟用）。
+    E 類型原子會附帶 field_values 結構化欄位值。
     """
     limit = min(limit, 100)
 
@@ -181,6 +215,9 @@ def note_search(
         if source:
             q = q.filter(KnowledgeAtom.source == source)
 
+        if schema_id is not None:
+            q = q.filter(KnowledgeAtom.schema_id == schema_id)
+
         # 合併 tag / tags 為統一的標籤篩選列表
         all_tags = list(tags) if tags else []
         if tag and tag not in all_tags:
@@ -219,7 +256,7 @@ def note_search(
 
         results = []
         for a in atoms:
-            results.append({
+            item = {
                 'id': a.id,
                 'title': a.title,
                 'content': a.content[:200] + ('...' if len(a.content) > 200 else ''),
@@ -229,7 +266,15 @@ def note_search(
                 'source': a.source,
                 'tags': [t.name for t in a.tags],
                 'updated_at': a.updated_at.isoformat() if a.updated_at else None,
-            })
+            }
+            # E 類型附帶結構化欄位值
+            if a.atom_type == 'E' and a.schema_id:
+                fvs = s.query(AtomFieldValue).options(
+                    joinedload(AtomFieldValue.field)
+                ).filter(AtomFieldValue.atom_id == a.id).all()
+                item['field_values'] = {fv.field.name: fv.value for fv in fvs if fv.field}
+                item['schema_id'] = a.schema_id
+            results.append(item)
 
         return json.dumps({
             'total': total,
@@ -251,7 +296,10 @@ def note_get(atom_id: int) -> str:
     with session_scope() as s:
         atom = (
             s.query(KnowledgeAtom)
-            .options(joinedload(KnowledgeAtom.tags))
+            .options(
+                joinedload(KnowledgeAtom.tags),
+                joinedload(KnowledgeAtom.field_values).joinedload(AtomFieldValue.field),
+            )
             .filter(KnowledgeAtom.id == atom_id, KnowledgeAtom.is_deleted == False)
             .first()
         )
@@ -261,7 +309,12 @@ def note_get(atom_id: int) -> str:
         atom.last_accessed_at = datetime.datetime.now()
         atom.access_count += 1
 
-        result = atom.to_dict(include_tags=True)
+        result = atom.to_dict(include_tags=True, include_values=True)
+
+        # E 類型附加 schema 資訊
+        if atom.schema_id and atom.schema:
+            result['schema'] = atom.schema.to_dict()
+            result['schema']['fields'] = [f.to_dict() for f in atom.schema.fields]
 
         # 關係
         outgoing = rel_service.get_relations_from(s, atom_id)
@@ -553,6 +606,118 @@ def note_check(
             limit=min(limit, 50),
         )
         return json.dumps(result, ensure_ascii=False)
+
+
+# ============================================================
+# schema_create -- 建立套表 schema
+# ============================================================
+
+@mcp.tool()
+def schema_create(
+    name: str,
+    slug: str,
+    description: str = '',
+    icon: str = '',
+    fields: list[dict] | None = None,
+) -> str:
+    """建立一個 E 類型套表的 schema 定義。
+
+    name: schema 顯示名稱
+    slug: 唯一識別碼（英文小寫+底線，如 perf_test）
+    description: 用途說明
+    icon: 圖示（選填）
+    fields: 欄位定義列表，每個欄位為 dict:
+      {
+        "name": "欄位識別名（英文）",
+        "label": "欄位顯示名（中文）",
+        "field_type": "text|number|date|select|multiselect|checkbox|url|relation",
+        "options": "select/multiselect 的選項，逗號分隔",
+        "required": false,
+        "sort_order": 0
+      }
+
+    回傳建立的 schema ID 與欄位列表。
+    """
+    with session_scope() as s:
+        existing = s.query(AtomSchema).filter(AtomSchema.slug == slug).first()
+        if existing:
+            return json.dumps({'error': f'slug "{slug}" 已存在 (id={existing.id})'})
+
+        schema = AtomSchema(
+            name=name,
+            slug=slug,
+            description=description,
+            icon=icon,
+        )
+        s.add(schema)
+        s.flush()
+
+        if fields:
+            for i, fd in enumerate(fields):
+                sf = SchemaField(
+                    schema_id=schema.id,
+                    name=fd.get('name', ''),
+                    label=fd.get('label', fd.get('name', '')),
+                    field_type=fd.get('field_type', 'text'),
+                    options=fd.get('options', ''),
+                    required=fd.get('required', False),
+                    sort_order=fd.get('sort_order', i),
+                )
+                s.add(sf)
+            s.flush()
+
+        schema_fields = s.query(SchemaField).filter(
+            SchemaField.schema_id == schema.id
+        ).order_by(SchemaField.sort_order).all()
+
+        return json.dumps({
+            'id': schema.id,
+            'name': schema.name,
+            'slug': schema.slug,
+            'description': schema.description,
+            'fields': [f.to_dict() for f in schema_fields],
+            'message': f'Schema "{name}" 已建立 (id={schema.id})',
+        }, ensure_ascii=False)
+
+
+# ============================================================
+# schema_list -- 列出所有 schema
+# ============================================================
+
+@mcp.tool()
+def schema_list() -> str:
+    """列出所有套表 schema 及其欄位定義。
+
+    用途：查看可用的 E 類型 schema，以便建立套表原子時指定 schema_id。
+    """
+    with session_scope() as s:
+        schemas = (
+            s.query(AtomSchema)
+            .options(joinedload(AtomSchema.fields))
+            .order_by(AtomSchema.id)
+            .all()
+        )
+
+        # 統計每個 schema 被多少原子使用
+        result = []
+        for schema in schemas:
+            atom_count = s.query(KnowledgeAtom).filter(
+                KnowledgeAtom.schema_id == schema.id,
+                KnowledgeAtom.is_deleted == False,
+            ).count()
+            result.append({
+                'id': schema.id,
+                'name': schema.name,
+                'slug': schema.slug,
+                'description': schema.description,
+                'atom_count': atom_count,
+                'fields': [f.to_dict() for f in schema.fields],
+            })
+
+        return json.dumps({
+            'total': len(result),
+            'schemas': result,
+        }, ensure_ascii=False)
 
 
 # ============================================================

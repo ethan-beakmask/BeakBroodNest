@@ -111,6 +111,15 @@ function whiteboardApp(canvasId) {
         toasts: [],
         _toastSeq: 0,
 
+        // Render test panel
+        renderMode: 'normal',   // kept for URL default
+        renderStats: { total: 0, rendered: 0 },
+        rtLineStyle: 'curve',   // 'curve' | 'straight' | 'none'
+        rtEngine: 'grouped', // 'individual' | 'grouped'
+        rtOptEnabled: false,
+        rtOptPerSector: 10,
+        rtPanelOpen: false,
+
         // -- Config --
         atomTypeConfig: {
             A: { label: '萬用', bg: '#f3f4f6', color: '#6b7280', border: '#9ca3af' },
@@ -144,6 +153,15 @@ function whiteboardApp(canvasId) {
         // Init
         // ============================================
         async init() {
+            // Read render mode from URL query param
+            var urlParams = new URLSearchParams(window.location.search);
+            var rm = urlParams.get('render');
+            if (rm === 'straight' || rm === 'optimized' || rm === 'opt-straight') this.renderMode = rm;
+            // Sync panel state from URL default
+            if (rm === 'straight')      { this.rtLineStyle = 'straight'; }
+            if (rm === 'optimized')     { this.rtOptEnabled = true; }
+            if (rm === 'opt-straight')  { this.rtLineStyle = 'straight'; this.rtOptEnabled = true; }
+
             this.initMarked();
             await this.loadData();
             this.$nextTick(() => {
@@ -971,18 +989,170 @@ function whiteboardApp(canvasId) {
         // ============================================
         // Render Connections (SVG)
         // ============================================
+
+        // Calculate edge endpoints for a connection (edge-to-edge, not center)
+        _calcEdgeEndpoints(srcCa, tgtCa) {
+            var sw = srcCa.width || 260, sh = srcCa.height || 120;
+            var tw = tgtCa.width || 260, th = tgtCa.height || 120;
+            var scx = srcCa.pos_x + sw / 2, scy = srcCa.pos_y + sh / 2;
+            var tcx = tgtCa.pos_x + tw / 2, tcy = tgtCa.pos_y + th / 2;
+            var ddx = tcx - scx, ddy = tcy - scy;
+            var sx, sy, tx, ty;
+
+            if (Math.abs(ddx) > Math.abs(ddy)) {
+                if (ddx > 0) { sx = srcCa.pos_x + sw; sy = scy; tx = tgtCa.pos_x; ty = tcy; }
+                else         { sx = srcCa.pos_x;       sy = scy; tx = tgtCa.pos_x + tw; ty = tcy; }
+            } else {
+                if (ddy > 0) { sx = scx; sy = srcCa.pos_y + sh; tx = tcx; ty = tgtCa.pos_y; }
+                else         { sx = scx; sy = srcCa.pos_y;       tx = tcx; ty = tgtCa.pos_y + th; }
+            }
+            return { sx: sx, sy: sy, tx: tx, ty: ty, ddx: ddx, ddy: ddy };
+        },
+
+        // Build SVG path 'd' attribute: bezier or straight
+        _buildPathD(ep, straight) {
+            if (straight) {
+                return 'M ' + ep.sx + ' ' + ep.sy + ' L ' + ep.tx + ' ' + ep.ty;
+            }
+            var cx1, cy1, cx2, cy2;
+            if (Math.abs(ep.ddx) > Math.abs(ep.ddy)) {
+                var gx = Math.max(Math.abs(ep.tx - ep.sx) * 0.4, 20);
+                cx1 = ep.sx + (ep.ddx > 0 ? gx : -gx); cy1 = ep.sy;
+                cx2 = ep.tx + (ep.ddx > 0 ? -gx : gx); cy2 = ep.ty;
+            } else {
+                var gy = Math.max(Math.abs(ep.ty - ep.sy) * 0.4, 20);
+                cx1 = ep.sx; cy1 = ep.sy + (ep.ddy > 0 ? gy : -gy);
+                cx2 = ep.tx; cy2 = ep.ty + (ep.ddy > 0 ? -gy : gy);
+            }
+            return 'M ' + ep.sx + ' ' + ep.sy + ' C ' + cx1 + ' ' + cy1 + ', ' + cx2 + ' ' + cy2 + ', ' + ep.tx + ' ' + ep.ty;
+        },
+
+        // Get current viewport bounds in canvas coordinates
+        _getViewportBounds() {
+            var vp = this.$refs.viewport;
+            if (!vp) return null;
+            var rect = vp.getBoundingClientRect();
+            var left = -this.panX / this.zoom;
+            var top = -this.panY / this.zoom;
+            var right = left + rect.width / this.zoom;
+            var bottom = top + rect.height / this.zoom;
+            return { left: left, top: top, right: right, bottom: bottom,
+                     cx: (left + right) / 2, cy: (top + bottom) / 2 };
+        },
+
+        // Check if a card is inside viewport bounds
+        _isInViewport(ca, vb) {
+            var w = ca.width || 260, h = ca.height || 120;
+            return ca.pos_x + w > vb.left && ca.pos_x < vb.right &&
+                   ca.pos_y + h > vb.top  && ca.pos_y < vb.bottom;
+        },
+
+        // Filter connections for optimized mode (8-direction, max 10 per sector)
+        _filterOptimizedConnections() {
+            var vb = this._getViewportBounds();
+            if (!vb) return this.connections;
+
+            var self = this;
+            var atomMap = {};
+            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
+
+            // Count nodes outside viewport
+            var outsideCount = 0;
+            this.atoms.forEach(function(ca) {
+                if (!self._isInViewport(ca, vb)) outsideCount++;
+            });
+
+            // Threshold not met: render all
+            if (outsideCount <= 100) return this.connections;
+
+            // Separate: both-endpoints-in-viewport vs at-least-one-outside
+            var insideConns = [];
+            var outsideConns = [];
+            this.connections.forEach(function(conn) {
+                var src = atomMap[conn.source_atom_id];
+                var tgt = atomMap[conn.target_atom_id];
+                if (!src || !tgt) return;
+                var srcIn = self._isInViewport(src, vb);
+                var tgtIn = self._isInViewport(tgt, vb);
+                if (srcIn && tgtIn) {
+                    insideConns.push(conn);
+                } else {
+                    // midpoint of the two card centers for direction calc
+                    var sw = src.width || 260, sh = src.height || 120;
+                    var tw = tgt.width || 260, th = tgt.height || 120;
+                    var mx = ((src.pos_x + sw / 2) + (tgt.pos_x + tw / 2)) / 2;
+                    var my = ((src.pos_y + sh / 2) + (tgt.pos_y + th / 2)) / 2;
+                    var dx = mx - vb.cx, dy = my - vb.cy;
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    // angle -> sector 0-7 (N=0, NE=1, E=2, SE=3, S=4, SW=5, W=6, NW=7)
+                    var angle = Math.atan2(dy, dx); // -PI..PI, 0=right
+                    // Rotate so 0=North: subtract PI/2, then normalize
+                    var a = angle + Math.PI / 2;
+                    if (a < 0) a += 2 * Math.PI;
+                    var sector = Math.floor(a / (Math.PI / 4)) % 8;
+                    outsideConns.push({ conn: conn, sector: sector, dist: dist });
+                }
+            });
+
+            // Per-sector: sort by distance ascending, take top N
+            var perSector = this.rtOptPerSector || 10;
+            var sectors = [[], [], [], [], [], [], [], []];
+            outsideConns.forEach(function(item) { sectors[item.sector].push(item); });
+            var kept = [];
+            for (var s = 0; s < 8; s++) {
+                sectors[s].sort(function(a, b) { return a.dist - b.dist; });
+                for (var i = 0; i < Math.min(perSector, sectors[s].length); i++) {
+                    kept.push(sectors[s][i].conn);
+                }
+            }
+
+            return insideConns.concat(kept);
+        },
+
+        // Called by panel controls
+        applyRenderSettings() {
+            this.renderConnections();
+        },
+
+        // Store connection geometry for hit testing (grouped mode)
+        _connGeometry: [],
+
         renderConnections() {
-            const svg = this.$refs.connSvg;
+            var svg = this.$refs.connSvg;
             if (!svg) return;
             svg.innerHTML = '';
+            this._connGeometry = [];
+
+            // 'none' = hide all edges
+            if (this.rtLineStyle === 'none') {
+                this.renderStats = { total: this.connections.length, rendered: 0 };
+                return;
+            }
+
+            // Determine which connections to render
+            var renderList = this.rtOptEnabled
+                ? this._filterOptimizedConnections()
+                : this.connections;
+
+            this.renderStats = { total: this.connections.length, rendered: renderList.length };
+
+            if (this.rtEngine === 'grouped') {
+                this._renderGrouped(svg, renderList);
+            } else {
+                this._renderIndividual(svg, renderList);
+            }
+        },
+
+        _renderIndividual(svg, renderList) {
+            var isStraight = (this.rtLineStyle === 'straight');
 
             // Arrow markers
-            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            const usedColors = new Set();
-            this.connections.forEach(c => usedColors.add(c.color || '#94a3b8'));
-            usedColors.forEach(color => {
-                const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-                const mid = 'arr-' + color.replace('#', '');
+            var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            var usedColors = new Set();
+            this.connections.forEach(function(c) { usedColors.add(c.color || '#94a3b8'); });
+            usedColors.forEach(function(color) {
+                var marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+                var mid = 'arr-' + color.replace('#', '');
                 marker.setAttribute('id', mid);
                 marker.setAttribute('viewBox', '0 0 10 10');
                 marker.setAttribute('refX', '9');
@@ -990,7 +1160,7 @@ function whiteboardApp(canvasId) {
                 marker.setAttribute('markerWidth', '6');
                 marker.setAttribute('markerHeight', '6');
                 marker.setAttribute('orient', 'auto-start-reverse');
-                const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                 p.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
                 p.setAttribute('fill', color);
                 marker.appendChild(p);
@@ -998,57 +1168,21 @@ function whiteboardApp(canvasId) {
             });
             svg.appendChild(defs);
 
-            const self = this;
-            this.connections.forEach(conn => {
-                const srcCa = self.atoms.find(ca => ca.atom_id === conn.source_atom_id);
-                const tgtCa = self.atoms.find(ca => ca.atom_id === conn.target_atom_id);
+            var self = this;
+            var atomMap = {};
+            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
+
+            renderList.forEach(function(conn) {
+                var srcCa = atomMap[conn.source_atom_id];
+                var tgtCa = atomMap[conn.target_atom_id];
                 if (!srcCa || !tgtCa) return;
 
-                const sw = srcCa.width || 260;
-                const sh = srcCa.height || 120;
-                const tw = tgtCa.width || 260;
-                const th = tgtCa.height || 120;
+                var ep = self._calcEdgeEndpoints(srcCa, tgtCa);
+                var lc = conn.color || '#94a3b8';
+                var mid = 'arr-' + lc.replace('#', '');
 
-                // Edge-to-edge: line starts/ends at card border, not center
-                var scx = srcCa.pos_x + sw / 2;
-                var scy = srcCa.pos_y + sh / 2;
-                var tcx = tgtCa.pos_x + tw / 2;
-                var tcy = tgtCa.pos_y + th / 2;
-                var ddx = tcx - scx;
-                var ddy = tcy - scy;
-                var sx, sy, tx, ty, cx1, cy1, cx2, cy2;
-
-                if (Math.abs(ddx) > Math.abs(ddy)) {
-                    // Horizontal arrangement
-                    if (ddx > 0) {
-                        sx = srcCa.pos_x + sw; sy = scy;
-                        tx = tgtCa.pos_x;      ty = tcy;
-                    } else {
-                        sx = srcCa.pos_x;       sy = scy;
-                        tx = tgtCa.pos_x + tw;  ty = tcy;
-                    }
-                    var gx = Math.max(Math.abs(tx - sx) * 0.4, 20);
-                    cx1 = sx + (ddx > 0 ? gx : -gx); cy1 = sy;
-                    cx2 = tx + (ddx > 0 ? -gx : gx); cy2 = ty;
-                } else {
-                    // Vertical arrangement
-                    if (ddy > 0) {
-                        sx = scx; sy = srcCa.pos_y + sh;
-                        tx = tcx; ty = tgtCa.pos_y;
-                    } else {
-                        sx = scx; sy = srcCa.pos_y;
-                        tx = tcx; ty = tgtCa.pos_y + th;
-                    }
-                    var gy = Math.max(Math.abs(ty - sy) * 0.4, 20);
-                    cx1 = sx; cy1 = sy + (ddy > 0 ? gy : -gy);
-                    cx2 = tx; cy2 = ty + (ddy > 0 ? -gy : gy);
-                }
-
-                const lc = conn.color || '#94a3b8';
-                const mid = 'arr-' + lc.replace('#', '');
-
-                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', 'M ' + sx + ' ' + sy + ' C ' + cx1 + ' ' + cy1 + ', ' + cx2 + ' ' + cy2 + ', ' + tx + ' ' + ty);
+                var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', self._buildPathD(ep, isStraight));
                 path.setAttribute('fill', 'none');
                 path.setAttribute('stroke', lc);
                 path.setAttribute('stroke-width', '2');
@@ -1059,18 +1193,18 @@ function whiteboardApp(canvasId) {
 
                 path.style.pointerEvents = 'stroke';
                 path.style.cursor = 'pointer';
-                const connId = conn.id;
+                var connId = conn.id;
                 path.addEventListener('click', function() {
                     if (confirm('刪除此連線?')) self.deleteConnection(connId);
                 });
                 svg.appendChild(path);
 
                 // Label
-                const labelText = conn.label || self.relationLabelMap[conn.relation_type] || '';
+                var labelText = conn.label || self.relationLabelMap[conn.relation_type] || '';
                 if (labelText) {
-                    const mx = (sx + tx) / 2;
-                    const my = (sy + ty) / 2;
-                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    var mx = (ep.sx + ep.tx) / 2;
+                    var my = (ep.sy + ep.ty) / 2;
+                    var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     text.setAttribute('x', mx);
                     text.setAttribute('y', my - 8);
                     text.setAttribute('text-anchor', 'middle');
@@ -1080,6 +1214,118 @@ function whiteboardApp(canvasId) {
                     svg.appendChild(text);
                 }
             });
+        },
+
+        _renderGrouped(svg, renderList) {
+            var isStraight = (this.rtLineStyle === 'straight');
+            var self = this;
+            var atomMap = {};
+            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
+
+            // Group by (color + line_style) -> combined path 'd' + arrow triangles
+            var groups = {};   // key -> { d: '', arrowD: '', color, dasharray }
+            var geom = [];     // for hit testing
+
+            renderList.forEach(function(conn) {
+                var srcCa = atomMap[conn.source_atom_id];
+                var tgtCa = atomMap[conn.target_atom_id];
+                if (!srcCa || !tgtCa) return;
+
+                var ep = self._calcEdgeEndpoints(srcCa, tgtCa);
+                var lc = conn.color || '#94a3b8';
+                var ls = conn.line_style || 'solid';
+                var key = lc + '|' + ls;
+
+                if (!groups[key]) {
+                    var da = '';
+                    if (ls === 'dashed') da = '8 4';
+                    else if (ls === 'dotted') da = '3 3';
+                    groups[key] = { d: '', arrowD: '', color: lc, dasharray: da };
+                }
+
+                // Append line segment to combined path
+                groups[key].d += self._buildPathD(ep, isStraight) + ' ';
+
+                // Build arrowhead triangle at target end
+                var adx = ep.tx - ep.sx, ady = ep.ty - ep.sy;
+                var len = Math.sqrt(adx * adx + ady * ady);
+                if (len > 0) {
+                    var ux = adx / len, uy = ady / len;  // unit vector along line
+                    var px = -uy, py = ux;                // perpendicular
+                    var as = 7;  // arrow size
+                    var ax1 = ep.tx - ux * as * 1.5 + px * as;
+                    var ay1 = ep.ty - uy * as * 1.5 + py * as;
+                    var ax2 = ep.tx - ux * as * 1.5 - px * as;
+                    var ay2 = ep.ty - uy * as * 1.5 - py * as;
+                    groups[key].arrowD += 'M ' + ep.tx + ' ' + ep.ty +
+                        ' L ' + ax1 + ' ' + ay1 +
+                        ' L ' + ax2 + ' ' + ay2 + ' Z ';
+                }
+
+                // Store geometry for hit test
+                geom.push({ connId: conn.id, sx: ep.sx, sy: ep.sy, tx: ep.tx, ty: ep.ty });
+            });
+
+            this._connGeometry = geom;
+
+            // Render each group as 2 elements: 1 combined line path + 1 combined arrow path
+            var keys = Object.keys(groups);
+            for (var i = 0; i < keys.length; i++) {
+                var g = groups[keys[i]];
+
+                // Lines
+                var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', g.d);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', g.color);
+                path.setAttribute('stroke-width', '2');
+                if (g.dasharray) path.setAttribute('stroke-dasharray', g.dasharray);
+                path.style.pointerEvents = 'stroke';
+                path.style.cursor = 'pointer';
+                path.addEventListener('click', function(e) { self._onGroupedLineClick(e); });
+                svg.appendChild(path);
+
+                // Arrows (filled triangles, combined into one path)
+                if (g.arrowD) {
+                    var arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    arrow.setAttribute('d', g.arrowD);
+                    arrow.setAttribute('fill', g.color);
+                    arrow.setAttribute('stroke', 'none');
+                    arrow.style.pointerEvents = 'none';
+                    svg.appendChild(arrow);
+                }
+            }
+        },
+
+        // Hit test: find which connection was clicked in grouped mode
+        _onGroupedLineClick(e) {
+            var vp = this.$refs.viewport;
+            if (!vp) return;
+            var rect = vp.getBoundingClientRect();
+            // Convert screen coords to canvas coords
+            var cx = (e.clientX - rect.left - this.panX) / this.zoom;
+            var cy = (e.clientY - rect.top - this.panY) / this.zoom;
+
+            var best = null, bestDist = Infinity;
+            for (var i = 0; i < this._connGeometry.length; i++) {
+                var g = this._connGeometry[i];
+                var d = this._pointToSegmentDist(cx, cy, g.sx, g.sy, g.tx, g.ty);
+                if (d < bestDist) { bestDist = d; best = g; }
+            }
+
+            if (best && bestDist < 20 / this.zoom) {
+                if (confirm('刪除此連線?')) this.deleteConnection(best.connId);
+            }
+        },
+
+        // Point-to-line-segment distance
+        _pointToSegmentDist(px, py, x1, y1, x2, y2) {
+            var dx = x2 - x1, dy = y2 - y1;
+            var lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+            var t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+            var nx = x1 + t * dx, ny = y1 + t * dy;
+            return Math.sqrt((px - nx) * (px - nx) + (py - ny) * (py - ny));
         },
 
         // ============================================

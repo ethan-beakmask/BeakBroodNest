@@ -2,6 +2,117 @@
    BeakCortex -- 白板樣式
    ============================================================ */
 
+/* ---- Render mode badges ---- */
+.render-mode-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    border-radius: 3px;
+    background: #dc2626;
+    color: #fff;
+    margin-right: 6px;
+}
+.render-stats-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    background: #1e293b;
+    color: #94a3b8;
+    margin-right: 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Render Test Panel ---- */
+.rt-panel {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    z-index: 100;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 12px;
+    min-width: 240px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+}
+.rt-panel.rt-collapsed {
+    min-width: auto;
+}
+.rt-panel-toggle {
+    padding: 4px 10px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 11px;
+    color: #94a3b8;
+    text-align: center;
+    user-select: none;
+    border-bottom: 1px solid #334155;
+}
+.rt-collapsed .rt-panel-toggle {
+    border-bottom: none;
+}
+.rt-panel-body {
+    padding: 8px 10px;
+}
+.rt-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.rt-row:last-child { margin-bottom: 0; }
+.rt-label {
+    font-weight: 600;
+    color: #94a3b8;
+    min-width: 42px;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.rt-sub {
+    font-size: 10px;
+    color: #64748b;
+}
+.rt-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    border: 1px solid #475569;
+    border-radius: 3px;
+    background: #1e293b;
+    color: #cbd5e1;
+    cursor: pointer;
+}
+.rt-btn:hover { background: #334155; }
+.rt-btn.active {
+    background: #2563eb;
+    border-color: #3b82f6;
+    color: #fff;
+}
+.rt-num {
+    width: 50px;
+    padding: 2px 4px;
+    font-size: 11px;
+    border: 1px solid #475569;
+    border-radius: 3px;
+    background: #1e293b;
+    color: #e2e8f0;
+    text-align: center;
+}
+.rt-stats {
+    padding-top: 4px;
+    border-top: 1px solid #334155;
+    color: #64748b;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    justify-content: space-between;
+}
+
 /* ---- 白板容器 ---- */
 .wb-viewport {
     flex: 1;

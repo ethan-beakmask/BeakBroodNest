@@ -20,6 +20,10 @@
     <div class="app-header">
         <div class="logo">BeakCortex</div>
         <div class="header-right">
+            <template x-if="rtLineStyle !== 'curve' || rtOptEnabled || rtEngine !== 'individual'">
+                <span class="render-mode-badge"
+                      x-text="(rtEngine === 'grouped' ? 'GRP ' : '') + (rtOptEnabled ? '8way/' + rtOptPerSector + ' ' : '') + (rtLineStyle === 'straight' ? 'STRAIGHT' : rtLineStyle === 'none' ? 'NO-EDGE' : 'CURVE')"></span>
+            </template>
             <a href="/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
         </div>
@@ -193,6 +197,45 @@
                 <span x-text="zoomPercent + '%'" style="min-width:36px; text-align:center;"></span>
                 <button @click="zoomIn()">+</button>
                 <button @click="resetZoom()" style="margin-left:4px; font-size:11px;">重置</button>
+            </div>
+
+            <!-- Render Test Panel -->
+            <div class="rt-panel" :class="{ 'rt-collapsed': !rtPanelOpen }"
+                 @mousedown.stop @mousemove.stop @mouseup.stop @wheel.stop>
+                <div class="rt-panel-toggle" @click="rtPanelOpen = !rtPanelOpen"
+                     x-text="rtPanelOpen ? 'Render Test ^' : 'RT'"></div>
+                <div class="rt-panel-body" x-show="rtPanelOpen" x-transition>
+                    <div class="rt-row">
+                        <span class="rt-label">Engine</span>
+                        <button class="rt-btn" :class="{ active: rtEngine === 'individual' }"
+                                @click="rtEngine = 'individual'; applyRenderSettings()">Individual</button>
+                        <button class="rt-btn" :class="{ active: rtEngine === 'grouped' }"
+                                @click="rtEngine = 'grouped'; applyRenderSettings()">Grouped</button>
+                    </div>
+                    <div class="rt-row">
+                        <span class="rt-label">Line</span>
+                        <button class="rt-btn" :class="{ active: rtLineStyle === 'curve' }"
+                                @click="rtLineStyle = 'curve'; applyRenderSettings()">Curve</button>
+                        <button class="rt-btn" :class="{ active: rtLineStyle === 'straight' }"
+                                @click="rtLineStyle = 'straight'; applyRenderSettings()">Straight</button>
+                        <button class="rt-btn" :class="{ active: rtLineStyle === 'none' }"
+                                @click="rtLineStyle = 'none'; applyRenderSettings()">None</button>
+                    </div>
+                    <div class="rt-row">
+                        <label class="rt-label">
+                            <input type="checkbox" x-model="rtOptEnabled"
+                                   @change="applyRenderSettings()"> 8-way
+                        </label>
+                        <span class="rt-sub">per sector</span>
+                        <input type="number" class="rt-num" min="0" max="999"
+                               x-model.number="rtOptPerSector"
+                               @change="applyRenderSettings()">
+                    </div>
+                    <div class="rt-row rt-stats">
+                        <span x-text="'Node: ' + atoms.length"></span>
+                        <span x-text="'Edge: ' + renderStats.rendered + ' / ' + renderStats.total"></span>
+                    </div>
+                </div>
             </div>
         </div>
 
