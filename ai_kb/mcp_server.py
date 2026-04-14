@@ -9,6 +9,7 @@ BeakCortex MCP Server -- AI 知識庫介面
   tools/schema.py       -- Schema + Overview (3 個)
   tools/orchestrator.py -- 任務派發 (4 個)
   tools/canvas.py       -- 畫布操作 (5 個)
+  tools/sanitize.py     -- 脫敏/還原 (7 個)
 
 啟動方式:
   python mcp_server.py                    顯示說明
@@ -93,6 +94,15 @@ def main():
         print('  canvas_get              取得畫布內容')
         print('  canvas_place_atom       放置/移動原子到畫布')
         print('  canvas_remove_atom      從畫布移除原子')
+        print()
+        print('脫敏工具:')
+        print('  note_sanitize           脫敏內容（產出乾淨文本+映射表）')
+        print('  note_restore            還原外部回覆（佔位符換回原始值）')
+        print('  sanitize_session_get    查看脫敏會話映射表')
+        print('  sanitize_session_list   列出脫敏會話')
+        print('  sensitive_term_add      新增敏感詞彙')
+        print('  sensitive_term_list     列出敏感詞彙')
+        print('  sensitive_term_remove   移除敏感詞彙')
         print()
         print('Orchestrator 工具:')
         print('  task_dispatch           派發支線任務到 tmux')

@@ -33,6 +33,7 @@ def register(mcp):
         lifecycle: str = 'active',
         schema_id: int | None = None,
         field_values: dict[str, str] | None = None,
+        sensitivity: str = 'internal',
     ) -> str:
         """儲存一筆知識原子到知識庫。
 
@@ -43,12 +44,17 @@ def register(mcp):
         tags: 標籤名稱列表，不存在的標籤會自動建立
         schema_id: E 類型時關聯的 schema ID
         field_values: E 類型的結構化欄位值，格式 {"欄位name": "值"}
+        sensitivity: 敏感度 (public/internal/confidential/restricted)，預設 internal
 
         回傳建立的原子 ID 與摘要。
         """
         valid_types = ('A', 'B', 'C', 'D', 'E', 'F')
         if atom_type not in valid_types:
             return json.dumps({'error': f'無效的 atom_type: {atom_type}，允許值: {", ".join(valid_types)}'})
+
+        valid_sensitivity = ('public', 'internal', 'confidential', 'restricted')
+        if sensitivity not in valid_sensitivity:
+            return json.dumps({'error': f'無效的 sensitivity: {sensitivity}，允許值: {", ".join(valid_sensitivity)}'})
 
         with session_scope() as s:
             if atom_type == 'E' and schema_id:
@@ -65,6 +71,7 @@ def register(mcp):
                 source=source,
                 source_detail=source_detail,
                 schema_id=schema_id,
+                sensitivity=sensitivity,
             )
             s.add(atom)
             s.flush()
@@ -189,6 +196,7 @@ def register(mcp):
                     'lifecycle': a.lifecycle,
                     'vitality_score': a.vitality_score,
                     'source': a.source,
+                    'sensitivity': a.sensitivity,
                     'tags': [t.name for t in a.tags],
                     'updated_at': a.updated_at.isoformat() if a.updated_at else None,
                     'match_type': match_type,
@@ -345,6 +353,7 @@ def register(mcp):
                         'lifecycle': row[4],
                         'vitality_score': row[5],
                         'source': row[6],
+                        'sensitivity': atom_obj.sensitivity if atom_obj else 'internal',
                         'tags': [t.name for t in atom_obj.tags] if atom_obj else [],
                         'updated_at': row[7].isoformat() if row[7] else None,
                         'similarity': round(float(row[9]), 4),
@@ -455,13 +464,19 @@ def register(mcp):
         lifecycle: str = '',
         tags: list[str] | None = None,
         append_content: str = '',
+        sensitivity: str = '',
     ) -> str:
         """更新現有知識原子的欄位。
 
         只有提供的欄位會被更新（空字串表示不更新）。
         append_content: 在現有內容後追加（不覆蓋），適合漸進式補充。
         tags: 提供時會替換所有標籤，不存在的標籤會自動建立。
+        sensitivity: 敏感度 (public/internal/confidential/restricted)
         """
+        valid_sensitivity = ('public', 'internal', 'confidential', 'restricted')
+        if sensitivity and sensitivity not in valid_sensitivity:
+            return json.dumps({'error': f'無效的 sensitivity: {sensitivity}，允許值: {", ".join(valid_sensitivity)}'})
+
         with session_scope() as s:
             atom = s.query(KnowledgeAtom).filter(
                 KnowledgeAtom.id == atom_id, KnowledgeAtom.is_deleted == False
@@ -479,6 +494,8 @@ def register(mcp):
                 atom.atom_type = atom_type
             if lifecycle:
                 atom.lifecycle = lifecycle
+            if sensitivity:
+                atom.sensitivity = sensitivity
 
             if tags is not None:
                 tag_objects = []
@@ -503,6 +520,7 @@ def register(mcp):
                 'id': atom.id,
                 'title': atom.title,
                 'lifecycle': atom.lifecycle,
+                'sensitivity': atom.sensitivity,
                 'tags': [t.name for t in atom.tags],
                 'message': f'原子 {atom_id} 已更新',
             }, ensure_ascii=False)

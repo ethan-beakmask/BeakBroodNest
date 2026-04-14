@@ -128,6 +128,11 @@ class KnowledgeAtom(Base):
     )  # human, ai, import, derived
     source_detail: Mapped[str] = mapped_column(Text, default='')
 
+    # 敏感度標記（為 #3013 跨機同步 / #3014 匿名共享 預埋）
+    sensitivity: Mapped[str] = mapped_column(
+        String(20), default='internal'
+    )  # public, internal, confidential, restricted
+
     # 軟刪除
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -144,6 +149,7 @@ class KnowledgeAtom(Base):
         Index('idx_atoms_lifecycle', 'lifecycle'),
         Index('idx_atoms_atom_type', 'atom_type'),
         Index('idx_atoms_is_deleted', 'is_deleted'),
+        Index('idx_atoms_sensitivity', 'sensitivity'),
     )
 
     def to_dict(self, include_tags=False, include_values=False):
@@ -163,6 +169,7 @@ class KnowledgeAtom(Base):
             'access_count': self.access_count,
             'source': self.source,
             'source_detail': self.source_detail,
+            'sensitivity': self.sensitivity,
         }
         if include_tags:
             d['tags'] = [t.to_dict() for t in self.tags]
@@ -492,3 +499,96 @@ class AtomEmbedding(Base):
         UniqueConstraint('atom_id', 'model_name', name='uq_atom_embedding'),
         Index('idx_embeddings_atom', 'atom_id'),
     )
+
+
+# ============================================================
+# 5.7 敏感詞彙登記（脫敏基礎建設）
+# ============================================================
+
+class SensitiveTerm(Base):
+    """可重複使用的敏感詞彙，AI 脫敏時參照此表自動替換。"""
+    __tablename__ = 'sensitive_terms'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    category: Mapped[str] = mapped_column(
+        String(30), nullable=False
+    )  # pii, infra, business, credential
+    pattern: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )  # 實際敏感字串，如 "10.34.14.148"
+    placeholder_prefix: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )  # 替換前綴，如 "INTERNAL_HOST"
+    scope: Mapped[str] = mapped_column(
+        String(100), default='global'
+    )  # global, 或專案/domain tag 名稱
+    is_regex: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    __table_args__ = (
+        Index('idx_sensitive_terms_category', 'category'),
+        Index('idx_sensitive_terms_scope', 'scope'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'category': self.category,
+            'pattern': self.pattern,
+            'placeholder_prefix': self.placeholder_prefix,
+            'scope': self.scope,
+            'is_regex': self.is_regex,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================
+# 5.8 脫敏會話（映射表持久化）
+# ============================================================
+
+class SanitizeSession(Base):
+    """每次脫敏操作產生一筆 session，保存映射表供後續還原。"""
+    __tablename__ = 'sanitize_sessions'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_atom_ids: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True
+    )  # [atom_id, ...] 被脫敏的原子來源
+    original_content: Mapped[str] = mapped_column(Text, nullable=False)
+    sanitized_content: Mapped[str] = mapped_column(Text, nullable=False)
+    mapping: Mapped[dict] = mapped_column(
+        JSONB, nullable=False
+    )  # {"PLACEHOLDER_1": "原始值", ...}
+    reverse_mapping: Mapped[dict] = mapped_column(
+        JSONB, nullable=False
+    )  # {"原始值": "PLACEHOLDER_1", ...} 快速查找用
+    sensitivity_level: Mapped[str] = mapped_column(
+        String(20), default='confidential'
+    )  # 脫敏時套用的等級
+    purpose: Mapped[str] = mapped_column(
+        Text, default=''
+    )  # 用途說明，如 "StackOverflow 求助 PostgreSQL 效能"
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )  # 可選 TTL
+
+    __table_args__ = (
+        Index('idx_sanitize_sessions_created', 'created_at'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source_atom_ids': self.source_atom_ids,
+            'sanitized_content': self.sanitized_content,
+            'mapping': self.mapping,
+            'sensitivity_level': self.sensitivity_level,
+            'purpose': self.purpose,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+        }
