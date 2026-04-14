@@ -1,0 +1,367 @@
+    <!-- ============================================ -->
+    <!-- Modals -->
+    <!-- ============================================ -->
+
+    <!-- 新增原子 -->
+    <template x-if="showNewAtomModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>新增原子</h3>
+                    <button class="modal-close" @click="showNewAtomModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>標題</label>
+                        <input class="form-control" x-model="newAtom.title" placeholder="輸入標題..."
+                               @keydown.enter="createNewAtom()">
+                    </div>
+                    <div class="form-group">
+                        <label>內容</label>
+                        <textarea class="form-control" x-model="newAtom.content" rows="3" placeholder="輸入內容..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>類型</label>
+                        <select class="form-control" x-model="newAtom.atom_type">
+                            <option value="A">A - 萬用</option>
+                            <option value="B">B - 發散</option>
+                            <option value="C">C - 流程</option>
+                            <option value="D">D - 歸納</option>
+                            <option value="E">E - 套表</option>
+                            <option value="F">F - 碎片</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showNewAtomModal=false">取消</button>
+                    <button class="btn btn-primary" @click="createNewAtom()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 放置現有原子 -->
+    <template x-if="showAddExistingModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>放置現有原子</h3>
+                    <button class="modal-close" @click="showAddExistingModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <input class="form-control" x-model="searchQuery" placeholder="搜尋原子..."
+                               @input.debounce.300ms="doSearch()">
+                    </div>
+                    <div style="max-height:300px; overflow-y:auto;">
+                        <template x-for="a in searchResults" :key="a.id">
+                            <div class="flex items-center justify-between" style="padding:8px; border-bottom:1px solid var(--border-light);">
+                                <div style="flex:1; min-width:0;">
+                                    <div style="font-size:13px; font-weight:500;" x-text="a.title"></div>
+                                    <div class="text-sm text-muted">
+                                        <span x-text="a.atom_type + ' / ' + a.lifecycle"></span>
+                                        <span x-show="a.similarity > 0" x-text="' / sim:' + (a.similarity ? a.similarity.toFixed(2) : '')" style="color:var(--accent);"></span>
+                                        <span x-show="a.match_type === 'text'" style="color:var(--warning);">[text]</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-primary" style="margin-left:8px; flex-shrink:0;" @click="addExistingAtom(a.id)">放置</button>
+                            </div>
+                        </template>
+                        <div x-show="searchResults.length === 0" class="empty-state" style="padding:20px;">
+                            <p>沒有可放置的原子</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showAddExistingModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 新增白板 -->
+    <template x-if="showNewCanvasModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>新增白板</h3>
+                    <button class="modal-close" @click="showNewCanvasModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>白板名稱</label>
+                        <input class="form-control" x-model="newCanvasName" placeholder="輸入名稱..."
+                               @keydown.enter="createCanvas()">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showNewCanvasModal=false">取消</button>
+                    <button class="btn btn-primary" @click="createCanvas()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 標籤管理 -->
+    <template x-if="showTagModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>標籤管理</h3>
+                    <button class="modal-close" @click="showTagModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="flex gap-2 mb-4">
+                        <input class="form-control" x-model="newTagName" placeholder="新標籤名稱..."
+                               @keydown.enter="createTag()" style="flex:1;">
+                        <input type="color" x-model="newTagColor"
+                               style="width:36px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
+                        <button class="btn btn-primary" @click="createTag()">建立</button>
+                    </div>
+                    <template x-for="t in tags" :key="t.id">
+                        <div class="flex items-center justify-between" style="padding:6px 0; border-bottom:1px solid var(--border-light);">
+                            <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                            <button class="btn-ghost btn-sm" @click="if(confirm('刪除標籤?')) deleteTag(t.id)">刪除</button>
+                        </div>
+                    </template>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showTagModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 關係類型選擇 -->
+    <template x-if="showRelationModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>建立關係</h3>
+                    <button class="modal-close" @click="showRelationModal=false; pendingConnection=null; mode='select'">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-4 text-sm" x-show="pendingConnection">
+                        <strong x-text="getAtomTitle(pendingConnection ? pendingConnection.sourceAtomId : 0)"></strong>
+                        <span class="text-muted"> --> </span>
+                        <strong x-text="getAtomTitle(pendingConnection ? pendingConnection.targetAtomId : 0)"></strong>
+                    </div>
+                    <div class="form-group">
+                        <label>關係類型</label>
+                        <template x-for="rt in relationTypeList" :key="rt.value">
+                            <label class="relation-option"
+                                   :class="{ selected: selectedRelationType === rt.value }">
+                                <input type="radio" name="relType" :value="rt.value"
+                                       x-model="selectedRelationType" style="margin-right:8px;">
+                                <span class="relation-color-dot" :style="'background:' + rt.color"></span>
+                                <span x-text="rt.label"></span>
+                                <span class="text-muted text-sm" style="margin-left:4px;" x-text="rt.desc"></span>
+                            </label>
+                        </template>
+                    </div>
+                    <div class="form-group">
+                        <label>說明（選填）</label>
+                        <input class="form-control" x-model="relationLabel" placeholder="關係描述..."
+                               @keydown.enter="confirmConnection()">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showRelationModal=false; pendingConnection=null; mode='select'">取消</button>
+                    <button class="btn btn-primary" @click="confirmConnection()">建立</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 群組編輯 -->
+    <template x-if="showGroupModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>編輯群組</h3>
+                    <button class="modal-close" @click="showGroupModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>名稱</label>
+                        <input class="form-control" x-model="groupForm.name"
+                               @keydown.enter="saveGroupEdit()">
+                    </div>
+                    <div class="form-group">
+                        <label>顏色</label>
+                        <input type="color" x-model="groupForm.color"
+                               style="width:60px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showGroupModal=false">取消</button>
+                    <button class="btn btn-primary" @click="saveGroupEdit()">儲存</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Card Editor 彈窗 -->
+    <template x-if="cardEditorOpen">
+        <div class="card-editor-overlay" @keydown.escape.stop="closeCardEditor()">
+            <div class="card-editor-dialog" @click.stop>
+                <!-- Header -->
+                <div class="card-editor-header">
+                    <input class="card-editor-title-input"
+                           x-model="cardEditorTitle"
+                           placeholder="輸入標題..."
+                           @input="cardEditorDirty = true"
+                           @keydown.enter="$refs.tiptapHost && $refs.tiptapHost.focus()">
+                    <div class="card-editor-meta">
+                        <span x-text="cardEditorAtomType"></span>
+                        <span x-text="cardEditorAtomId ? '#' + cardEditorAtomId : ''"></span>
+                    </div>
+                    <button class="card-editor-close" @click="closeCardEditor()">x</button>
+                </div>
+                <!-- 工具列 -->
+                <div class="card-editor-toolbar">
+                    <button @click="ceCmd('bold')" :class="{ active: ceIsActive('bold') }" title="粗體"><b>B</b></button>
+                    <button @click="ceCmd('italic')" :class="{ active: ceIsActive('italic') }" title="斜體"><i>I</i></button>
+                    <button @click="ceCmd('underline')" :class="{ active: ceIsActive('underline') }" title="底線"><u>U</u></button>
+                    <button @click="ceCmd('strike')" :class="{ active: ceIsActive('strike') }" title="刪除線"><s>S</s></button>
+                    <button @click="ceCmd('code')" :class="{ active: ceIsActive('code') }" title="行內程式碼">&lt;&gt;</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('h1')" :class="{ active: ceIsActive('heading', {level:1}) }" title="標題 1">H1</button>
+                    <button @click="ceCmd('h2')" :class="{ active: ceIsActive('heading', {level:2}) }" title="標題 2">H2</button>
+                    <button @click="ceCmd('h3')" :class="{ active: ceIsActive('heading', {level:3}) }" title="標題 3">H3</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('bulletList')" :class="{ active: ceIsActive('bulletList') }" title="項目清單">-</button>
+                    <button @click="ceCmd('orderedList')" :class="{ active: ceIsActive('orderedList') }" title="編號清單">1.</button>
+                    <button @click="ceCmd('taskList')" :class="{ active: ceIsActive('taskList') }" title="任務清單">[]</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('blockquote')" :class="{ active: ceIsActive('blockquote') }" title="引用">"</button>
+                    <button @click="ceCmd('codeBlock')" :class="{ active: ceIsActive('codeBlock') }" title="程式區塊">{}</button>
+                    <button @click="ceCmd('hr')" title="分隔線">--</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('table')" title="插入表格">田</button>
+                    <template x-if="ceIsActive('table')">
+                        <span style="display:inline-flex; gap:2px;">
+                            <button @click="ceCmd('addRowAfter')" title="新增列">+行</button>
+                            <button @click="ceCmd('addColAfter')" title="新增欄">+欄</button>
+                            <button @click="ceCmd('deleteRow')" title="刪除列">-行</button>
+                            <button @click="ceCmd('deleteCol')" title="刪除欄">-欄</button>
+                            <button @click="ceCmd('deleteTable')" title="刪除表格">x表</button>
+                        </span>
+                    </template>
+                    <span class="tb-sep"></span>
+                    <button @click="ceInsertLink()" title="插入連結">Link</button>
+                    <span class="tb-sep"></span>
+                    <button @click="ceCmd('undo')" title="復原">&#8630;</button>
+                    <button @click="ceCmd('redo')" title="重做">&#8631;</button>
+                </div>
+                <!-- 編輯區 -->
+                <div class="card-editor-body">
+                    <div x-ref="tiptapHost"></div>
+                </div>
+                <!-- Footer -->
+                <div class="card-editor-footer">
+                    <span class="status-text" x-text="cardEditorDirty ? '已修改' : '已儲存'"></span>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" @click="closeCardEditor()">關閉</button>
+                        <button class="btn btn-primary" @click="saveCardEditor()" :disabled="!cardEditorDirty">儲存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 連線標籤 inline 編輯 -->
+    <template x-if="editingConnId">
+        <div class="conn-edit-overlay"
+             @click="saveConnectionLabel()" @keydown.escape.stop="cancelEditConnection()">
+            <input class="conn-edit-input"
+                   :style="'left:' + editingConnPos.x + 'px; top:' + editingConnPos.y + 'px;'"
+                   x-model="editingConnLabel"
+                   x-init="$nextTick(() => $el.focus())"
+                   @click.stop
+                   @keydown.enter="saveConnectionLabel()">
+        </div>
+    </template>
+
+    <!-- 匯出彈窗 -->
+    <template x-if="showExportModal">
+        <div class="modal-overlay">
+            <div class="modal" style="max-width:700px;">
+                <div class="modal-header">
+                    <h3>匯出畫布</h3>
+                    <button class="modal-close" @click="showExportModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div style="display:flex;gap:8px;margin-bottom:12px;">
+                        <button class="btn btn-sm" :class="exportFormat==='json' ? 'btn-primary' : 'btn-secondary'"
+                                @click="exportCanvas('json')">JSON</button>
+                        <button class="btn btn-sm" :class="exportFormat==='md' ? 'btn-primary' : 'btn-secondary'"
+                                @click="exportCanvas('md')">Markdown</button>
+                    </div>
+                    <textarea class="form-control" rows="15" readonly
+                              x-model="exportContent" style="font-family:monospace;font-size:12px;"></textarea>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="copyExport()">複製</button>
+                    <button class="btn btn-primary" @click="downloadExport()">下載</button>
+                    <button class="btn btn-secondary" @click="showExportModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 匯入彈窗 -->
+    <template x-if="showImportModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>匯入畫布 (JSON)</h3>
+                    <button class="modal-close" @click="showImportModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-sm text-muted" style="margin-bottom:12px;">
+                        選擇先前匯出的 JSON 檔案，將原子放置到當前畫布。已存在的原子會跳過。
+                    </p>
+                    <input type="file" accept=".json" @change="importCanvasFromFile($event)"
+                           style="font-size:13px;">
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showImportModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 右鍵選單 -->
+    <template x-if="contextMenu">
+        <div class="context-menu" :style="'left:' + contextMenu.x + 'px; top:' + contextMenu.y + 'px;'" @click.stop>
+            <template x-if="contextMenu.type === 'canvas'">
+                <div>
+                    <div class="context-menu-item" @click="contextAddAtom()">新增原子</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="fitView(); closeContextMenu()">適應視圖</div>
+                    <div class="context-menu-item" @click="resetZoom(); closeContextMenu()">重置縮放</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="exportCanvas('json'); closeContextMenu()">匯出 JSON</div>
+                    <div class="context-menu-item" @click="exportCanvas('md'); closeContextMenu()">匯出 Markdown</div>
+                </div>
+            </template>
+            <template x-if="contextMenu.type === 'card'">
+                <div>
+                    <div class="context-menu-item" @click="openCardEditor(contextMenu.ca.atom_id); closeContextMenu()">開啟卡片</div>
+                    <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">側欄編輯</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除</div>
+                    <div class="context-menu-item danger"
+                         @click="if(confirm('刪除此原子? 所有白板都會移除')) { deleteAtomEntirely(contextMenu.ca); closeContextMenu(); }">刪除原子</div>
+                </div>
+            </template>
+            <template x-if="contextMenu.type === 'group'">
+                <div>
+                    <div class="context-menu-item" @click="openGroupEditModal(contextMenu.group); closeContextMenu()">編輯群組</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="ungroupAtoms(contextMenu.group.id); closeContextMenu()">解散群組</div>
+                </div>
+            </template>
+        </div>
+    </template>

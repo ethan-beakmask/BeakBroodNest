@@ -1,0 +1,33 @@
+        <!-- 左側邊欄 -->
+        <div class="sidebar">
+            <div class="sidebar-section">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="sidebar-title">白板</div>
+                    <button class="btn-ghost btn-sm" @click="showNewCanvasModal=true">+</button>
+                </div>
+                <template x-for="c in canvases" :key="c.id">
+                    <a :href="'/canvas/' + c.id"
+                       class="sidebar-item"
+                       :class="{ active: c.id == canvasId }">
+                        <span class="icon icon-wb">W</span>
+                        <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                        <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
+                                @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.id)"
+                                x-show="canvases.length > 1">x</button>
+                    </a>
+                </template>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="sidebar-title">標籤</div>
+                    <button class="btn-ghost btn-sm" @click="showTagModal=true">+</button>
+                </div>
+                <template x-for="t in tags" :key="t.id">
+                    <div class="sidebar-item">
+                        <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                    </div>
+                </template>
+                <div x-show="tags.length === 0" class="text-sm text-muted" style="padding:4px 8px;">尚無標籤</div>
+            </div>
+        </div>

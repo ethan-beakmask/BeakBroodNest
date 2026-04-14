@@ -1,10 +1,20 @@
 /**
  * BeakCortex 白板引擎
  * pan/zoom、原子卡片渲染、拖曳、SVG 連線、atom_type 視覺區分、lifecycle 透明度
+ *
+ * Mixin 載入順序（whiteboard.html 中 script 標籤）：
+ *   whiteboard-connections.js, whiteboard-minimap.js, whiteboard-card-editor.js,
+ *   whiteboard-undo.js, whiteboard-batch.js, whiteboard-groups.js
+ *   -> whiteboard.js (本檔)
  */
 
+/** 合併 mixin：保留 getter/setter */
+function _mergeInto(target, source) {
+    Object.defineProperties(target, Object.getOwnPropertyDescriptors(source));
+}
+
 function whiteboardApp(canvasId) {
-    return {
+    var app = {
         canvasId,
         canvas: null,
         atoms: [],
@@ -107,7 +117,7 @@ function whiteboardApp(canvasId) {
         editingGroup: null,
         groupForm: { name: '', color: '#3b82f6' },
 
-        // Card Editor (Tiptap 實例存在 window 層避開 Alpine Proxy)
+        // Card Editor
         cardEditorOpen: false,
         cardEditorAtomId: null,
         cardEditorAtomType: '',
@@ -126,7 +136,7 @@ function whiteboardApp(canvasId) {
         // Filters
         filterTypes: { A: true, B: true, C: true, D: true, E: true, F: true },
         filterLifecycles: { active: true, aging: true, archived: true, terminal: true },
-        filterTagIds: [],   // empty = show all; populated = show only atoms with ANY of these tags
+        filterTagIds: [],
         filterPanelOpen: false,
 
         // Batch operations
@@ -147,10 +157,10 @@ function whiteboardApp(canvasId) {
         importFile: null,
 
         // Render test panel
-        renderMode: 'normal',   // kept for URL default
+        renderMode: 'normal',
         renderStats: { total: 0, rendered: 0 },
-        rtLineStyle: 'curve',   // 'curve' | 'straight' | 'none'
-        rtEngine: 'grouped', // 'individual' | 'grouped'
+        rtLineStyle: 'curve',
+        rtEngine: 'grouped',
         rtOptEnabled: false,
         rtOptPerSector: 10,
         rtPanelOpen: false,
@@ -188,11 +198,9 @@ function whiteboardApp(canvasId) {
         // Init
         // ============================================
         async init() {
-            // Read render mode from URL query param
             var urlParams = new URLSearchParams(window.location.search);
             var rm = urlParams.get('render');
             if (rm === 'straight' || rm === 'optimized' || rm === 'opt-straight') this.renderMode = rm;
-            // Sync panel state from URL default
             if (rm === 'straight')      { this.rtLineStyle = 'straight'; }
             if (rm === 'optimized')     { this.rtOptEnabled = true; }
             if (rm === 'opt-straight')  { this.rtLineStyle = 'straight'; this.rtOptEnabled = true; }
@@ -205,19 +213,13 @@ function whiteboardApp(canvasId) {
                 if (this.atoms.length > 0) this.fitView();
                 this.renderMinimap();
             });
-            // Keyboard shortcuts
             const self = this;
             document.addEventListener('keydown', function(e) { self.handleKeyDown(e); });
-            // Cancel connection drag if mouse released outside viewport
-            document.addEventListener('mouseup', () => {
-                if (this.isConnDragging) this.cancelConnDrag();
-            });
-            // Capture-phase: catch right-click before card/group handlers stop propagation
+            document.addEventListener('mouseup', () => { if (this.isConnDragging) this.cancelConnDrag(); });
             this.$refs.viewport.addEventListener('mousedown', function(e) {
                 if (e.button === 2) {
                     self.rightDragPending = true;
-                    self.rightDragStartX = e.clientX;
-                    self.rightDragStartY = e.clientY;
+                    self.rightDragStartX = e.clientX; self.rightDragStartY = e.clientY;
                     var cardEl = e.target.closest('.wb-card');
                     var groupEl = e.target.closest('.wb-group');
                     if (cardEl) {
@@ -227,9 +229,7 @@ function whiteboardApp(canvasId) {
                         var gid = parseInt(groupEl.id.replace('group-', ''), 10);
                         var grp = self.groups.find(function(g) { return g.id === gid; });
                         self.rightDragTarget = grp ? { _isGroup: true, group: grp } : null;
-                    } else {
-                        self.rightDragTarget = null;
-                    }
+                    } else { self.rightDragTarget = null; }
                     e.preventDefault();
                 }
             }, true);
@@ -237,9 +237,7 @@ function whiteboardApp(canvasId) {
 
         async loadData() {
             const [canvas, canvases, tags] = await Promise.all([
-                API.getCanvas(this.canvasId),
-                API.getCanvases(),
-                API.getTags(),
+                API.getCanvas(this.canvasId), API.getCanvases(), API.getTags(),
             ]);
             this.canvas = canvas;
             this.atoms = canvas.atoms || [];
@@ -248,10 +246,8 @@ function whiteboardApp(canvasId) {
             this.canvases = canvases;
             this.tags = tags;
             if (canvas.viewport_x || canvas.viewport_y || (canvas.viewport_zoom && canvas.viewport_zoom !== 1)) {
-                this.panX = canvas.viewport_x || 0;
-                this.panY = canvas.viewport_y || 0;
-                this.zoom = canvas.viewport_zoom || 1;
-                this.updateTransform();
+                this.panX = canvas.viewport_x || 0; this.panY = canvas.viewport_y || 0;
+                this.zoom = canvas.viewport_zoom || 1; this.updateTransform();
             }
             this.$nextTick(() => this.renderMinimap());
         },
@@ -268,269 +264,112 @@ function whiteboardApp(canvasId) {
                 const delta = e.deltaY > 0 ? 0.92 : 1.08;
                 const newZoom = Math.max(0.15, Math.min(3, this.zoom * delta));
                 const rect = vp.getBoundingClientRect();
-                const mx = e.clientX - rect.left;
-                const my = e.clientY - rect.top;
+                const mx = e.clientX - rect.left, my = e.clientY - rect.top;
                 this.panX = mx - (mx - this.panX) * (newZoom / this.zoom);
                 this.panY = my - (my - this.panY) * (newZoom / this.zoom);
                 this.zoom = newZoom;
-                this.updateTransform();
-                this.renderConnections();
+                this.updateTransform(); this.renderConnections();
             }, { passive: false });
         },
 
         onViewportMouseDown(e) {
-            // End inline edit on any viewport click
-            if (this.editingAtomId && document.activeElement) {
-                document.activeElement.blur();
-            }
-            // Middle button: always pan
-            if (e.button === 1) {
-                this.isPanning = true;
-                this.panStartX = e.clientX - this.panX;
-                this.panStartY = e.clientY - this.panY;
-                e.preventDefault();
-                return;
-            }
-            // Right button handled by capture-phase listener
+            if (this.editingAtomId && document.activeElement) document.activeElement.blur();
+            if (e.button === 1) { this.isPanning = true; this.panStartX = e.clientX - this.panX; this.panStartY = e.clientY - this.panY; e.preventDefault(); return; }
             if (e.button === 2) return;
-            // Left button
             if (e.button === 0) {
-                // Connect mode: click on empty space cancels
-                if (this.mode === 'connect' && !e.target.closest('.wb-card')) {
-                    this.connSourceAtomId = null;
-                    this.mode = 'select';
-                    return;
-                }
-                // Left button on empty area: box selection
-                if (!e.target.closest('.wb-card')
-                    && !e.target.closest('.wb-group')
-                    && !e.target.closest('.wb-toolbar')
-                    && !e.target.closest('.wb-zoom')) {
+                if (this.mode === 'connect' && !e.target.closest('.wb-card')) { this.connSourceAtomId = null; this.mode = 'select'; return; }
+                if (!e.target.closest('.wb-card') && !e.target.closest('.wb-group') && !e.target.closest('.wb-toolbar') && !e.target.closest('.wb-zoom')) {
                     this.boxSelectPending = true;
-                    this.boxSelectStartX = e.clientX;
-                    this.boxSelectStartY = e.clientY;
-                    this.boxSelectCurrentX = e.clientX;
-                    this.boxSelectCurrentY = e.clientY;
+                    this.boxSelectStartX = e.clientX; this.boxSelectStartY = e.clientY;
+                    this.boxSelectCurrentX = e.clientX; this.boxSelectCurrentY = e.clientY;
                     e.preventDefault();
                 }
             }
         },
 
         onViewportMouseMove(e) {
-            if (this.isConnDragging) {
-                this.connDragMouseX = e.clientX;
-                this.connDragMouseY = e.clientY;
-                this.updatePreviewLine();
-                return;
-            }
-            // Right-click drag -> pan
+            if (this.isConnDragging) { this.connDragMouseX = e.clientX; this.connDragMouseY = e.clientY; this.updatePreviewLine(); return; }
             if (this.rightDragPending) {
-                var rdx = Math.abs(e.clientX - this.rightDragStartX);
-                var rdy = Math.abs(e.clientY - this.rightDragStartY);
-                if (rdx > 5 || rdy > 5) {
-                    this.rightDragPending = false;
-                    this.isPanning = true;
-                    this.panStartX = this.rightDragStartX - this.panX;
-                    this.panStartY = this.rightDragStartY - this.panY;
+                if (Math.abs(e.clientX - this.rightDragStartX) > 5 || Math.abs(e.clientY - this.rightDragStartY) > 5) {
+                    this.rightDragPending = false; this.isPanning = true;
+                    this.panStartX = this.rightDragStartX - this.panX; this.panStartY = this.rightDragStartY - this.panY;
                 }
             }
-            if (this.isPanning) {
-                this.panX = e.clientX - this.panStartX;
-                this.panY = e.clientY - this.panStartY;
-                this.updateTransform();
-                this.renderConnections();
-                return;
-            }
-            // Box selection
+            if (this.isPanning) { this.panX = e.clientX - this.panStartX; this.panY = e.clientY - this.panStartY; this.updateTransform(); this.renderConnections(); return; }
             if (this.boxSelectPending) {
-                var bsdx = Math.abs(e.clientX - this.boxSelectStartX);
-                var bsdy = Math.abs(e.clientY - this.boxSelectStartY);
-                if (bsdx > 5 || bsdy > 5) {
-                    this.boxSelectPending = false;
-                    this.isBoxSelecting = true;
-                }
+                if (Math.abs(e.clientX - this.boxSelectStartX) > 5 || Math.abs(e.clientY - this.boxSelectStartY) > 5) { this.boxSelectPending = false; this.isBoxSelecting = true; }
             }
-            if (this.isBoxSelecting) {
-                this.boxSelectCurrentX = e.clientX;
-                this.boxSelectCurrentY = e.clientY;
-                this.updateBoxSelection();
-                return;
-            }
+            if (this.isBoxSelecting) { this.boxSelectCurrentX = e.clientX; this.boxSelectCurrentY = e.clientY; this.updateBoxSelection(); return; }
             if (this.bodyDragPending) {
-                var bdx = Math.abs(e.clientX - this.bodyDragStartX);
-                var bdy = Math.abs(e.clientY - this.bodyDragStartY);
-                if (bdx > 5 || bdy > 5) {
-                    this.bodyDragPending = false;
-                    var ca = this.bodyDragCa;
-                    this.bodyDragCa = null;
+                if (Math.abs(e.clientX - this.bodyDragStartX) > 5 || Math.abs(e.clientY - this.bodyDragStartY) > 5) {
+                    this.bodyDragPending = false; var ca = this.bodyDragCa; this.bodyDragCa = null;
                     this.startCardDrag(e, ca, this.bodyDragStartX, this.bodyDragStartY);
                 }
             }
             if (this.dragGroup) {
-                var gdx = (e.clientX - this.groupDragStartX) / this.zoom;
-                var gdy = (e.clientY - this.groupDragStartY) / this.zoom;
-                this.dragGroup.pos_x = this.groupDragStartPos.x + gdx;
-                this.dragGroup.pos_y = this.groupDragStartPos.y + gdy;
+                var gdx = (e.clientX - this.groupDragStartX) / this.zoom, gdy = (e.clientY - this.groupDragStartY) / this.zoom;
+                this.dragGroup.pos_x = this.groupDragStartPos.x + gdx; this.dragGroup.pos_y = this.groupDragStartPos.y + gdy;
                 var self = this;
-                this.atoms.forEach(function(a) {
-                    if (self.groupDragMemberStarts[a.atom_id]) {
-                        a.pos_x = self.groupDragMemberStarts[a.atom_id].x + gdx;
-                        a.pos_y = self.groupDragMemberStarts[a.atom_id].y + gdy;
-                    }
-                });
-                this.renderConnections();
-                return;
+                this.atoms.forEach(function(a) { if (self.groupDragMemberStarts[a.atom_id]) { a.pos_x = self.groupDragMemberStarts[a.atom_id].x + gdx; a.pos_y = self.groupDragMemberStarts[a.atom_id].y + gdy; } });
+                this.renderConnections(); return;
             }
-            if (this.resizeGroup) {
-                var grw = (e.clientX - this.resizeGroupStartX) / this.zoom;
-                var grh = (e.clientY - this.resizeGroupStartY) / this.zoom;
-                this.resizeGroup.width = Math.max(160, this.resizeGroupStartW + grw);
-                this.resizeGroup.height = Math.max(80, this.resizeGroupStartH + grh);
-                return;
-            }
+            if (this.resizeGroup) { this.resizeGroup.width = Math.max(160, this.resizeGroupStartW + (e.clientX - this.resizeGroupStartX) / this.zoom); this.resizeGroup.height = Math.max(80, this.resizeGroupStartH + (e.clientY - this.resizeGroupStartY) / this.zoom); return; }
             if (this.resizeCard) {
-                var dw = (e.clientX - this.resizeStartX) / this.zoom;
-                var dh = (e.clientY - this.resizeStartY) / this.zoom;
-                this.resizeCard.width = Math.max(160, this.resizeStartW + dw);
-                this.resizeCard.height = Math.max(80, this.resizeStartH + dh);
+                this.resizeCard.width = Math.max(160, this.resizeStartW + (e.clientX - this.resizeStartX) / this.zoom);
+                this.resizeCard.height = Math.max(80, this.resizeStartH + (e.clientY - this.resizeStartY) / this.zoom);
                 if (this.resizeCard.group_id) this.recalcGroupBounds(this.resizeCard.group_id);
-                this.renderConnections();
-                return;
+                this.renderConnections(); return;
             }
             if (this.dragCard) {
-                var dx = (e.clientX - this.dragStartX) / this.zoom;
-                var dy = (e.clientY - this.dragStartY) / this.zoom;
+                var dx = (e.clientX - this.dragStartX) / this.zoom, dy = (e.clientY - this.dragStartY) / this.zoom;
                 var affectedGroups = new Set();
                 if (this.multiDragStarts) {
                     var self = this;
-                    this.atoms.forEach(function(a) {
-                        if (self.multiDragStarts[a.atom_id]) {
-                            a.pos_x = self.multiDragStarts[a.atom_id].x + dx;
-                            a.pos_y = self.multiDragStarts[a.atom_id].y + dy;
-                            if (a.group_id) affectedGroups.add(a.group_id);
-                        }
-                    });
+                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { a.pos_x = self.multiDragStarts[a.atom_id].x + dx; a.pos_y = self.multiDragStarts[a.atom_id].y + dy; if (a.group_id) affectedGroups.add(a.group_id); } });
                 } else {
-                    this.dragCard.pos_x = this.cardStartX + dx;
-                    this.dragCard.pos_y = this.cardStartY + dy;
+                    this.dragCard.pos_x = this.cardStartX + dx; this.dragCard.pos_y = this.cardStartY + dy;
                     if (this.dragCard.group_id) affectedGroups.add(this.dragCard.group_id);
                 }
-                var self2 = this;
-                affectedGroups.forEach(function(gid) { self2.recalcGroupBounds(gid); });
+                var self2 = this; affectedGroups.forEach(function(gid) { self2.recalcGroupBounds(gid); });
                 this.renderConnections();
             }
         },
 
         onViewportMouseUp(e) {
-            // Right-click release: context menu or end pan
             if (this.rightDragPending) {
-                this.rightDragPending = false;
-                // Didn't pan -> context menu
-                var tgt = this.rightDragTarget;
-                this.rightDragTarget = null;
-                if (tgt && tgt._isGroup) {
-                    this.contextMenu = { x: e.clientX, y: e.clientY, type: 'group', group: tgt.group };
-                } else if (tgt) {
-                    this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: tgt };
-                } else {
-                    this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' };
-                }
+                this.rightDragPending = false; var tgt = this.rightDragTarget; this.rightDragTarget = null;
+                if (tgt && tgt._isGroup) this.contextMenu = { x: e.clientX, y: e.clientY, type: 'group', group: tgt.group };
+                else if (tgt) this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: tgt };
+                else this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' };
                 return;
             }
-            // Box selection end
-            if (this.isBoxSelecting) {
-                this.isBoxSelecting = false;
-                this.boxSelectPending = false;
-                return;
-            }
-            if (this.boxSelectPending) {
-                // Click on empty without drag -> deselect all
-                this.boxSelectPending = false;
-                this.selectedAtomIds = [];
-                this.deselectCard();
-                return;
-            }
-            if (this.bodyDragPending) {
-                this.bodyDragPending = false;
-                var ca = this.bodyDragCa;
-                this.bodyDragCa = null;
-                if (ca) {
-                    this.selectCard(ca.atom_id);
-                    this.startInlineEdit(ca);
-                }
-                return;
-            }
-            if (this.isConnDragging) {
-                this.endConnDrag();
-                return;
-            }
-            if (this.isPanning) {
-                this.isPanning = false;
-                this.saveViewport();
-            }
+            if (this.isBoxSelecting) { this.isBoxSelecting = false; this.boxSelectPending = false; return; }
+            if (this.boxSelectPending) { this.boxSelectPending = false; this.selectedAtomIds = []; this.deselectCard(); return; }
+            if (this.bodyDragPending) { this.bodyDragPending = false; var ca = this.bodyDragCa; this.bodyDragCa = null; if (ca) { this.selectCard(ca.atom_id); this.startInlineEdit(ca); } return; }
+            if (this.isConnDragging) { this.endConnDrag(); return; }
+            if (this.isPanning) { this.isPanning = false; this.saveViewport(); }
             if (this.dragGroup) {
-                API.updateGroup(this.dragGroup.id, {
-                    pos_x: this.dragGroup.pos_x,
-                    pos_y: this.dragGroup.pos_y,
-                });
+                API.updateGroup(this.dragGroup.id, { pos_x: this.dragGroup.pos_x, pos_y: this.dragGroup.pos_y });
                 var self = this;
-                this.atoms.forEach(function(a) {
-                    if (self.groupDragMemberStarts && self.groupDragMemberStarts[a.atom_id]) {
-                        API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y });
-                    }
-                });
-                this.dragGroup = null;
-                this.groupDragMemberStarts = null;
+                this.atoms.forEach(function(a) { if (self.groupDragMemberStarts && self.groupDragMemberStarts[a.atom_id]) API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); });
+                this.dragGroup = null; this.groupDragMemberStarts = null;
             }
-            if (this.resizeGroup) {
-                API.updateGroup(this.resizeGroup.id, {
-                    width: this.resizeGroup.width,
-                    height: this.resizeGroup.height,
-                });
-                this.resizeGroup = null;
-            }
-            if (this.resizeCard) {
-                API.updateCanvasAtom(this.resizeCard.id, {
-                    width: this.resizeCard.width,
-                    height: this.resizeCard.height,
-                });
-                if (this.resizeCard.group_id) this.autoResizeGroup(this.resizeCard.group_id);
-                this.resizeCard = null;
-            }
+            if (this.resizeGroup) { API.updateGroup(this.resizeGroup.id, { width: this.resizeGroup.width, height: this.resizeGroup.height }); this.resizeGroup = null; }
+            if (this.resizeCard) { API.updateCanvasAtom(this.resizeCard.id, { width: this.resizeCard.width, height: this.resizeCard.height }); if (this.resizeCard.group_id) this.autoResizeGroup(this.resizeCard.group_id); this.resizeCard = null; }
             if (this.dragCard) {
                 this._justDragged = true;
-                var groupsToResize = new Set();
-                var movedIds = [];
-                var beforePos = [];
-                var afterPos = [];
+                var groupsToResize = new Set(); var movedIds = []; var beforePos = []; var afterPos = [];
                 if (this.multiDragStarts) {
                     var self = this;
-                    this.atoms.forEach(function(a) {
-                        if (self.multiDragStarts[a.atom_id]) {
-                            movedIds.push(a.atom_id);
-                            beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y });
-                            afterPos.push({ x: a.pos_x, y: a.pos_y });
-                            API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y });
-                            if (a.group_id) groupsToResize.add(a.group_id);
-                        }
-                    });
+                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { movedIds.push(a.atom_id); beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y }); afterPos.push({ x: a.pos_x, y: a.pos_y }); API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); if (a.group_id) groupsToResize.add(a.group_id); } });
                     this.multiDragStarts = null;
                 } else {
-                    movedIds.push(this.dragCard.atom_id);
-                    beforePos.push({ x: this.cardStartX, y: this.cardStartY });
-                    afterPos.push({ x: this.dragCard.pos_x, y: this.dragCard.pos_y });
-                    API.updateCanvasAtom(this.dragCard.id, {
-                        pos_x: this.dragCard.pos_x,
-                        pos_y: this.dragCard.pos_y,
-                    });
+                    movedIds.push(this.dragCard.atom_id); beforePos.push({ x: this.cardStartX, y: this.cardStartY }); afterPos.push({ x: this.dragCard.pos_x, y: this.dragCard.pos_y });
+                    API.updateCanvasAtom(this.dragCard.id, { pos_x: this.dragCard.pos_x, pos_y: this.dragCard.pos_y });
                     if (this.dragCard.group_id) groupsToResize.add(this.dragCard.group_id);
                 }
-                // Record undo only if position actually changed
-                if (movedIds.length > 0 && (beforePos[0].x !== afterPos[0].x || beforePos[0].y !== afterPos[0].y)) {
-                    this.pushMoveUndo(movedIds, beforePos, afterPos);
-                }
-                var self2 = this;
-                groupsToResize.forEach(function(gid) { self2.autoResizeGroup(gid); });
+                if (movedIds.length > 0 && (beforePos[0].x !== afterPos[0].x || beforePos[0].y !== afterPos[0].y)) this.pushMoveUndo(movedIds, beforePos, afterPos);
+                var self2 = this; groupsToResize.forEach(function(gid) { self2.autoResizeGroup(gid); });
                 this.dragCard = null;
             }
         },
@@ -541,43 +380,17 @@ function whiteboardApp(canvasId) {
             this.renderMinimap();
         },
 
-        saveViewport() {
-            API.updateCanvas(this.canvasId, {
-                viewport_x: this.panX,
-                viewport_y: this.panY,
-                viewport_zoom: this.zoom,
-            });
-        },
-
-        zoomIn() {
-            this.zoom = Math.min(3, this.zoom * 1.2);
-            this.updateTransform(); this.renderConnections();
-        },
-
-        zoomOut() {
-            this.zoom = Math.max(0.15, this.zoom / 1.2);
-            this.updateTransform(); this.renderConnections();
-        },
-
-        resetZoom() {
-            this.zoom = 1; this.panX = 0; this.panY = 0;
-            this.updateTransform(); this.renderConnections(); this.saveViewport();
-        },
+        saveViewport() { API.updateCanvas(this.canvasId, { viewport_x: this.panX, viewport_y: this.panY, viewport_zoom: this.zoom }); },
+        zoomIn() { this.zoom = Math.min(3, this.zoom * 1.2); this.updateTransform(); this.renderConnections(); },
+        zoomOut() { this.zoom = Math.max(0.15, this.zoom / 1.2); this.updateTransform(); this.renderConnections(); },
+        resetZoom() { this.zoom = 1; this.panX = 0; this.panY = 0; this.updateTransform(); this.renderConnections(); this.saveViewport(); },
 
         fitView() {
             if (this.atoms.length === 0) return;
-            const vp = this.$refs.viewport;
-            if (!vp) return;
+            const vp = this.$refs.viewport; if (!vp) return;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            this.atoms.forEach(ca => {
-                minX = Math.min(minX, ca.pos_x);
-                minY = Math.min(minY, ca.pos_y);
-                maxX = Math.max(maxX, ca.pos_x + (ca.width || 260));
-                maxY = Math.max(maxY, ca.pos_y + (ca.height || 160));
-            });
-            const pad = 80;
-            const cw = maxX - minX + pad * 2;
-            const ch = maxY - minY + pad * 2;
+            this.atoms.forEach(ca => { minX = Math.min(minX, ca.pos_x); minY = Math.min(minY, ca.pos_y); maxX = Math.max(maxX, ca.pos_x + (ca.width || 260)); maxY = Math.max(maxY, ca.pos_y + (ca.height || 160)); });
+            const pad = 80, cw = maxX - minX + pad * 2, ch = maxY - minY + pad * 2;
             const rect = vp.getBoundingClientRect();
             this.zoom = Math.min(rect.width / cw, rect.height / ch, 1.2);
             this.panX = (rect.width - cw * this.zoom) / 2 - (minX - pad) * this.zoom;
@@ -588,12 +401,8 @@ function whiteboardApp(canvasId) {
         get zoomPercent() { return Math.round(this.zoom * 100); },
 
         screenToCanvas(sx, sy) {
-            const vp = this.$refs.viewport;
-            const rect = vp.getBoundingClientRect();
-            return {
-                x: (sx - rect.left - this.panX) / this.zoom,
-                y: (sy - rect.top - this.panY) / this.zoom,
-            };
+            const vp = this.$refs.viewport; const rect = vp.getBoundingClientRect();
+            return { x: (sx - rect.left - this.panX) / this.zoom, y: (sy - rect.top - this.panY) / this.zoom };
         },
 
         // ============================================
@@ -601,1149 +410,229 @@ function whiteboardApp(canvasId) {
         // ============================================
         onCardMouseDown(e, ca) {
             if (e.button !== 0 || this.mode === 'connect') return;
-            e.stopPropagation();
-            this.startCardDrag(e, ca, e.clientX, e.clientY);
+            e.stopPropagation(); this.startCardDrag(e, ca, e.clientX, e.clientY);
         },
 
         startCardDrag(e, ca, startX, startY) {
             if (this.selectedAtomIds.includes(ca.atom_id) && this.selectedAtomIds.length > 1) {
-                // Multi-drag
-                this.dragCard = ca;
-                this.dragStartX = startX;
-                this.dragStartY = startY;
-                this.multiDragStarts = {};
-                var self = this;
-                this.atoms.forEach(function(a) {
-                    if (self.selectedAtomIds.includes(a.atom_id)) {
-                        self.multiDragStarts[a.atom_id] = { x: a.pos_x, y: a.pos_y };
-                    }
-                });
+                this.dragCard = ca; this.dragStartX = startX; this.dragStartY = startY;
+                this.multiDragStarts = {}; var self = this;
+                this.atoms.forEach(function(a) { if (self.selectedAtomIds.includes(a.atom_id)) self.multiDragStarts[a.atom_id] = { x: a.pos_x, y: a.pos_y }; });
             } else {
-                // Single drag
-                this.selectedAtomIds = [];
-                this.selectCard(ca.atom_id);
-                this.dragCard = ca;
-                this.dragStartX = startX;
-                this.dragStartY = startY;
-                this.cardStartX = ca.pos_x;
-                this.cardStartY = ca.pos_y;
+                this.selectedAtomIds = []; this.selectCard(ca.atom_id);
+                this.dragCard = ca; this.dragStartX = startX; this.dragStartY = startY;
+                this.cardStartX = ca.pos_x; this.cardStartY = ca.pos_y;
             }
-            var maxZ = Math.max(0, ...this.atoms.map(function(a) { return a.z_index || 0; }));
-            ca.z_index = maxZ + 1;
+            ca.z_index = Math.max(0, ...this.atoms.map(function(a) { return a.z_index || 0; })) + 1;
         },
 
-        // Body: click-to-edit, drag-to-move
         onCardBodyMouseDown(e, ca) {
             if (e.button !== 0 || this.mode === 'connect') return;
             if (this.editingAtomId === ca.atom_id) return;
             e.stopPropagation();
-            this.bodyDragPending = true;
-            this.bodyDragStartX = e.clientX;
-            this.bodyDragStartY = e.clientY;
-            this.bodyDragCa = ca;
+            this.bodyDragPending = true; this.bodyDragStartX = e.clientX; this.bodyDragStartY = e.clientY; this.bodyDragCa = ca;
         },
 
-        startInlineEdit(ca) {
-            if (!ca || !ca.atom) return;
-            this.openCardEditor(ca.atom_id);
-        },
-
-        async finishInlineEdit(ca) {
-            // legacy: kept for keyboard escape handler compatibility
-        },
-
-        cancelInlineEdit() {
-            // legacy: kept for keyboard escape handler compatibility
-        },
-
-        // ============================================
-        // Card Editor (Tiptap WYSIWYG)
-        // ============================================
-        async openCardEditor(atomId) {
-            // 從 API 取得完整原子資料
-            const resp = await API.getAtom(atomId);
-            if (!resp || resp.error) {
-                this.showToast('無法載入原子', 'error');
-                return;
-            }
-            const atom = resp;
-            const typeCfg = this.atomTypeConfig[atom.atom_type] || {};
-
-            this.cardEditorAtomId = atom.id;
-            this.cardEditorAtomType = typeCfg.label || atom.atom_type;
-            this.cardEditorTitle = atom.title || '';
-            this.cardEditorDirty = false;
-            this.cardEditorOpen = true;
-
-            // 等 DOM 渲染後初始化 Tiptap (實例存 window 層避開 Alpine Proxy)
-            this.$nextTick(() => {
-                const host = this.$refs.tiptapHost;
-                if (!host) return;
-
-                if (window._bcCardEditor) {
-                    window._bcCardEditor.destroy();
-                }
-                window._bcCardEditor = new window.CardEditor();
-                const self = this;
-                window._bcCardEditor.create(host, {
-                    contentJson: atom.content_json || null,
-                    content: atom.content || '',
-                    onChange: () => {
-                        self.cardEditorDirty = true;
-                    },
-                });
-            });
-        },
-
-        async saveCardEditor() {
-            const ce = window._bcCardEditor;
-            if (!ce || !this.cardEditorAtomId) return;
-            const md = ce.getMarkdown();
-            const json = ce.getJSON();
-            const title = this.cardEditorTitle;
-
-            const update = {
-                title: title,
-                content: md,
-                content_json: json,
-            };
-
-            await API.updateAtom(this.cardEditorAtomId, update);
-
-            // 同步白板上的卡片資料
-            const ca = this.atoms.find(a => a.atom_id === this.cardEditorAtomId);
-            if (ca && ca.atom) {
-                ca.atom.title = title;
-                ca.atom.content = md;
-                ca.atom.content_json = json;
-            }
-
-            // 同步右側面板
-            if (this.selectedAtomDetails && this.selectedAtomDetails.id === this.cardEditorAtomId) {
-                this.selectedAtomDetails.title = title;
-                this.selectedAtomDetails.content = md;
-            }
-
-            this.cardEditorDirty = false;
-            this.showToast('已儲存', 'success');
-        },
-
-        closeCardEditor() {
-            if (this.cardEditorDirty) {
-                if (!confirm('尚未儲存，確定關閉？')) return;
-            }
-            // 先關 dirty 防止 destroy 過程觸發 onChange
-            this.cardEditorDirty = false;
-            if (window._bcCardEditor) {
-                window._bcCardEditor.destroy();
-                window._bcCardEditor = null;
-            }
-            this.cardEditorOpen = false;
-            this.cardEditorAtomId = null;
-            // 清除可能殘留的拖拉狀態
-            this.dragCard = null;
-            this.bodyDragPending = false;
-            this.bodyDragCa = null;
-            this.$nextTick(() => {
-                this.renderConnections();
-            });
-        },
-
-        ceInsertLink() {
-            const url = prompt('輸入連結 URL:');
-            if (url && window._bcCardEditor) {
-                window._bcCardEditor.cmd('link', url);
-            }
-        },
-
-        ceCmd(command) {
-            if (window._bcCardEditor) window._bcCardEditor.cmd(command);
-        },
-
-        ceIsActive(name, attrs) {
-            if (!window._bcCardEditor) return false;
-            return window._bcCardEditor.isActive(name, attrs);
-        },
+        startInlineEdit(ca) { if (!ca || !ca.atom) return; this.openCardEditor(ca.atom_id); },
+        async finishInlineEdit(ca) {},
+        cancelInlineEdit() {},
 
         // Resize
         onResizeMouseDown(e, ca) {
             if (e.button !== 0) return;
-            e.stopPropagation();
-            e.preventDefault();
-            this.resizeCard = ca;
-            this.resizeStartX = e.clientX;
-            this.resizeStartY = e.clientY;
+            e.stopPropagation(); e.preventDefault();
+            this.resizeCard = ca; this.resizeStartX = e.clientX; this.resizeStartY = e.clientY;
             const el = document.getElementById('card-' + ca.atom_id);
             this.resizeStartW = el ? el.offsetWidth : (ca.width || 260);
             this.resizeStartH = el ? el.offsetHeight : (ca.height || 120);
         },
 
         async selectCard(atomId) {
-            this.selectedAtomId = atomId;
-            this.showPanel = true;
-            this.selectedAtomDetails = null;
-            this.blockChain = null;
-            this.highlightedAtomIds = [];
-            try {
-                var details = await API.getAtom(atomId);
-                if (this.selectedAtomId === atomId) {
-                    this.selectedAtomDetails = details;
-                }
-            } catch (e) {
-                console.error('Failed to fetch atom details:', e);
-            }
+            this.selectedAtomId = atomId; this.showPanel = true;
+            this.selectedAtomDetails = null; this.blockChain = null; this.highlightedAtomIds = [];
+            try { var details = await API.getAtom(atomId); if (this.selectedAtomId === atomId) this.selectedAtomDetails = details; }
+            catch (e) { console.error('Failed to fetch atom details:', e); }
         },
 
-        deselectCard() {
-            this.selectedAtomId = null;
-            this.showPanel = false;
-            this.selectedAtomDetails = null;
-            this.blockChain = null;
-            this.highlightedAtomIds = [];
-        },
+        deselectCard() { this.selectedAtomId = null; this.showPanel = false; this.selectedAtomDetails = null; this.blockChain = null; this.highlightedAtomIds = []; },
 
         onCardClick(ca) {
-            if (this._justDragged) {
-                this._justDragged = false;
-                return;
-            }
-            this.selectedAtomIds = [];
-            this.selectCard(ca.atom_id);
+            if (this._justDragged) { this._justDragged = false; return; }
+            this.selectedAtomIds = []; this.selectCard(ca.atom_id);
         },
 
         // Box selection
         get boxSelectStyle() {
             if (!this.isBoxSelecting) return 'display:none;';
-            var vp = this.$refs.viewport;
-            if (!vp) return 'display:none;';
+            var vp = this.$refs.viewport; if (!vp) return 'display:none;';
             var rect = vp.getBoundingClientRect();
-            var x1 = this.boxSelectStartX - rect.left;
-            var y1 = this.boxSelectStartY - rect.top;
-            var x2 = this.boxSelectCurrentX - rect.left;
-            var y2 = this.boxSelectCurrentY - rect.top;
+            var x1 = this.boxSelectStartX - rect.left, y1 = this.boxSelectStartY - rect.top;
+            var x2 = this.boxSelectCurrentX - rect.left, y2 = this.boxSelectCurrentY - rect.top;
             return 'left:' + Math.min(x1, x2) + 'px; top:' + Math.min(y1, y2) + 'px; width:' + Math.abs(x2 - x1) + 'px; height:' + Math.abs(y2 - y1) + 'px;';
         },
 
         updateBoxSelection() {
             var start = this.screenToCanvas(this.boxSelectStartX, this.boxSelectStartY);
             var end = this.screenToCanvas(this.boxSelectCurrentX, this.boxSelectCurrentY);
-            var left = Math.min(start.x, end.x);
-            var top = Math.min(start.y, end.y);
-            var right = Math.max(start.x, end.x);
-            var bottom = Math.max(start.y, end.y);
-            this.selectedAtomIds = this.atoms
-                .filter(function(ca) {
-                    var w = ca.width || 260;
-                    var h = ca.height || 120;
-                    return ca.pos_x + w > left && ca.pos_x < right
-                        && ca.pos_y + h > top && ca.pos_y < bottom;
-                })
-                .map(function(ca) { return ca.atom_id; });
+            var left = Math.min(start.x, end.x), top = Math.min(start.y, end.y);
+            var right = Math.max(start.x, end.x), bottom = Math.max(start.y, end.y);
+            this.selectedAtomIds = this.atoms.filter(function(ca) {
+                var w = ca.width || 260, h = ca.height || 120;
+                return ca.pos_x + w > left && ca.pos_x < right && ca.pos_y + h > top && ca.pos_y < bottom;
+            }).map(function(ca) { return ca.atom_id; });
         },
 
-        get selectedAtom() {
-            return this.atoms.find(ca => ca.atom_id === this.selectedAtomId) || null;
-        },
+        get selectedAtom() { return this.atoms.find(ca => ca.atom_id === this.selectedAtomId) || null; },
 
         getCardStyle(ca) {
             const type = ca.atom ? ca.atom.atom_type : 'F';
             const lifecycle = ca.atom ? ca.atom.lifecycle : 'active';
             const cfg = this.atomTypeConfig[type] || this.atomTypeConfig.F;
             const opacity = { active: 1, aging: 0.65, archived: 0.35, terminal: 0.2 }[lifecycle] || 1;
-            const border = type === 'F'
-                ? '2px dashed ' + cfg.border
-                : '2px solid ' + cfg.border;
+            const border = type === 'F' ? '2px dashed ' + cfg.border : '2px solid ' + cfg.border;
             var s = 'left:' + ca.pos_x + 'px; top:' + ca.pos_y + 'px; z-index:' + (ca.z_index || 10) + '; border:' + border + '; opacity:' + opacity + ';';
-            if (ca.width) s += ' width:' + ca.width + 'px;';
-            if (ca.height) s += ' height:' + ca.height + 'px;';
+            if (ca.width) s += ' width:' + ca.width + 'px;'; if (ca.height) s += ' height:' + ca.height + 'px;';
             return s;
         },
 
-        getTypeBadgeStyle(type) {
-            const cfg = this.atomTypeConfig[type] || this.atomTypeConfig.F;
-            return 'background:' + cfg.bg + '; color:' + cfg.color + ';';
-        },
+        getTypeBadgeStyle(type) { const cfg = this.atomTypeConfig[type] || this.atomTypeConfig.F; return 'background:' + cfg.bg + '; color:' + cfg.color + ';'; },
 
         // ============================================
         // New Atom
         // ============================================
         openNewAtomModal(e) {
             this.newAtom = { title: '', content: '', atom_type: 'F' };
-            if (e && e.clientX) {
-                const pos = this.screenToCanvas(e.clientX, e.clientY);
-                this.newAtomPos = { x: pos.x, y: pos.y };
-            } else {
-                this.newAtomPos = {
-                    x: (-this.panX / this.zoom) + 200,
-                    y: (-this.panY / this.zoom) + 200,
-                };
-            }
+            if (e && e.clientX) { const pos = this.screenToCanvas(e.clientX, e.clientY); this.newAtomPos = { x: pos.x, y: pos.y }; }
+            else { this.newAtomPos = { x: (-this.panX / this.zoom) + 200, y: (-this.panY / this.zoom) + 200 }; }
             this.showNewAtomModal = true;
         },
 
         async createNewAtom() {
-            const atom = await API.createAtom({
-                title: this.newAtom.title || '新原子',
-                content: this.newAtom.content,
-                atom_type: this.newAtom.atom_type,
-                source: 'human',
-            });
-            await API.addAtomToCanvas(this.canvasId, {
-                atom_id: atom.id,
-                pos_x: this.newAtomPos.x,
-                pos_y: this.newAtomPos.y,
-            });
-            this.showNewAtomModal = false;
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
+            const atom = await API.createAtom({ title: this.newAtom.title || '新原子', content: this.newAtom.content, atom_type: this.newAtom.atom_type, source: 'human' });
+            await API.addAtomToCanvas(this.canvasId, { atom_id: atom.id, pos_x: this.newAtomPos.x, pos_y: this.newAtomPos.y });
+            this.showNewAtomModal = false; await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
         // ============================================
         // Add Existing Atom
         // ============================================
         async openAddExistingModal() {
-            this.searchQuery = '';
-            this.searchResults = [];
-            this.showAddExistingModal = true;
-            await this.doSearch();
+            this.searchQuery = ''; this.searchResults = []; this.showAddExistingModal = true; await this.doSearch();
         },
 
         async doSearch() {
             const existingIds = new Set(this.atoms.map(ca => ca.atom_id));
-            if (this.searchQuery.trim()) {
-                // 有搜尋詞：混合搜尋（語意 + 文字）
-                const resp = await API.searchSemantic(this.searchQuery, 20);
-                this.searchResults = (resp.items || []).filter(a => !existingIds.has(a.id));
-            } else {
-                // 無搜尋詞：列出最近原子
-                const resp = await API.getAtoms({ per_page: 20 });
-                this.searchResults = (resp.items || []).filter(a => !existingIds.has(a.id));
-            }
+            if (this.searchQuery.trim()) { const resp = await API.searchSemantic(this.searchQuery, 20); this.searchResults = (resp.items || []).filter(a => !existingIds.has(a.id)); }
+            else { const resp = await API.getAtoms({ per_page: 20 }); this.searchResults = (resp.items || []).filter(a => !existingIds.has(a.id)); }
         },
 
         async addExistingAtom(atomId) {
-            await API.addAtomToCanvas(this.canvasId, {
-                atom_id: atomId,
-                pos_x: (-this.panX / this.zoom) + 200 + Math.random() * 100,
-                pos_y: (-this.panY / this.zoom) + 200 + Math.random() * 100,
-            });
+            await API.addAtomToCanvas(this.canvasId, { atom_id: atomId, pos_x: (-this.panX / this.zoom) + 200 + Math.random() * 100, pos_y: (-this.panY / this.zoom) + 200 + Math.random() * 100 });
             this.searchResults = this.searchResults.filter(a => a.id !== atomId);
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
+            await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
         // ============================================
-        // Update Atom
+        // Update / Remove / Delete
         // ============================================
         async updateAtomField(ca, field, value) {
-            if (!ca || !ca.atom) return;
-            ca.atom[field] = value;
-            await API.updateAtom(ca.atom_id, { [field]: value });
-            this.$nextTick(() => this.renderConnections());
+            if (!ca || !ca.atom) return; ca.atom[field] = value;
+            await API.updateAtom(ca.atom_id, { [field]: value }); this.$nextTick(() => this.renderConnections());
         },
 
-        // ============================================
-        // Remove / Delete
-        // ============================================
         async removeFromCanvas(ca) {
-            await API.removeCanvasAtom(ca.id);
-            if (this.selectedAtomId === ca.atom_id) this.deselectCard();
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
+            await API.removeCanvasAtom(ca.id); if (this.selectedAtomId === ca.atom_id) this.deselectCard();
+            await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
         async deleteAtomEntirely(ca) {
-            await API.deleteAtom(ca.atom_id);
-            if (this.selectedAtomId === ca.atom_id) this.deselectCard();
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
+            await API.deleteAtom(ca.atom_id); if (this.selectedAtomId === ca.atom_id) this.deselectCard();
+            await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
         // ============================================
         // Connection Mode
         // ============================================
-        toggleConnectMode() {
-            this.mode = this.mode === 'connect' ? 'select' : 'connect';
-            if (this.mode !== 'connect') this.connSourceAtomId = null;
-        },
+        toggleConnectMode() { this.mode = this.mode === 'connect' ? 'select' : 'connect'; if (this.mode !== 'connect') this.connSourceAtomId = null; },
 
         onCardClickForConnect(e, ca) {
-            if (this.mode !== 'connect') return;
-            e.stopPropagation();
-            if (!this.connSourceAtomId) {
-                this.connSourceAtomId = ca.atom_id;
-            } else if (this.connSourceAtomId !== ca.atom_id) {
-                this.pendingConnection = {
-                    sourceAtomId: this.connSourceAtomId,
-                    targetAtomId: ca.atom_id,
-                };
-                this.selectedRelationType = 'supports';
-                this.relationLabel = '';
-                this.showRelationModal = true;
+            if (this.mode !== 'connect') return; e.stopPropagation();
+            if (!this.connSourceAtomId) { this.connSourceAtomId = ca.atom_id; }
+            else if (this.connSourceAtomId !== ca.atom_id) {
+                this.pendingConnection = { sourceAtomId: this.connSourceAtomId, targetAtomId: ca.atom_id };
+                this.selectedRelationType = 'supports'; this.relationLabel = ''; this.showRelationModal = true;
                 this.connSourceAtomId = null;
             }
         },
 
-        getAtomTitle(atomId) {
-            const ca = this.atoms.find(a => a.atom_id === atomId);
-            return ca && ca.atom ? ca.atom.title : ('#' + atomId);
-        },
+        getAtomTitle(atomId) { const ca = this.atoms.find(a => a.atom_id === atomId); return ca && ca.atom ? ca.atom.title : ('#' + atomId); },
 
         async confirmConnection() {
             if (!this.pendingConnection) return;
-            await API.createConnection({
-                canvas_id: this.canvasId,
-                source_atom_id: this.pendingConnection.sourceAtomId,
-                target_atom_id: this.pendingConnection.targetAtomId,
-                relation_type: this.selectedRelationType,
-                label: this.relationLabel,
-            });
-            this.showRelationModal = false;
-            this.pendingConnection = null;
-            this.mode = 'select';
-            await this.loadData();
-            this.renderConnections();
+            await API.createConnection({ canvas_id: this.canvasId, source_atom_id: this.pendingConnection.sourceAtomId, target_atom_id: this.pendingConnection.targetAtomId, relation_type: this.selectedRelationType, label: this.relationLabel });
+            this.showRelationModal = false; this.pendingConnection = null; this.mode = 'select';
+            await this.loadData(); this.renderConnections();
         },
 
         async deleteConnection(connId) {
-            var result = await API.deleteConnection(connId);
-            await this.loadData();
-            this.renderConnections();
-            if (result && result.relation_kept) {
-                this.showToast(result.relation_kept_reason || '底層知識關係仍被其他白板引用，BLOCKED 標章保留', 'warn', 5000);
-            }
-        },
-
-        // ============================================
-        // Connection Drag (from anchors)
-        // ============================================
-        startConnDrag(e, ca, anchor) {
-            this.isConnDragging = true;
-            this.connDragSourceAtomId = ca.atom_id;
-            this.connDragSourceAnchor = anchor;
-            this.connDragHoverAtomId = null;
-            this.connDragMouseX = e.clientX;
-            this.connDragMouseY = e.clientY;
-            this.updatePreviewLine();
-        },
-
-        endConnDrag() {
-            if (this.connDragHoverAtomId && this.connDragHoverAtomId !== this.connDragSourceAtomId) {
-                this.pendingConnection = {
-                    sourceAtomId: this.connDragSourceAtomId,
-                    targetAtomId: this.connDragHoverAtomId,
-                };
-                this.selectedRelationType = 'follows';
-                this.relationLabel = '';
-                this.showRelationModal = true;
-            }
-            this.isConnDragging = false;
-            this.connDragSourceAtomId = null;
-            this.connDragSourceAnchor = null;
-            this.connDragHoverAtomId = null;
-            this.clearPreviewLine();
-        },
-
-        cancelConnDrag() {
-            this.isConnDragging = false;
-            this.connDragSourceAtomId = null;
-            this.connDragSourceAnchor = null;
-            this.connDragHoverAtomId = null;
-            this.clearPreviewLine();
-        },
-
-        getAnchorPos(atomId, anchor) {
-            var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
-            if (!ca) return { x: 0, y: 0 };
-            var el = document.getElementById('card-' + atomId);
-            var w = el ? el.offsetWidth : 260;
-            var h = el ? el.offsetHeight : 120;
-            switch (anchor) {
-                case 'top':    return { x: ca.pos_x + w / 2, y: ca.pos_y };
-                case 'bottom': return { x: ca.pos_x + w / 2, y: ca.pos_y + h };
-                case 'left':   return { x: ca.pos_x, y: ca.pos_y + h / 2 };
-                case 'right':  return { x: ca.pos_x + w, y: ca.pos_y + h / 2 };
-                default:       return { x: ca.pos_x + w / 2, y: ca.pos_y + h / 2 };
-            }
-        },
-
-        findNearestAnchor(atomId, canvasX, canvasY) {
-            var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
-            if (!ca) return { x: canvasX, y: canvasY };
-            var el = document.getElementById('card-' + atomId);
-            var w = el ? el.offsetWidth : 260;
-            var h = el ? el.offsetHeight : 120;
-            var anchors = [
-                { x: ca.pos_x + w / 2, y: ca.pos_y },
-                { x: ca.pos_x + w / 2, y: ca.pos_y + h },
-                { x: ca.pos_x, y: ca.pos_y + h / 2 },
-                { x: ca.pos_x + w, y: ca.pos_y + h / 2 },
-            ];
-            var nearest = anchors[0];
-            var minDist = Infinity;
-            for (var i = 0; i < anchors.length; i++) {
-                var d = Math.hypot(anchors[i].x - canvasX, anchors[i].y - canvasY);
-                if (d < minDist) { minDist = d; nearest = anchors[i]; }
-            }
-            return nearest;
-        },
-
-        updatePreviewLine() {
-            var line = this.$refs.previewLine;
-            if (!line || !this.isConnDragging) return;
-
-            var src = this.getAnchorPos(this.connDragSourceAtomId, this.connDragSourceAnchor);
-            var tgt = this.screenToCanvas(this.connDragMouseX, this.connDragMouseY);
-
-            if (this.connDragHoverAtomId) {
-                var snap = this.findNearestAnchor(this.connDragHoverAtomId, tgt.x, tgt.y);
-                tgt.x = snap.x;
-                tgt.y = snap.y;
-            }
-
-            var dx = tgt.x - src.x;
-            var cx1 = src.x + dx * 0.4;
-            var cx2 = src.x + dx * 0.6;
-
-            line.setAttribute('d',
-                'M ' + src.x + ' ' + src.y +
-                ' C ' + cx1 + ' ' + src.y +
-                ', ' + cx2 + ' ' + tgt.y +
-                ', ' + tgt.x + ' ' + tgt.y);
-            line.style.display = '';
-        },
-
-        clearPreviewLine() {
-            var line = this.$refs.previewLine;
-            if (line) {
-                line.setAttribute('d', '');
-                line.style.display = 'none';
-            }
-        },
-
-        onCardMouseEnterForConn(ca) {
-            if (this.isConnDragging && ca.atom_id !== this.connDragSourceAtomId) {
-                this.connDragHoverAtomId = ca.atom_id;
-            }
-        },
-
-        onCardMouseLeaveForConn(ca) {
-            if (this.connDragHoverAtomId === ca.atom_id) {
-                this.connDragHoverAtomId = null;
-            }
-        },
-
-        // ============================================
-        // Render Connections (SVG)
-        // ============================================
-
-        // Calculate edge endpoints for a connection (edge-to-edge, not center)
-        _calcEdgeEndpoints(srcCa, tgtCa) {
-            var sw = srcCa.width || 260, sh = srcCa.height || 120;
-            var tw = tgtCa.width || 260, th = tgtCa.height || 120;
-            var scx = srcCa.pos_x + sw / 2, scy = srcCa.pos_y + sh / 2;
-            var tcx = tgtCa.pos_x + tw / 2, tcy = tgtCa.pos_y + th / 2;
-            var ddx = tcx - scx, ddy = tcy - scy;
-            var sx, sy, tx, ty;
-
-            if (Math.abs(ddx) > Math.abs(ddy)) {
-                if (ddx > 0) { sx = srcCa.pos_x + sw; sy = scy; tx = tgtCa.pos_x; ty = tcy; }
-                else         { sx = srcCa.pos_x;       sy = scy; tx = tgtCa.pos_x + tw; ty = tcy; }
-            } else {
-                if (ddy > 0) { sx = scx; sy = srcCa.pos_y + sh; tx = tcx; ty = tgtCa.pos_y; }
-                else         { sx = scx; sy = srcCa.pos_y;       tx = tcx; ty = tgtCa.pos_y + th; }
-            }
-            return { sx: sx, sy: sy, tx: tx, ty: ty, ddx: ddx, ddy: ddy };
-        },
-
-        // Build SVG path 'd' attribute: bezier or straight
-        _buildPathD(ep, straight) {
-            if (straight) {
-                return 'M ' + ep.sx + ' ' + ep.sy + ' L ' + ep.tx + ' ' + ep.ty;
-            }
-            var cx1, cy1, cx2, cy2;
-            if (Math.abs(ep.ddx) > Math.abs(ep.ddy)) {
-                var gx = Math.max(Math.abs(ep.tx - ep.sx) * 0.4, 20);
-                cx1 = ep.sx + (ep.ddx > 0 ? gx : -gx); cy1 = ep.sy;
-                cx2 = ep.tx + (ep.ddx > 0 ? -gx : gx); cy2 = ep.ty;
-            } else {
-                var gy = Math.max(Math.abs(ep.ty - ep.sy) * 0.4, 20);
-                cx1 = ep.sx; cy1 = ep.sy + (ep.ddy > 0 ? gy : -gy);
-                cx2 = ep.tx; cy2 = ep.ty + (ep.ddy > 0 ? -gy : gy);
-            }
-            return 'M ' + ep.sx + ' ' + ep.sy + ' C ' + cx1 + ' ' + cy1 + ', ' + cx2 + ' ' + cy2 + ', ' + ep.tx + ' ' + ep.ty;
-        },
-
-        // Get current viewport bounds in canvas coordinates
-        _getViewportBounds() {
-            var vp = this.$refs.viewport;
-            if (!vp) return null;
-            var rect = vp.getBoundingClientRect();
-            var left = -this.panX / this.zoom;
-            var top = -this.panY / this.zoom;
-            var right = left + rect.width / this.zoom;
-            var bottom = top + rect.height / this.zoom;
-            return { left: left, top: top, right: right, bottom: bottom,
-                     cx: (left + right) / 2, cy: (top + bottom) / 2 };
-        },
-
-        // Check if a card is inside viewport bounds
-        _isInViewport(ca, vb) {
-            var w = ca.width || 260, h = ca.height || 120;
-            return ca.pos_x + w > vb.left && ca.pos_x < vb.right &&
-                   ca.pos_y + h > vb.top  && ca.pos_y < vb.bottom;
-        },
-
-        // Filter connections for optimized mode (8-direction, max 10 per sector)
-        _filterOptimizedConnections(connList) {
-            var vb = this._getViewportBounds();
-            if (!vb) return connList || this.connections;
-            var sourceConns = connList || this.connections;
-
-            var self = this;
-            var atomMap = {};
-            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
-
-            // Count nodes outside viewport
-            var outsideCount = 0;
-            this.atoms.forEach(function(ca) {
-                if (!self._isInViewport(ca, vb)) outsideCount++;
-            });
-
-            // Threshold not met: render all
-            if (outsideCount <= 100) return sourceConns;
-
-            // Separate: both-endpoints-in-viewport vs at-least-one-outside
-            var insideConns = [];
-            var outsideConns = [];
-            sourceConns.forEach(function(conn) {
-                var src = atomMap[conn.source_atom_id];
-                var tgt = atomMap[conn.target_atom_id];
-                if (!src || !tgt) return;
-                var srcIn = self._isInViewport(src, vb);
-                var tgtIn = self._isInViewport(tgt, vb);
-                if (srcIn && tgtIn) {
-                    insideConns.push(conn);
-                } else {
-                    // midpoint of the two card centers for direction calc
-                    var sw = src.width || 260, sh = src.height || 120;
-                    var tw = tgt.width || 260, th = tgt.height || 120;
-                    var mx = ((src.pos_x + sw / 2) + (tgt.pos_x + tw / 2)) / 2;
-                    var my = ((src.pos_y + sh / 2) + (tgt.pos_y + th / 2)) / 2;
-                    var dx = mx - vb.cx, dy = my - vb.cy;
-                    var dist = Math.sqrt(dx * dx + dy * dy);
-                    // angle -> sector 0-7 (N=0, NE=1, E=2, SE=3, S=4, SW=5, W=6, NW=7)
-                    var angle = Math.atan2(dy, dx); // -PI..PI, 0=right
-                    // Rotate so 0=North: subtract PI/2, then normalize
-                    var a = angle + Math.PI / 2;
-                    if (a < 0) a += 2 * Math.PI;
-                    var sector = Math.floor(a / (Math.PI / 4)) % 8;
-                    outsideConns.push({ conn: conn, sector: sector, dist: dist });
-                }
-            });
-
-            // Per-sector: sort by distance ascending, take top N
-            var perSector = this.rtOptPerSector || 10;
-            var sectors = [[], [], [], [], [], [], [], []];
-            outsideConns.forEach(function(item) { sectors[item.sector].push(item); });
-            var kept = [];
-            for (var s = 0; s < 8; s++) {
-                sectors[s].sort(function(a, b) { return a.dist - b.dist; });
-                for (var i = 0; i < Math.min(perSector, sectors[s].length); i++) {
-                    kept.push(sectors[s][i].conn);
-                }
-            }
-
-            return insideConns.concat(kept);
-        },
-
-        // Called by panel controls
-        applyRenderSettings() {
-            this.renderConnections();
-        },
-
-        // Store connection geometry for hit testing (grouped mode)
-        _connGeometry: [],
-
-        renderConnections() {
-            var svg = this.$refs.connSvg;
-            if (!svg) return;
-            svg.innerHTML = '';
-            this._connGeometry = [];
-
-            // 'none' = hide all edges
-            if (this.rtLineStyle === 'none') {
-                this.renderStats = { total: this.connections.length, rendered: 0 };
-                return;
-            }
-
-            // Filter out connections involving hidden atoms
-            var visibleIds = this.filteredAtomIds;
-            var baseConns = this.connections.filter(function(c) {
-                return visibleIds.includes(c.source_atom_id) && visibleIds.includes(c.target_atom_id);
-            });
-
-            // Determine which connections to render
-            var renderList = this.rtOptEnabled
-                ? this._filterOptimizedConnections(baseConns)
-                : baseConns;
-
-            this.renderStats = { total: this.connections.length, rendered: renderList.length };
-
-            if (this.rtEngine === 'grouped') {
-                this._renderGrouped(svg, renderList);
-            } else {
-                this._renderIndividual(svg, renderList);
-            }
-        },
-
-        _renderIndividual(svg, renderList) {
-            var isStraight = (this.rtLineStyle === 'straight');
-
-            // Arrow markers
-            var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            var usedColors = new Set();
-            this.connections.forEach(function(c) { usedColors.add(c.color || '#94a3b8'); });
-            usedColors.forEach(function(color) {
-                var marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-                var mid = 'arr-' + color.replace('#', '');
-                marker.setAttribute('id', mid);
-                marker.setAttribute('viewBox', '0 0 10 10');
-                marker.setAttribute('refX', '9');
-                marker.setAttribute('refY', '5');
-                marker.setAttribute('markerWidth', '6');
-                marker.setAttribute('markerHeight', '6');
-                marker.setAttribute('orient', 'auto-start-reverse');
-                var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                p.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-                p.setAttribute('fill', color);
-                marker.appendChild(p);
-                defs.appendChild(marker);
-            });
-            svg.appendChild(defs);
-
-            var self = this;
-            var atomMap = {};
-            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
-
-            renderList.forEach(function(conn) {
-                var srcCa = atomMap[conn.source_atom_id];
-                var tgtCa = atomMap[conn.target_atom_id];
-                if (!srcCa || !tgtCa) return;
-
-                var ep = self._calcEdgeEndpoints(srcCa, tgtCa);
-                var lc = conn.color || '#94a3b8';
-                var mid = 'arr-' + lc.replace('#', '');
-
-                var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', self._buildPathD(ep, isStraight));
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', lc);
-                path.setAttribute('stroke-width', '2');
-                path.setAttribute('marker-end', 'url(#' + mid + ')');
-
-                if (conn.line_style === 'dashed') path.setAttribute('stroke-dasharray', '8 4');
-                else if (conn.line_style === 'dotted') path.setAttribute('stroke-dasharray', '3 3');
-
-                path.style.pointerEvents = 'stroke';
-                path.style.cursor = 'pointer';
-                var connId = conn.id;
-                path.addEventListener('click', function() {
-                    if (confirm('刪除此連線?')) self.deleteConnection(connId);
-                });
-                svg.appendChild(path);
-
-                // Label (clickable for inline edit)
-                var labelText = conn.label || self.relationLabelMap[conn.relation_type] || '';
-                if (labelText) {
-                    var mx = (ep.sx + ep.tx) / 2;
-                    var my = (ep.sy + ep.ty) / 2;
-                    var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    text.setAttribute('x', mx);
-                    text.setAttribute('y', my - 8);
-                    text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('class', 'conn-label conn-label-editable');
-                    text.setAttribute('fill', lc);
-                    text.style.cursor = 'text';
-                    text.textContent = labelText;
-                    var cid = conn.id;
-                    text.addEventListener('dblclick', function(e) {
-                        e.stopPropagation();
-                        self.startEditConnection(cid, e.clientX, e.clientY);
-                    });
-                    svg.appendChild(text);
-                }
-            });
-        },
-
-        _renderGrouped(svg, renderList) {
-            var isStraight = (this.rtLineStyle === 'straight');
-            var self = this;
-            var atomMap = {};
-            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
-
-            // Group by (color + line_style) -> combined path 'd' + arrow triangles
-            var groups = {};   // key -> { d: '', arrowD: '', color, dasharray }
-            var geom = [];     // for hit testing
-
-            renderList.forEach(function(conn) {
-                var srcCa = atomMap[conn.source_atom_id];
-                var tgtCa = atomMap[conn.target_atom_id];
-                if (!srcCa || !tgtCa) return;
-
-                var ep = self._calcEdgeEndpoints(srcCa, tgtCa);
-                var lc = conn.color || '#94a3b8';
-                var ls = conn.line_style || 'solid';
-                var key = lc + '|' + ls;
-
-                if (!groups[key]) {
-                    var da = '';
-                    if (ls === 'dashed') da = '8 4';
-                    else if (ls === 'dotted') da = '3 3';
-                    groups[key] = { d: '', arrowD: '', color: lc, dasharray: da };
-                }
-
-                // Append line segment to combined path
-                groups[key].d += self._buildPathD(ep, isStraight) + ' ';
-
-                // Build arrowhead triangle at target end
-                var adx = ep.tx - ep.sx, ady = ep.ty - ep.sy;
-                var len = Math.sqrt(adx * adx + ady * ady);
-                if (len > 0) {
-                    var ux = adx / len, uy = ady / len;  // unit vector along line
-                    var px = -uy, py = ux;                // perpendicular
-                    var as = 7;  // arrow size
-                    var ax1 = ep.tx - ux * as * 1.5 + px * as;
-                    var ay1 = ep.ty - uy * as * 1.5 + py * as;
-                    var ax2 = ep.tx - ux * as * 1.5 - px * as;
-                    var ay2 = ep.ty - uy * as * 1.5 - py * as;
-                    groups[key].arrowD += 'M ' + ep.tx + ' ' + ep.ty +
-                        ' L ' + ax1 + ' ' + ay1 +
-                        ' L ' + ax2 + ' ' + ay2 + ' Z ';
-                }
-
-                // Store geometry for hit test + label
-                var lt = conn.label || self.relationLabelMap[conn.relation_type] || '';
-                geom.push({ connId: conn.id, sx: ep.sx, sy: ep.sy, tx: ep.tx, ty: ep.ty, label: lt, color: lc });
-            });
-
-            this._connGeometry = geom;
-
-            // Render labels (individual per connection, even in grouped mode)
-            geom.forEach(function(g) {
-                if (!g.label) return;
-                var mx = (g.sx + g.tx) / 2;
-                var my = (g.sy + g.ty) / 2;
-                var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                text.setAttribute('x', mx);
-                text.setAttribute('y', my - 8);
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('class', 'conn-label conn-label-editable');
-                text.setAttribute('fill', g.color);
-                text.style.cursor = 'text';
-                text.textContent = g.label;
-                var cid = g.connId;
-                text.addEventListener('dblclick', function(e) {
-                    e.stopPropagation();
-                    self.startEditConnection(cid, e.clientX, e.clientY);
-                });
-                svg.appendChild(text);
-            });
-
-            // Render each group as 2 elements: 1 combined line path + 1 combined arrow path
-            var keys = Object.keys(groups);
-            for (var i = 0; i < keys.length; i++) {
-                var g = groups[keys[i]];
-
-                // Lines
-                var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', g.d);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', g.color);
-                path.setAttribute('stroke-width', '2');
-                if (g.dasharray) path.setAttribute('stroke-dasharray', g.dasharray);
-                path.style.pointerEvents = 'stroke';
-                path.style.cursor = 'pointer';
-                path.addEventListener('click', function(e) { self._onGroupedLineClick(e); });
-                svg.appendChild(path);
-
-                // Arrows (filled triangles, combined into one path)
-                if (g.arrowD) {
-                    var arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    arrow.setAttribute('d', g.arrowD);
-                    arrow.setAttribute('fill', g.color);
-                    arrow.setAttribute('stroke', 'none');
-                    arrow.style.pointerEvents = 'none';
-                    svg.appendChild(arrow);
-                }
-            }
-        },
-
-        // Hit test: find which connection was clicked in grouped mode
-        _onGroupedLineClick(e) {
-            var vp = this.$refs.viewport;
-            if (!vp) return;
-            var rect = vp.getBoundingClientRect();
-            // Convert screen coords to canvas coords
-            var cx = (e.clientX - rect.left - this.panX) / this.zoom;
-            var cy = (e.clientY - rect.top - this.panY) / this.zoom;
-
-            var best = null, bestDist = Infinity;
-            for (var i = 0; i < this._connGeometry.length; i++) {
-                var g = this._connGeometry[i];
-                var d = this._pointToSegmentDist(cx, cy, g.sx, g.sy, g.tx, g.ty);
-                if (d < bestDist) { bestDist = d; best = g; }
-            }
-
-            if (best && bestDist < 20 / this.zoom) {
-                if (confirm('刪除此連線?')) this.deleteConnection(best.connId);
-            }
-        },
-
-        // Point-to-line-segment distance
-        _pointToSegmentDist(px, py, x1, y1, x2, y2) {
-            var dx = x2 - x1, dy = y2 - y1;
-            var lenSq = dx * dx + dy * dy;
-            if (lenSq === 0) return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
-            var t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
-            var nx = x1 + t * dx, ny = y1 + t * dy;
-            return Math.sqrt((px - nx) * (px - nx) + (py - ny) * (py - ny));
+            var result = await API.deleteConnection(connId); await this.loadData(); this.renderConnections();
+            if (result && result.relation_kept) this.showToast(result.relation_kept_reason || '底層知識關係仍被其他白板引用', 'warn', 5000);
         },
 
         // ============================================
         // Tags
         // ============================================
-        getTagStyle(color) {
-            return 'background:' + color + '20; color:' + color + '; border:1px solid ' + color + '40;';
-        },
-
-        atomHasTag(ca, tagId) {
-            return ca && ca.atom && ca.atom.tags && ca.atom.tags.some(function(t) { return t.id === tagId; });
-        },
+        getTagStyle(color) { return 'background:' + color + '20; color:' + color + '; border:1px solid ' + color + '40;'; },
+        atomHasTag(ca, tagId) { return ca && ca.atom && ca.atom.tags && ca.atom.tags.some(function(t) { return t.id === tagId; }); },
 
         async toggleAtomTag(ca, tagId) {
             if (!ca || !ca.atom) return;
             const cur = (ca.atom.tags || []).map(function(t) { return t.id; });
-            const newIds = cur.includes(tagId)
-                ? cur.filter(function(id) { return id !== tagId; })
-                : cur.concat([tagId]);
-            await API.updateAtom(ca.atom_id, { tag_ids: newIds });
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
+            const newIds = cur.includes(tagId) ? cur.filter(function(id) { return id !== tagId; }) : cur.concat([tagId]);
+            await API.updateAtom(ca.atom_id, { tag_ids: newIds }); await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
         async createTag() {
             if (!this.newTagName.trim()) return;
-            await API.createTag({ name: this.newTagName.trim(), color: this.newTagColor });
-            this.tags = await API.getTags();
-            this.newTagName = '';
+            await API.createTag({ name: this.newTagName.trim(), color: this.newTagColor }); this.tags = await API.getTags(); this.newTagName = '';
         },
 
-        async deleteTag(tagId) {
-            await API.deleteTag(tagId);
-            this.tags = await API.getTags();
-        },
+        async deleteTag(tagId) { await API.deleteTag(tagId); this.tags = await API.getTags(); },
 
         // ============================================
         // Canvas Management
         // ============================================
-        async createCanvas() {
-            if (!this.newCanvasName.trim()) return;
-            const c = await API.createCanvas({ name: this.newCanvasName.trim() });
-            window.location.href = '/canvas/' + c.id;
-        },
+        async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/canvas/' + c.id; },
 
         async deleteCanvas(id) {
             if (this.canvases.length <= 1) return;
             await API.deleteCanvas(id);
-            if (id === this.canvasId) {
-                window.location.href = '/';
-            } else {
-                this.canvases = await API.getCanvases();
-            }
+            if (id === this.canvasId) window.location.href = '/'; else this.canvases = await API.getCanvases();
         },
 
         // ============================================
         // Context Menu
         // ============================================
-        onCanvasContextMenu(e) {
-            e.preventDefault();
-            this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' };
-        },
-
-        onCardContextMenu(e, ca) {
-            e.preventDefault();
-            e.stopPropagation();
-            this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: ca };
-        },
-
+        onCanvasContextMenu(e) { e.preventDefault(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' }; },
+        onCardContextMenu(e, ca) { e.preventDefault(); e.stopPropagation(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: ca }; },
         closeContextMenu() { this.contextMenu = null; },
-
-        contextAddAtom() {
-            this.openNewAtomModal({ clientX: this.contextMenu.x, clientY: this.contextMenu.y });
-            this.closeContextMenu();
-        },
+        contextAddAtom() { this.openNewAtomModal({ clientX: this.contextMenu.x, clientY: this.contextMenu.y }); this.closeContextMenu(); },
 
         // ============================================
-        // Groups
-        // ============================================
-        async createGroupFromSelection() {
-            if (this.selectedAtomIds.length === 0) return;
-            var pad = 20;
-            var self = this;
-            var selected = this.atoms.filter(function(ca) { return self.selectedAtomIds.includes(ca.atom_id); });
-            if (selected.length === 0) return;
-            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            selected.forEach(function(ca) {
-                minX = Math.min(minX, ca.pos_x);
-                minY = Math.min(minY, ca.pos_y);
-                maxX = Math.max(maxX, ca.pos_x + (ca.width || 260));
-                maxY = Math.max(maxY, ca.pos_y + (ca.height || 120));
-            });
-            await API.createGroup(this.canvasId, {
-                name: 'Group',
-                color: '#3b82f6',
-                pos_x: minX - pad,
-                pos_y: minY - pad - 24,
-                width: maxX - minX + pad * 2,
-                height: maxY - minY + pad * 2 + 24,
-                atom_ids: this.selectedAtomIds,
-            });
-            this.selectedAtomIds = [];
-            await this.loadData();
-            this.$nextTick(function() { self.renderConnections(); });
-        },
-
-        getGroupStyle(g) {
-            return 'left:' + g.pos_x + 'px; top:' + g.pos_y + 'px; width:' + g.width + 'px; height:' + g.height + 'px; z-index:' + (g.z_index || 1) + '; border-color:' + g.color + '; background:' + g.color + '08;';
-        },
-
-        getGroupLabelStyle(g) {
-            return 'color:' + g.color + ';';
-        },
-
-        onGroupMouseDown(e, g) {
-            if (e.button !== 0) return;
-            e.stopPropagation();
-            this.dragGroup = g;
-            this.groupDragStartX = e.clientX;
-            this.groupDragStartY = e.clientY;
-            this.groupDragStartPos = { x: g.pos_x, y: g.pos_y };
-            var self = this;
-            this.groupDragMemberStarts = {};
-            this.atoms.forEach(function(ca) {
-                if (ca.group_id === g.id) {
-                    self.groupDragMemberStarts[ca.atom_id] = { x: ca.pos_x, y: ca.pos_y };
-                }
-            });
-        },
-
-        onGroupResizeMouseDown(e, g) {
-            if (e.button !== 0) return;
-            e.stopPropagation();
-            e.preventDefault();
-            this.resizeGroup = g;
-            this.resizeGroupStartX = e.clientX;
-            this.resizeGroupStartY = e.clientY;
-            this.resizeGroupStartW = g.width;
-            this.resizeGroupStartH = g.height;
-        },
-
-        openGroupEditModal(g) {
-            this.editingGroup = g;
-            this.groupForm = { name: g.name, color: g.color };
-            this.showGroupModal = true;
-        },
-
-        async saveGroupEdit() {
-            if (!this.editingGroup) return;
-            await API.updateGroup(this.editingGroup.id, {
-                name: this.groupForm.name,
-                color: this.groupForm.color,
-            });
-            this.showGroupModal = false;
-            this.editingGroup = null;
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
-        },
-
-        async deleteGroup(groupId) {
-            await API.deleteGroup(groupId);
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
-        },
-
-        async ungroupAtoms(groupId) {
-            await API.deleteGroup(groupId);
-            await this.loadData();
-            this.$nextTick(() => this.renderConnections());
-        },
-
-        recalcGroupBounds(groupId) {
-            var group = this.groups.find(function(g) { return g.id === groupId; });
-            if (!group) return;
-            var members = this.atoms.filter(function(ca) { return ca.group_id === groupId; });
-            if (members.length === 0) return;
-            var pad = 20;
-            var labelH = 24;
-            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            members.forEach(function(ca) {
-                var el = document.getElementById('card-' + ca.atom_id);
-                var w = el ? el.offsetWidth : (ca.width || 260);
-                var h = el ? el.offsetHeight : (ca.height || 120);
-                minX = Math.min(minX, ca.pos_x);
-                minY = Math.min(minY, ca.pos_y);
-                maxX = Math.max(maxX, ca.pos_x + w);
-                maxY = Math.max(maxY, ca.pos_y + h);
-            });
-            group.pos_x = minX - pad;
-            group.pos_y = minY - pad - labelH;
-            group.width = maxX - minX + pad * 2;
-            group.height = maxY - minY + pad * 2 + labelH;
-        },
-
-        autoResizeGroup(groupId) {
-            this.recalcGroupBounds(groupId);
-            var group = this.groups.find(function(g) { return g.id === groupId; });
-            if (group) {
-                API.updateGroup(group.id, {
-                    pos_x: group.pos_x, pos_y: group.pos_y,
-                    width: group.width, height: group.height,
-                });
-            }
-        },
-
-        // ============================================
-        // Phase 3: Block Chain & Navigation
+        // Block Chain & Navigation
         // ============================================
         async traceBlockChain(atomId) {
-            try {
-                var result = await API.getBlockChain(atomId);
-                this.blockChain = result;
-                this.highlightedAtomIds = (result.chain || []).map(function(n) { return n.atom_id; });
-            } catch (e) {
-                console.error('Failed to trace block chain:', e);
-            }
+            try { var result = await API.getBlockChain(atomId); this.blockChain = result; this.highlightedAtomIds = (result.chain || []).map(function(n) { return n.atom_id; }); }
+            catch (e) { console.error('Failed to trace block chain:', e); }
         },
 
         navigateToAtom(atomId) {
-            var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
-            if (!ca) return;
-            this.selectCard(atomId);
-            var vp = this.$refs.viewport;
-            if (vp) {
-                var rect = vp.getBoundingClientRect();
-                this.panX = rect.width / 2 - (ca.pos_x + 130) * this.zoom;
-                this.panY = rect.height / 2 - (ca.pos_y + 80) * this.zoom;
-                this.updateTransform();
-                this.renderConnections();
-                this.saveViewport();
-            }
+            var ca = this.atoms.find(function(a) { return a.atom_id === atomId; }); if (!ca) return;
+            this.selectCard(atomId); var vp = this.$refs.viewport;
+            if (vp) { var rect = vp.getBoundingClientRect(); this.panX = rect.width / 2 - (ca.pos_x + 130) * this.zoom; this.panY = rect.height / 2 - (ca.pos_y + 80) * this.zoom; this.updateTransform(); this.renderConnections(); this.saveViewport(); }
         },
 
-        isAtomOnCanvas(atomId) {
-            return this.atoms.some(function(ca) { return ca.atom_id === atomId; });
-        },
+        isAtomOnCanvas(atomId) { return this.atoms.some(function(ca) { return ca.atom_id === atomId; }); },
 
         // ============================================
         // Markdown Rendering
@@ -1752,758 +641,39 @@ function whiteboardApp(canvasId) {
 
         initMarked() {
             if (this._markedInited || typeof marked === 'undefined') return;
-            marked.use({
-                breaks: true,
-                gfm: true,
-            });
-            this._markedInited = true;
+            marked.use({ breaks: true, gfm: true }); this._markedInited = true;
         },
 
         renderMarkdown(text, maxLen) {
-            if (!text) return '';
-            this.initMarked();
+            if (!text) return ''; this.initMarked();
             var src = maxLen && text.length > maxLen ? text.substring(0, maxLen) + '...' : text;
-            try {
-                return marked.parse(src);
-            } catch (e) {
-                // Fallback to escaped plain text
-                return src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
-            }
-        },
-
-        // ============================================
-        // Minimap
-        // ============================================
-        _minimapVisible: true,
-
-        toggleMinimap() {
-            this._minimapVisible = !this._minimapVisible;
-            if (this._minimapVisible) {
-                this.$nextTick(() => this.renderMinimap());
-            }
-        },
-
-        renderMinimap() {
-            if (!this._minimapVisible) return;
-            var mc = this.$refs.minimapCanvas;
-            if (!mc) return;
-            var ctx = mc.getContext('2d');
-            var mw = mc.width;
-            var mh = mc.height;
-
-            ctx.clearRect(0, 0, mw, mh);
-
-            // Background
-            ctx.fillStyle = 'rgba(30, 30, 30, 0.85)';
-            ctx.fillRect(0, 0, mw, mh);
-
-            if (this.atoms.length === 0) return;
-
-            // Calculate content bounds (all atoms + groups)
-            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            var self = this;
-            this.atoms.forEach(function(ca) {
-                var w = ca.width || 260;
-                var h = ca.height || 120;
-                minX = Math.min(minX, ca.pos_x);
-                minY = Math.min(minY, ca.pos_y);
-                maxX = Math.max(maxX, ca.pos_x + w);
-                maxY = Math.max(maxY, ca.pos_y + h);
-            });
-            this.groups.forEach(function(g) {
-                minX = Math.min(minX, g.pos_x);
-                minY = Math.min(minY, g.pos_y);
-                maxX = Math.max(maxX, g.pos_x + g.width);
-                maxY = Math.max(maxY, g.pos_y + g.height);
-            });
-
-            // Add padding
-            var pad = 100;
-            minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-            var cw = maxX - minX;
-            var ch = maxY - minY;
-
-            // Scale to fit minimap
-            var scale = Math.min((mw - 8) / cw, (mh - 8) / ch);
-            var offX = (mw - cw * scale) / 2;
-            var offY = (mh - ch * scale) / 2;
-
-            function toMini(x, y) {
-                return { x: (x - minX) * scale + offX, y: (y - minY) * scale + offY };
-            }
-
-            // Draw groups
-            this.groups.forEach(function(g) {
-                var p = toMini(g.pos_x, g.pos_y);
-                var gw = g.width * scale;
-                var gh = g.height * scale;
-                ctx.strokeStyle = g.color + '80';
-                ctx.lineWidth = 1;
-                ctx.setLineDash([2, 2]);
-                ctx.strokeRect(p.x, p.y, gw, gh);
-                ctx.setLineDash([]);
-            });
-
-            // Draw connections
-            ctx.lineWidth = 0.5;
-            this.connections.forEach(function(conn) {
-                var srcCa = self.atoms.find(function(a) { return a.atom_id === conn.source_atom_id; });
-                var tgtCa = self.atoms.find(function(a) { return a.atom_id === conn.target_atom_id; });
-                if (!srcCa || !tgtCa) return;
-                var sw = srcCa.width || 260, sh = srcCa.height || 120;
-                var tw = tgtCa.width || 260, th = tgtCa.height || 120;
-                var s = toMini(srcCa.pos_x + sw / 2, srcCa.pos_y + sh / 2);
-                var t = toMini(tgtCa.pos_x + tw / 2, tgtCa.pos_y + th / 2);
-                ctx.strokeStyle = (conn.color || '#94a3b8') + '60';
-                ctx.beginPath();
-                ctx.moveTo(s.x, s.y);
-                ctx.lineTo(t.x, t.y);
-                ctx.stroke();
-            });
-
-            // Draw atoms
-            this.atoms.forEach(function(ca) {
-                var type = ca.atom ? ca.atom.atom_type : 'F';
-                var cfg = self.atomTypeConfig[type] || self.atomTypeConfig.F;
-                var lifecycle = ca.atom ? ca.atom.lifecycle : 'active';
-                var alpha = { active: 'cc', aging: 'aa', archived: '66', terminal: '33' }[lifecycle] || 'cc';
-                var w = ca.width || 260;
-                var h = ca.height || 120;
-                var p = toMini(ca.pos_x, ca.pos_y);
-                var rw = Math.max(3, w * scale);
-                var rh = Math.max(2, h * scale);
-
-                ctx.fillStyle = cfg.border + alpha;
-                ctx.fillRect(p.x, p.y, rw, rh);
-
-                // Highlight selected
-                if (ca.atom_id === self.selectedAtomId) {
-                    ctx.strokeStyle = '#3b82f6';
-                    ctx.lineWidth = 1.5;
-                    ctx.strokeRect(p.x - 1, p.y - 1, rw + 2, rh + 2);
-                }
-            });
-
-            // Draw viewport rectangle
-            var vp = this.$refs.viewport;
-            if (!vp) return;
-            var rect = vp.getBoundingClientRect();
-            var vpLeft = (-this.panX) / this.zoom;
-            var vpTop = (-this.panY) / this.zoom;
-            var vpW = rect.width / this.zoom;
-            var vpH = rect.height / this.zoom;
-
-            var vp1 = toMini(vpLeft, vpTop);
-            var vpMW = vpW * scale;
-            var vpMH = vpH * scale;
-
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(vp1.x, vp1.y, vpMW, vpMH);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-            ctx.fillRect(vp1.x, vp1.y, vpMW, vpMH);
-
-            // Store mapping for click-to-navigate
-            this._minimapMapping = { minX: minX, minY: minY, scale: scale, offX: offX, offY: offY };
-        },
-
-        _minimapMapping: null,
-
-        onMinimapClick(e) {
-            if (!this._minimapMapping) return;
-            var mc = this.$refs.minimapCanvas;
-            if (!mc) return;
-            var cr = mc.getBoundingClientRect();
-            var mx = e.clientX - cr.left;
-            var my = e.clientY - cr.top;
-            var m = this._minimapMapping;
-
-            // Convert minimap coords to canvas coords
-            var cx = (mx - m.offX) / m.scale + m.minX;
-            var cy = (my - m.offY) / m.scale + m.minY;
-
-            // Center viewport on clicked point
-            var vp = this.$refs.viewport;
-            if (!vp) return;
-            var rect = vp.getBoundingClientRect();
-            this.panX = rect.width / 2 - cx * this.zoom;
-            this.panY = rect.height / 2 - cy * this.zoom;
-            this.updateTransform();
-            this.renderConnections();
-            this.renderMinimap();
-            this.saveViewport();
-        },
-
-        _minimapDragging: false,
-
-        onMinimapMouseDown(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            this._minimapDragging = true;
-            this.onMinimapClick(e);
-        },
-
-        onMinimapMouseMove(e) {
-            if (!this._minimapDragging) return;
-            this.onMinimapClick(e);
-        },
-
-        onMinimapMouseUp(e) {
-            this._minimapDragging = false;
+            try { return marked.parse(src); }
+            catch (e) { return src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>'); }
         },
 
         // ============================================
         // Toast
         // ============================================
         showToast(msg, type, duration) {
-            var id = ++this._toastSeq;
-            this.toasts.push({ id: id, msg: msg, type: type || 'info', duration: duration || 4000 });
+            var id = ++this._toastSeq; this.toasts.push({ id: id, msg: msg, type: type || 'info', duration: duration || 4000 });
         },
 
-        removeToast(id) {
-            this.toasts = this.toasts.filter(function(t) { return t.id !== id; });
-        },
-
-        // ============================================
-        // Undo / Redo
-        // ============================================
-        pushUndo(action) {
-            // action = { type, desc, undo: async fn, redo: async fn }
-            this.undoStack.push(action);
-            if (this.undoStack.length > this._maxUndoDepth) this.undoStack.shift();
-            this.redoStack = [];
-        },
-
-        async doUndo() {
-            if (this.undoStack.length === 0) return;
-            var action = this.undoStack.pop();
-            try {
-                await action.undo();
-                this.redoStack.push(action);
-                this.showToast('復原: ' + action.desc, 'info', 2000);
-            } catch (e) {
-                console.error('Undo failed:', e);
-                this.showToast('復原失敗', 'error');
-            }
-        },
-
-        async doRedo() {
-            if (this.redoStack.length === 0) return;
-            var action = this.redoStack.pop();
-            try {
-                await action.redo();
-                this.undoStack.push(action);
-                this.showToast('重做: ' + action.desc, 'info', 2000);
-            } catch (e) {
-                console.error('Redo failed:', e);
-                this.showToast('重做失敗', 'error');
-            }
-        },
-
-        // Wrap a move operation for undo
-        pushMoveUndo(atomIds, beforePositions, afterPositions) {
-            var self = this;
-            this.pushUndo({
-                type: 'move',
-                desc: '移動 ' + atomIds.length + ' 個原子',
-                undo: async function() {
-                    for (var i = 0; i < atomIds.length; i++) {
-                        var ca = self.atoms.find(function(a) { return a.atom_id === atomIds[i]; });
-                        if (ca) {
-                            ca.pos_x = beforePositions[i].x;
-                            ca.pos_y = beforePositions[i].y;
-                            await API.updateCanvasAtom(ca.id, { pos_x: ca.pos_x, pos_y: ca.pos_y });
-                        }
-                    }
-                    self.renderConnections();
-                    self.renderMinimap();
-                },
-                redo: async function() {
-                    for (var i = 0; i < atomIds.length; i++) {
-                        var ca = self.atoms.find(function(a) { return a.atom_id === atomIds[i]; });
-                        if (ca) {
-                            ca.pos_x = afterPositions[i].x;
-                            ca.pos_y = afterPositions[i].y;
-                            await API.updateCanvasAtom(ca.id, { pos_x: ca.pos_x, pos_y: ca.pos_y });
-                        }
-                    }
-                    self.renderConnections();
-                    self.renderMinimap();
-                },
-            });
-        },
-
-        // ============================================
-        // Keyboard Shortcuts
-        // ============================================
-        handleKeyDown(e) {
-            // Skip when inside input/textarea/contenteditable or card editor
-            if (this.cardEditorOpen) return;
-            var tag = e.target.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-            if (e.target.isContentEditable) return;
-
-            // Ctrl+Z = undo, Ctrl+Shift+Z / Ctrl+Y = redo
-            if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-                if (e.key === 'z' && !e.shiftKey) {
-                    e.preventDefault();
-                    this.doUndo();
-                    return;
-                }
-                if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
-                    e.preventDefault();
-                    this.doRedo();
-                    return;
-                }
-                // Ctrl+A = select all
-                if (e.key === 'a') {
-                    e.preventDefault();
-                    this.selectedAtomIds = this.filteredAtoms.map(function(ca) { return ca.atom_id; });
-                    return;
-                }
-            }
-
-            // Delete / Backspace = remove selected from canvas
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                e.preventDefault();
-                this.deleteSelected();
-                return;
-            }
-        },
-
-        async deleteSelected() {
-            // Multi-select delete
-            if (this.selectedAtomIds.length > 0) {
-                var self = this;
-                var toDelete = this.atoms.filter(function(ca) {
-                    return self.selectedAtomIds.includes(ca.atom_id);
-                });
-                if (toDelete.length === 0) return;
-                // Store for undo
-                var removedData = toDelete.map(function(ca) {
-                    return { id: ca.id, atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y,
-                             width: ca.width, height: ca.height, z_index: ca.z_index, group_id: ca.group_id };
-                });
-                this.pushUndo({
-                    type: 'remove_multi',
-                    desc: '移除 ' + toDelete.length + ' 個原子',
-                    undo: async function() {
-                        for (var i = 0; i < removedData.length; i++) {
-                            var rd = removedData[i];
-                            await API.addAtomToCanvas(self.canvasId, {
-                                atom_id: rd.atom_id,
-                                pos_x: rd.pos_x, pos_y: rd.pos_y,
-                                width: rd.width, height: rd.height,
-                            });
-                        }
-                        await self.loadData();
-                        self.$nextTick(function() { self.renderConnections(); });
-                    },
-                    redo: async function() {
-                        for (var i = 0; i < removedData.length; i++) {
-                            var ca = self.atoms.find(function(a) { return a.atom_id === removedData[i].atom_id; });
-                            if (ca) await API.removeCanvasAtom(ca.id);
-                        }
-                        await self.loadData();
-                        self.$nextTick(function() { self.renderConnections(); });
-                    },
-                });
-                for (var i = 0; i < toDelete.length; i++) {
-                    await API.removeCanvasAtom(toDelete[i].id);
-                }
-                this.selectedAtomIds = [];
-                this.deselectCard();
-                await this.loadData();
-                this.$nextTick(function() { self.renderConnections(); });
-                return;
-            }
-            // Single select delete
-            if (this.selectedAtomId) {
-                var sid = this.selectedAtomId;
-                var ca = this.atoms.find(function(a) { return a.atom_id === sid; });
-                if (ca) this.removeFromCanvas(ca);
-            }
-        },
-
-        // ============================================
-        // Canvas Filters
-        // ============================================
-        get filteredAtoms() {
-            var self = this;
-            return this.atoms.filter(function(ca) {
-                if (!ca.atom) return true;
-                // Type filter
-                if (!self.filterTypes[ca.atom.atom_type]) return false;
-                // Lifecycle filter
-                if (!self.filterLifecycles[ca.atom.lifecycle]) return false;
-                // Tag filter
-                if (self.filterTagIds.length > 0) {
-                    var atomTagIds = (ca.atom.tags || []).map(function(t) { return t.id; });
-                    var hasMatch = self.filterTagIds.some(function(tid) { return atomTagIds.includes(tid); });
-                    if (!hasMatch) return false;
-                }
-                return true;
-            });
-        },
-
-        get filteredAtomIds() {
-            return this.filteredAtoms.map(function(ca) { return ca.atom_id; });
-        },
-
-        get hiddenAtomCount() {
-            return this.atoms.length - this.filteredAtoms.length;
-        },
-
-        isAtomVisible(ca) {
-            return this.filteredAtomIds.includes(ca.atom_id);
-        },
-
-        toggleFilterType(type) {
-            this.filterTypes[type] = !this.filterTypes[type];
-        },
-
-        toggleFilterLifecycle(lc) {
-            this.filterLifecycles[lc] = !this.filterLifecycles[lc];
-        },
-
-        toggleFilterTag(tagId) {
-            var idx = this.filterTagIds.indexOf(tagId);
-            if (idx >= 0) {
-                this.filterTagIds.splice(idx, 1);
-            } else {
-                this.filterTagIds.push(tagId);
-            }
-        },
-
-        resetFilters() {
-            this.filterTypes = { A: true, B: true, C: true, D: true, E: true, F: true };
-            this.filterLifecycles = { active: true, aging: true, archived: true, terminal: true };
-            this.filterTagIds = [];
-        },
-
-        get hasActiveFilters() {
-            var allTypes = Object.values(this.filterTypes).every(function(v) { return v; });
-            var allLc = Object.values(this.filterLifecycles).every(function(v) { return v; });
-            return !allTypes || !allLc || this.filterTagIds.length > 0;
-        },
-
-        // ============================================
-        // Batch Operations
-        // ============================================
-        async batchUpdateType(newType) {
-            if (this.selectedAtomIds.length === 0) return;
-            var self = this;
-            var oldValues = {};
-            this.atoms.forEach(function(ca) {
-                if (self.selectedAtomIds.includes(ca.atom_id) && ca.atom) {
-                    oldValues[ca.atom_id] = ca.atom.atom_type;
-                }
-            });
-            var ids = Object.keys(oldValues).map(Number);
-            this.pushUndo({
-                type: 'batch_type',
-                desc: '批次改類型為 ' + newType,
-                undo: async function() {
-                    for (var i = 0; i < ids.length; i++) {
-                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
-                        if (ca && ca.atom) {
-                            ca.atom.atom_type = oldValues[ids[i]];
-                            await API.updateAtom(ids[i], { atom_type: oldValues[ids[i]] });
-                        }
-                    }
-                    self.$nextTick(function() { self.renderConnections(); });
-                },
-                redo: async function() {
-                    for (var i = 0; i < ids.length; i++) {
-                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
-                        if (ca && ca.atom) {
-                            ca.atom.atom_type = newType;
-                            await API.updateAtom(ids[i], { atom_type: newType });
-                        }
-                    }
-                    self.$nextTick(function() { self.renderConnections(); });
-                },
-            });
-            for (var i = 0; i < ids.length; i++) {
-                var ca = this.atoms.find(function(a) { return a.atom_id === ids[i]; });
-                if (ca && ca.atom) {
-                    ca.atom.atom_type = newType;
-                    await API.updateAtom(ids[i], { atom_type: newType });
-                }
-            }
-            this.$nextTick(function() { self.renderConnections(); });
-            this.showToast(ids.length + ' 個原子已改為 ' + newType, 'success', 2000);
-        },
-
-        async batchUpdateLifecycle(newLc) {
-            if (this.selectedAtomIds.length === 0) return;
-            var self = this;
-            var oldValues = {};
-            this.atoms.forEach(function(ca) {
-                if (self.selectedAtomIds.includes(ca.atom_id) && ca.atom) {
-                    oldValues[ca.atom_id] = ca.atom.lifecycle;
-                }
-            });
-            var ids = Object.keys(oldValues).map(Number);
-            this.pushUndo({
-                type: 'batch_lifecycle',
-                desc: '批次改生命週期為 ' + newLc,
-                undo: async function() {
-                    for (var i = 0; i < ids.length; i++) {
-                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
-                        if (ca && ca.atom) {
-                            ca.atom.lifecycle = oldValues[ids[i]];
-                            await API.updateAtom(ids[i], { lifecycle: oldValues[ids[i]] });
-                        }
-                    }
-                    self.$nextTick(function() { self.renderConnections(); });
-                },
-                redo: async function() {
-                    for (var i = 0; i < ids.length; i++) {
-                        var ca = self.atoms.find(function(a) { return a.atom_id === ids[i]; });
-                        if (ca && ca.atom) {
-                            ca.atom.lifecycle = newLc;
-                            await API.updateAtom(ids[i], { lifecycle: newLc });
-                        }
-                    }
-                    self.$nextTick(function() { self.renderConnections(); });
-                },
-            });
-            for (var i = 0; i < ids.length; i++) {
-                var ca = this.atoms.find(function(a) { return a.atom_id === ids[i]; });
-                if (ca && ca.atom) {
-                    ca.atom.lifecycle = newLc;
-                    await API.updateAtom(ids[i], { lifecycle: newLc });
-                }
-            }
-            this.$nextTick(function() { self.renderConnections(); });
-            this.showToast(ids.length + ' 個原子已改為 ' + newLc, 'success', 2000);
-        },
-
-        async batchToggleTag(tagId) {
-            if (this.selectedAtomIds.length === 0) return;
-            var self = this;
-            var tag = this.tags.find(function(t) { return t.id === tagId; });
-            var tagName = tag ? tag.name : '#' + tagId;
-            // Determine: if majority have it, remove; else add
-            var haveCount = 0;
-            var targets = [];
-            this.atoms.forEach(function(ca) {
-                if (self.selectedAtomIds.includes(ca.atom_id) && ca.atom) {
-                    targets.push(ca);
-                    if ((ca.atom.tags || []).some(function(t) { return t.id === tagId; })) haveCount++;
-                }
-            });
-            var adding = haveCount < targets.length / 2;
-            var oldTagStates = {};
-            targets.forEach(function(ca) {
-                oldTagStates[ca.atom_id] = (ca.atom.tags || []).map(function(t) { return t.id; });
-            });
-            var ids = targets.map(function(ca) { return ca.atom_id; });
-            this.pushUndo({
-                type: 'batch_tag',
-                desc: (adding ? '加入' : '移除') + '標籤 ' + tagName,
-                undo: async function() {
-                    for (var i = 0; i < ids.length; i++) {
-                        await API.updateAtom(ids[i], { tag_ids: oldTagStates[ids[i]] });
-                    }
-                    await self.loadData();
-                    self.$nextTick(function() { self.renderConnections(); });
-                },
-                redo: async function() {
-                    for (var i = 0; i < ids.length; i++) {
-                        var cur = oldTagStates[ids[i]].slice();
-                        if (adding) { if (!cur.includes(tagId)) cur.push(tagId); }
-                        else { cur = cur.filter(function(id) { return id !== tagId; }); }
-                        await API.updateAtom(ids[i], { tag_ids: cur });
-                    }
-                    await self.loadData();
-                    self.$nextTick(function() { self.renderConnections(); });
-                },
-            });
-            for (var i = 0; i < ids.length; i++) {
-                var cur = oldTagStates[ids[i]].slice();
-                if (adding) { if (!cur.includes(tagId)) cur.push(tagId); }
-                else { cur = cur.filter(function(id) { return id !== tagId; }); }
-                await API.updateAtom(ids[i], { tag_ids: cur });
-            }
-            await this.loadData();
-            this.$nextTick(function() { self.renderConnections(); });
-            this.showToast(ids.length + ' 個原子' + (adding ? '加入' : '移除') + '標籤 ' + tagName, 'success', 2000);
-        },
-
-        // ============================================
-        // Connection Inline Edit
-        // ============================================
-        startEditConnection(connId, screenX, screenY) {
-            var conn = this.connections.find(function(c) { return c.id === connId; });
-            if (!conn) return;
-            this.editingConnId = connId;
-            this.editingConnLabel = conn.label || '';
-            this.editingConnPos = { x: screenX, y: screenY };
-        },
-
-        async saveConnectionLabel() {
-            if (!this.editingConnId) return;
-            var connId = this.editingConnId;
-            var newLabel = this.editingConnLabel;
-            var conn = this.connections.find(function(c) { return c.id === connId; });
-            var oldLabel = conn ? (conn.label || '') : '';
-            if (conn) conn.label = newLabel;
-            await API.updateConnection(connId, { label: newLabel });
-            var self = this;
-            this.pushUndo({
-                type: 'edit_conn_label',
-                desc: '編輯連線標籤',
-                undo: async function() {
-                    var c = self.connections.find(function(c) { return c.id === connId; });
-                    if (c) c.label = oldLabel;
-                    await API.updateConnection(connId, { label: oldLabel });
-                    self.renderConnections();
-                },
-                redo: async function() {
-                    var c = self.connections.find(function(c) { return c.id === connId; });
-                    if (c) c.label = newLabel;
-                    await API.updateConnection(connId, { label: newLabel });
-                    self.renderConnections();
-                },
-            });
-            this.editingConnId = null;
-            this.renderConnections();
-        },
-
-        cancelEditConnection() {
-            this.editingConnId = null;
-        },
-
-        // ============================================
-        // Export / Import
-        // ============================================
-        async exportCanvas(format) {
-            if (format === 'json') {
-                var data = {
-                    canvas: this.canvas,
-                    atoms: this.atoms.map(function(ca) {
-                        return {
-                            atom_id: ca.atom_id,
-                            pos_x: ca.pos_x, pos_y: ca.pos_y,
-                            width: ca.width, height: ca.height,
-                            z_index: ca.z_index, group_id: ca.group_id,
-                            atom: ca.atom,
-                        };
-                    }),
-                    connections: this.connections,
-                    groups: this.groups,
-                    exported_at: new Date().toISOString(),
-                };
-                this.exportContent = JSON.stringify(data, null, 2);
-            } else {
-                // Markdown
-                var lines = ['# ' + (this.canvas ? this.canvas.name : 'Canvas'), ''];
-                lines.push('匯出時間: ' + new Date().toLocaleString('zh-TW'), '');
-                lines.push('## 原子 (' + this.atoms.length + ')', '');
-                this.atoms.forEach(function(ca) {
-                    if (!ca.atom) return;
-                    var tags = (ca.atom.tags || []).map(function(t) { return t.name; }).join(', ');
-                    lines.push('### [' + ca.atom.atom_type + '] ' + ca.atom.title + ' (#' + ca.atom_id + ')');
-                    lines.push('');
-                    lines.push('- 類型: ' + ca.atom.atom_type + ' | 生命週期: ' + ca.atom.lifecycle + ' | 來源: ' + ca.atom.source);
-                    if (tags) lines.push('- 標籤: ' + tags);
-                    lines.push('');
-                    if (ca.atom.content) {
-                        lines.push(ca.atom.content);
-                        lines.push('');
-                    }
-                    lines.push('---');
-                    lines.push('');
-                });
-                if (this.connections.length > 0) {
-                    lines.push('## 連線 (' + this.connections.length + ')', '');
-                    var self = this;
-                    this.connections.forEach(function(conn) {
-                        var src = self.getAtomTitle(conn.source_atom_id);
-                        var tgt = self.getAtomTitle(conn.target_atom_id);
-                        var label = conn.label || self.relationLabelMap[conn.relation_type] || conn.relation_type;
-                        lines.push('- ' + src + ' --[' + label + ']--> ' + tgt);
-                    });
-                    lines.push('');
-                }
-                this.exportContent = lines.join('\n');
-            }
-            this.exportFormat = format;
-            this.showExportModal = true;
-        },
-
-        downloadExport() {
-            var ext = this.exportFormat === 'json' ? '.json' : '.md';
-            var mime = this.exportFormat === 'json' ? 'application/json' : 'text/markdown';
-            var name = (this.canvas ? this.canvas.name : 'canvas') + ext;
-            var blob = new Blob([this.exportContent], { type: mime + ';charset=utf-8' });
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url; a.download = name; a.click();
-            URL.revokeObjectURL(url);
-        },
-
-        copyExport() {
-            navigator.clipboard.writeText(this.exportContent).then(() => {
-                this.showToast('已複製到剪貼簿', 'success', 2000);
-            });
-        },
-
-        async importCanvasFromFile(e) {
-            var file = e.target.files[0];
-            if (!file) return;
-            var text = await file.text();
-            try {
-                var data = JSON.parse(text);
-                if (!data.atoms || !Array.isArray(data.atoms)) {
-                    this.showToast('JSON 格式不正確: 缺少 atoms 陣列', 'error');
-                    return;
-                }
-                var imported = 0;
-                for (var i = 0; i < data.atoms.length; i++) {
-                    var item = data.atoms[i];
-                    var atomId = item.atom_id;
-                    // Check if atom exists
-                    try {
-                        await API.getAtom(atomId);
-                    } catch (err) {
-                        // Atom doesn't exist, skip
-                        continue;
-                    }
-                    // Check if already on canvas
-                    var exists = this.atoms.some(function(ca) { return ca.atom_id === atomId; });
-                    if (exists) continue;
-                    await API.addAtomToCanvas(this.canvasId, {
-                        atom_id: atomId,
-                        pos_x: item.pos_x || 100 + i * 30,
-                        pos_y: item.pos_y || 100 + i * 30,
-                        width: item.width,
-                        height: item.height,
-                    });
-                    imported++;
-                }
-                await this.loadData();
-                this.$nextTick(() => this.renderConnections());
-                this.showToast('已匯入 ' + imported + ' 個原子', 'success');
-                this.showImportModal = false;
-            } catch (err) {
-                this.showToast('匯入失敗: ' + err.message, 'error');
-            }
-        },
+        removeToast(id) { this.toasts = this.toasts.filter(function(t) { return t.id !== id; }); },
 
         // ============================================
         // Utilities
         // ============================================
-        truncate(text, n) {
-            if (!text) return '';
-            return text.length > n ? text.substring(0, n) + '...' : text;
-        },
-
-        formatDate(iso) {
-            if (!iso) return '';
-            return new Date(iso).toLocaleString('zh-TW');
-        },
+        truncate(text, n) { if (!text) return ''; return text.length > n ? text.substring(0, n) + '...' : text; },
+        formatDate(iso) { if (!iso) return ''; return new Date(iso).toLocaleString('zh-TW'); },
     };
+
+    // 合併所有 mixin
+    _mergeInto(app, whiteboardConnectionsMixin());
+    _mergeInto(app, whiteboardMinimapMixin());
+    _mergeInto(app, whiteboardCardEditorMixin());
+    _mergeInto(app, whiteboardUndoMixin());
+    _mergeInto(app, whiteboardBatchMixin());
+    _mergeInto(app, whiteboardGroupsMixin());
+
+    return app;
 }
