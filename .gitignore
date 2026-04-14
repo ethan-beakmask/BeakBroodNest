@@ -16,6 +16,12 @@ config.ini
 # 暫存
 temp/
 
+# Scheduler 執行狀態（每台不同）
+scripts/.scheduler_state.json
+
+# 備份檔
+backups/
+
 # 舊 MVP 資料庫
 OLD/test9_Heptabase/heptabase.db
 
