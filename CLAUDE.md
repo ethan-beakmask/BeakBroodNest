@@ -15,7 +15,8 @@
 2. 呼叫 `mcp__beak_cortex__note_search` 搜尋 tag=「待辦」+ tag=「BeakCortex」取得當前專案待辦
 3. 根據知識庫回傳的內容理解專案狀態，不要重新掃描目錄結構
 4. 若用戶指定任務，用 `note_get` 讀取對應原子的完整內容再開工
-5. 完成任務後用 `note_update` 更新對應原子狀態，或用 `note_forget` 歸檔已完成項目
+5. 開工前搜尋方法論紀錄：`note_search(schema_id=2, query="任務相關關鍵字")`，若有命中則閱讀 improved_approach 和 applicable_when 判斷是否適用
+6. 完成任務後用 `note_update` 更新對應原子狀態，或用 `note_forget` 歸檔已完成項目
 
 ## 知識庫使用原則
 - 新的設計決策、待辦、里程碑 -> `note_store` 存入知識庫

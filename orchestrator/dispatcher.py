@@ -52,12 +52,18 @@ def _build_kb_preamble(worker_id: str, session_id: str) -> str:
         f'  認證 Header: -H "X-Worker-Id: {worker_id}" -H "X-Session-Id: {session_id}"\n'
         '\n'
         '可用端點:\n'
-        '  GET  /api/worker/kb/search?q=<keyword>&tag=<tag>&limit=<n>  搜尋原子\n'
+        '  GET  /api/worker/kb/search?q=<keyword>&tag=<tag>&limit=<n>&schema_id=<id>  搜尋原子\n'
         '  GET  /api/worker/kb/atoms/<id>                              讀取原子\n'
         '  POST /api/worker/kb/atoms  body: {"title":"...","content":"...","atom_type":"F","tags":["..."]}  寫入原子\n'
         '\n'
         '使用時機: 需要查詢專案知識或儲存研究結果時。不強制使用。\n'
         '[/BeakCortex KB Access]\n\n'
+        '[方法論檢索 - 開工前必做]\n'
+        '開始任務前，先搜尋是否有相關的方法論紀錄（前人經驗）:\n'
+        f'  curl -s -H "X-Worker-Id: {worker_id}" -H "X-Session-Id: {session_id}" '
+        f'"{base_url}/api/worker/kb/search?schema_id=2&q=<任務相關關鍵字>&limit=5"\n'
+        '若有命中，閱讀 improved_approach 和 applicable_when 欄位，判斷是否適用於當前任務。\n'
+        '[/方法論檢索]\n\n'
     )
 
 
