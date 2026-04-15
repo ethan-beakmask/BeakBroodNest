@@ -3,13 +3,12 @@
 """
 BeakCortex 復盤系統 - 訊號掃描器 (P1 階段)
 
-掃描 P0 產出的結構化 MD 檔案，找出「曾經卡關、出錯、回退、低效」的
-高訊號主題位置，供後續 P2 語意摘要聚焦分析。
+兩種運作模式：
+  1. MD 模式（-i）：掃描 P0 產出的結構化 MD 檔案（向後相容）
+  2. DB 模式（--db）：直接從 PostgreSQL conversation_turns 表掃描，
+     掃完後更新 p1_scanned_at 和 p1_signals 欄位
 
-輸入：P0 產出的 MD 檔案（單檔或目錄）+ 可選 git repo
 輸出：JSON 檔案（訊號清單 + git 訊號 + 檔案編輯熱圖）
-
-零外部依賴，僅使用 Python 標準庫。
 """
 
 import argparse
@@ -27,7 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # 常數
 # ============================================================
 
-VERSION = '1.0.0'
+VERSION = '2.0.0'
 
 # 嚴重度排序權重（越大越嚴重）
 SEVERITY_WEIGHT = {
@@ -1068,30 +1067,39 @@ USAGE_TEXT = f"""
 BeakCortex 復盤系統 - 訊號掃描器 (P1) v{VERSION}
 ==================================================
 
-掃描 P0 產出的結構化 MD 檔案，找出卡關、出錯、回退、低效的
-高訊號主題位置，供後續 P2 語意摘要聚焦分析。
+掃描對話記錄中的卡關、出錯、回退、低效訊號，
+供後續 P2 語意摘要聚焦分析。
 
 用法:
-  signal_scanner.py                              顯示此使用說明
+  -- DB 模式（推薦）--
+  signal_scanner.py --db                               掃描 DB 中所有未掃描的對話
+  signal_scanner.py --db -c <conversation_id>          掃描指定對話
+  signal_scanner.py --db -c <conversation_id> --rescan 強制重新掃描（即使已掃過）
+  signal_scanner.py --db -g <git_repo>                 含 git log 掃描
+  signal_scanner.py --db --min-severity medium         嚴重度過濾
+
+  -- MD 模式（向後相容）--
   signal_scanner.py -i <md檔案>                  掃描單一 MD 檔案
   signal_scanner.py -i <目錄>                    掃描目錄下所有 MD 檔案
   signal_scanner.py -i <md檔案> -g <git_repo>   含 git log 掃描
   signal_scanner.py -i <md檔案> -o <output.json> 指定輸出路徑
-  signal_scanner.py -i <md檔案> --min-severity medium  只輸出 medium 以上
 
 參數:
-  -i, --input          MD 檔案或目錄路徑（必要）
-  -o, --output         輸出 JSON 路徑（預設: 輸入檔同名 .signals.json）
-  -g, --git-repo       git repo 路徑（可選，掃描對話時段內的 git log）
-  --min-severity       最低嚴重度過濾: low / medium / high（預設: low）
+  --db               啟用 DB 模式（從 PostgreSQL 讀取）
+  -c, --conversation 指定對話 UUID（僅 DB 模式）
+  --rescan           強制重新掃描已掃過的 turns（僅 DB 模式）
+  -i, --input        MD 檔案或目錄路徑（MD 模式）
+  -o, --output       輸出 JSON 路徑（預設: 自動產生）
+  -g, --git-repo     git repo 路徑（可選，掃描對話時段內的 git log）
+  --min-severity     最低嚴重度過濾: low / medium / high（預設: low）
 
 訊號類型:
-  對話訊號（從 MD 掃描）:
-    error           [high]   工具回傳中出現 traceback/Error/Exception/failed
+  對話訊號:
+    error           [high]   工具回傳含 traceback/Error/Exception/failed
     rollback        [high]   用戶發言含回退語意（不對/重來/換個方向...）
     retry           [high]   Claude 發言含重試語意（讓我重新/再試一次...）
     repeated_edit   [medium] 同一檔案被操作超過 {REPEATED_EDIT_THRESHOLD} 次
-    tool_failure    [medium] 工具回傳中出現失敗指標（非零 exit code/denied...）
+    tool_failure    [medium] 工具回傳含失敗指標（非零 exit code/denied...）
     long_struggle   [medium] 連續 {LONG_STRUGGLE_THRESHOLD}+ 輪針對同一目標
 
   Git 訊號（從 git log 掃描）:
@@ -1099,9 +1107,11 @@ BeakCortex 復盤系統 - 訊號掃描器 (P1) v{VERSION}
     repeated_amend  [medium] 同一檔案短時間內被多次 commit（>2 次/小時）
     force_push      [high]   reflog 中出現 force push
 
-輸出:
-  JSON 檔案，包含 signals（對話訊號）、git_signals（Git 訊號）、
-  file_edit_heatmap（檔案編輯熱圖）。
+DB 模式說明:
+  DB 連線從 config.ini [postgresql] 讀取，找不到用預設值
+  掃完後自動更新 conversation_turns.p1_scanned_at + p1_signals
+  全部 turns 掃完後更新 conversations.p1_completed_at
+  輸出 JSON 檔案同時寫入 DB
 """
 
 
@@ -1120,15 +1130,31 @@ def main() -> int:
         description='BeakCortex P1 訊號掃描器',
         add_help=True,
     )
+    # DB 模式參數
+    parser.add_argument(
+        '--db', action='store_true',
+        help='啟用 DB 模式（從 PostgreSQL 讀取）',
+    )
+    parser.add_argument(
+        '-c', '--conversation',
+        default=None,
+        help='指定對話 UUID（僅 DB 模式）',
+    )
+    parser.add_argument(
+        '--rescan', action='store_true',
+        help='強制重新掃描已掃過的 turns（僅 DB 模式）',
+    )
+    # MD 模式參數（向後相容）
     parser.add_argument(
         '-i', '--input',
-        required=True,
-        help='MD 檔案或目錄路徑',
+        default=None,
+        help='MD 檔案或目錄路徑（MD 模式）',
     )
+    # 共用參數
     parser.add_argument(
         '-o', '--output',
         default=None,
-        help='輸出 JSON 路徑（預設: 輸入檔同名 .signals.json）',
+        help='輸出 JSON 路徑（預設: 自動產生）',
     )
     parser.add_argument(
         '-g', '--git-repo',
@@ -1143,6 +1169,61 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+
+    # ---- DB 模式 ----
+    if args.db:
+        from signal_scanner_db import (
+            scan_all_unscanned,
+            scan_single_conversation,
+            print_db_summary,
+        )
+
+        if args.conversation:
+            # 掃描指定對話
+            result = scan_single_conversation(
+                conversation_id=args.conversation,
+                rescan=args.rescan,
+                git_repo=args.git_repo,
+                min_severity=args.min_severity,
+            )
+
+            if result.get('error'):
+                print(f'[ERROR] {result["error"]}', file=sys.stderr)
+                return 1
+
+            # 輸出 JSON
+            output_path = args.output
+            if not output_path:
+                cid_short = args.conversation[:12]
+                output_path = f'signals_{cid_short}.json'
+            write_output(result, output_path)
+            print_db_summary(result)
+        else:
+            # 掃描所有未掃描的對話
+            results = scan_all_unscanned(
+                git_repo=args.git_repo,
+                min_severity=args.min_severity,
+            )
+
+            if not results:
+                print('[INFO] 沒有需要掃描的對話', file=sys.stderr)
+                return 0
+
+            # 輸出 JSON
+            output_path = args.output
+            if not output_path:
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                output_path = f'signals_batch_{ts}.json'
+            write_output(results, output_path)
+            print_db_summary(results)
+
+        return 0
+
+    # ---- MD 模式（向後相容） ----
+    if not args.input:
+        print('[ERROR] 必須指定 --db 或 -i 參數', file=sys.stderr)
+        print(USAGE_TEXT)
+        return 1
 
     input_path = os.path.abspath(args.input)
 
