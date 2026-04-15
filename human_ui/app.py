@@ -13,7 +13,7 @@ from pathlib import Path
 # 讓 core 可以被 import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from flask import Flask, render_template, redirect
+from flask import Flask, render_template, redirect, request, abort
 
 from core.db import init_engine, get_session, session_scope, create_all_tables, Base
 from core.models import KnowledgeAtom, Canvas, CanvasAtom, Tag
@@ -24,6 +24,22 @@ from human_ui.routes import ALL_BLUEPRINTS
 
 app = Flask(__name__)
 logger = logging.getLogger('beak_cortex')
+
+# ============================================================
+# IP 白名單（僅限內網）
+# ============================================================
+
+ALLOWED_IPS = {'192.168.0.10', '192.168.0.16', '127.0.0.1'}
+
+
+@app.before_request
+def _check_ip_whitelist():
+    """拒絕白名單以外的 IP"""
+    remote = request.remote_addr
+    if remote not in ALLOWED_IPS:
+        logger.warning(f'IP 拒絕: {remote} -> {request.path}')
+        abort(403)
+
 
 # 註冊所有 Blueprint
 for bp in ALL_BLUEPRINTS:
