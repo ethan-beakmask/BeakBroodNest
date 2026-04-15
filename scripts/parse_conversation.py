@@ -6,15 +6,14 @@ BeakCortex 復盤系統 - 對話轉換器 (P0 階段)
 將 Claude Code JSONL 對話記錄轉為結構化 Markdown，
 供後續訊號掃描及語意摘要處理。
 
-改造自公司版 parse_claude_conversation.py，針對復盤需求做六項修正：
+改造自公司版 parse_claude_conversation.py，針對復盤需求做七項修正：
   1. thinking 區塊完整輸出（支援 full/summary/none）
   2. Agent 支線分離（isSidechain / parentUuid）
   3. tool_result 角色修正（顯示為「工具回傳」）
   4. 過濾非對話行（summary/system/permission-mode 等）
   5. 截斷長度可配置（--tool-limit）
   6. 路徑解碼修復（從 JSONL 的 cwd 欄位取得正確路徑）
-
-零外部依賴，僅使用 Python 標準庫。
+  7. JSONL -> PostgreSQL 匯入（--import-db，委託 db_importer 模組）
 """
 
 import json
@@ -668,18 +667,21 @@ def process_convertall(output_dir: Optional[str],
 
 USAGE_TEXT = """BeakCortex 復盤系統 - 對話轉換器
 
-將 Claude Code JSONL 對話記錄轉為結構化 Markdown。
+將 Claude Code JSONL 對話記錄轉為結構化 Markdown 或匯入 PostgreSQL。
 
 用法:
-  {prog}                          列出所有可用的 JSONL 檔案
-  {prog} -i <編號|路徑>           轉換單一檔案（輸出到當前目錄）
-  {prog} -i <編號> -o output.md   轉換並指定輸出檔名
-  {prog} -convertall              批次轉換所有檔案
+  {prog}                                  列出所有可用的 JSONL 檔案
+  {prog} -i <編號|路徑>                   轉換單一檔案為 MD（輸出到當前目錄）
+  {prog} -i <編號> -o output.md           轉換並指定輸出檔名
+  {prog} -convertall                      批次轉換所有檔案為 MD
+  {prog} -i <編號|路徑> --import-db       匯入單一檔案到 PostgreSQL
+  {prog} -convertall --import-db          批次匯入所有檔案到 PostgreSQL
 
 參數:
   -i, --input FILE          輸入的 JSONL 檔案路徑或清單編號
   -o, --output FILE         輸出的 Markdown 檔案路徑
-  -convertall               批次轉換所有 JSONL 到 convertall/ 目錄
+  -convertall               批次處理所有 JSONL
+  --import-db               匯入到 PostgreSQL（取代或搭配 MD 輸出）
   --output-dir DIR          指定輸出目錄（取代當前目錄）
   --thinking MODE           thinking 區塊處理方式
                               full    = 完整輸出（預設）
@@ -693,12 +695,21 @@ USAGE_TEXT = """BeakCortex 復盤系統 - 對話轉換器
                               tool_use 參數上限 = N/2
                               tool_result 上限 = N
 
+DB 匯入說明:
+  --import-db 單獨使用時只做 DB 匯入，不產生 MD
+  --import-db 搭配 -o 時同時產生 MD 和匯入 DB
+  DB 連線從 config.ini 讀取（postgresql 區段），找不到用預設值
+  已匯入的檔案會自動跳過（增量處理）
+  conversation_id 從檔名的 UUID 取得，非 UUID 檔名用 hash 產生
+
 範例:
   {prog}
   {prog} -i 1
   {prog} -i 1 -o review_session.md --thinking summary
   {prog} -i /path/to/file.jsonl --sidechain exclude --tool-limit 5000
   {prog} -convertall --output-dir /opt/BeakCortex/temp/reviews
+  {prog} -i 1 --import-db
+  {prog} -convertall --import-db
 """
 
 
@@ -718,7 +729,7 @@ def main():
         sys.exit(0)
 
     parser = argparse.ArgumentParser(
-        description='BeakCortex 復盤系統 - JSONL 對話轉 Markdown',
+        description='BeakCortex 復盤系統 - JSONL 對話轉 Markdown / 匯入 DB',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
@@ -727,7 +738,9 @@ def main():
     parser.add_argument('-o', '--output',
                         help='輸出的 Markdown 檔案路徑')
     parser.add_argument('-convertall', action='store_true',
-                        help='批次轉換所有檔案')
+                        help='批次處理所有檔案')
+    parser.add_argument('--import-db', action='store_true',
+                        help='匯入到 PostgreSQL')
     parser.add_argument('--output-dir',
                         help='指定輸出目錄')
     parser.add_argument('--thinking', default='full',
@@ -741,31 +754,56 @@ def main():
 
     args = parser.parse_args()
 
-    # 批次轉換
+    # 批次處理
     if args.convertall:
-        process_convertall(args.output_dir, args.thinking,
-                           args.sidechain, args.tool_limit)
+        if args.import_db:
+            # 批次匯入 DB（委託 db_importer）
+            from db_importer import import_batch_db
+            import_batch_db()
+        else:
+            # 批次轉換 MD
+            process_convertall(args.output_dir, args.thinking,
+                               args.sidechain, args.tool_limit)
         sys.exit(0)
 
-    # 單檔轉換
+    # 單檔處理
     if not args.input:
         print("[ERROR] 必須指定 -i 參數")
         parser.print_help()
         sys.exit(1)
 
-    # 取得檔案清單（用於編號解析）
-    file_list = list_jsonl_files()
+    # 解析輸入檔案：完整路徑直接使用，編號才需要列檔案
+    if args.input.isdigit():
+        file_list = list_jsonl_files()
+        input_file = resolve_input_file(args.input, file_list)
+    elif os.path.exists(args.input):
+        input_file = args.input
+    else:
+        print(f"[ERROR] 找不到檔案: {args.input}")
+        sys.exit(1)
 
-    input_file = resolve_input_file(args.input, file_list)
-    output_file = generate_output_path(input_file, args.output, args.output_dir)
+    if args.import_db:
+        # DB 匯入（委託 db_importer）
+        from db_importer import import_single_db
+        import_single_db(input_file)
 
-    print(f"[INFO] 輸入: {input_file}")
-    print(f"[INFO] 輸出: {output_file}")
-    print(f"[INFO] thinking={args.thinking}, sidechain={args.sidechain}, tool-limit={args.tool_limit}")
-    print("-" * 60)
+        # 若同時指定 -o，也做 MD 輸出
+        if args.output:
+            output_file = generate_output_path(input_file, args.output, args.output_dir)
+            print(f"\n[INFO] 同時輸出 MD: {output_file}")
+            convert_single(input_file, output_file,
+                           args.thinking, args.sidechain, args.tool_limit)
+    else:
+        # 純 MD 輸出
+        output_file = generate_output_path(input_file, args.output, args.output_dir)
 
-    convert_single(input_file, output_file,
-                   args.thinking, args.sidechain, args.tool_limit)
+        print(f"[INFO] 輸入: {input_file}")
+        print(f"[INFO] 輸出: {output_file}")
+        print(f"[INFO] thinking={args.thinking}, sidechain={args.sidechain}, tool-limit={args.tool_limit}")
+        print("-" * 60)
+
+        convert_single(input_file, output_file,
+                       args.thinking, args.sidechain, args.tool_limit)
 
 
 if __name__ == "__main__":
