@@ -59,8 +59,9 @@ function whiteboardApp(canvasId) {
         showUISettingsModal: false,
         showBatchTagModal: false,
         batchTagActiveTab: 0,
-        uiSettingsTab: 'tag-categories',
+        uiSettingsTab: 'canvas',
         newCategoryName: '',
+        settingsCanvasName: '',
 
         // Forms
         newAtom: { title: '', content: '', atom_type: 'F' },
@@ -659,6 +660,15 @@ function whiteboardApp(canvasId) {
         // ============================================
         // Canvas Management
         // ============================================
+        async saveCanvasName() {
+            var name = this.settingsCanvasName.trim();
+            if (!name) return;
+            await API.updateCanvas(this.canvasId, { name: name });
+            this.canvas.name = name;
+            this.canvases = await API.getCanvases();
+            this.showToast('白板名稱已更新', 'success');
+        },
+
         async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/canvas/' + c.id; },
 
         async deleteCanvas(id) {

@@ -337,53 +337,77 @@
         <div class="modal-overlay">
             <div class="modal" style="max-width:600px;">
                 <div class="modal-header">
-                    <h3>UI 設定</h3>
+                    <h3>設定</h3>
                     <button class="modal-close" @click="showUISettingsModal=false">x</button>
                 </div>
-                <div class="modal-body">
-                    <div style="font-weight:600;font-size:13px;margin-bottom:8px;">標籤分類管理</div>
-                    <div class="flex gap-2 mb-4">
-                        <input class="form-control" x-model="newCategoryName" placeholder="新分類名稱..."
-                               @keydown.enter="createCategory()" style="flex:1;">
-                        <button class="btn btn-primary" @click="createCategory()">建立</button>
+                <div class="modal-body" style="padding:0;">
+                    <!-- 分頁 -->
+                    <div class="settings-tabs">
+                        <button class="settings-tab"
+                                :class="{ active: uiSettingsTab === 'canvas' }"
+                                @click="uiSettingsTab = 'canvas'">白板</button>
+                        <button class="settings-tab"
+                                :class="{ active: uiSettingsTab === 'tag-categories' }"
+                                @click="uiSettingsTab = 'tag-categories'">標籤分類</button>
                     </div>
-                    <template x-for="cat in tagCategories" :key="'uic-'+cat.id">
-                        <div style="padding:8px;border:1px solid var(--border-light);border-radius:4px;margin-bottom:8px;">
-                            <div class="flex items-center justify-between" style="margin-bottom:6px;">
-                                <span style="font-weight:600;font-size:13px;" x-text="cat.name"></span>
-                                <button class="btn-ghost btn-sm" style="color:var(--danger);font-size:11px;"
-                                        @click="if(confirm('刪除分類: '+cat.name+'?')) deleteCategory(cat.id)">刪除</button>
-                            </div>
-                            <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                                <template x-for="t in tags.filter(tt => tt.category_id === cat.id)" :key="'uict-'+t.id">
-                                    <span class="tag-badge"
-                                          :style="getTagStyle(t.color)"
-                                          style="cursor:pointer;font-size:11px;"
-                                          @click="setTagCategory(t.id, null)"
-                                          :title="'點擊移出分類'"
-                                          x-text="t.name + ' x'"></span>
-                                </template>
+                    <div style="padding:16px;">
+                        <!-- 白板設定 -->
+                        <div x-show="uiSettingsTab === 'canvas'">
+                            <div class="form-group">
+                                <label style="font-size:12px;font-weight:600;">白板名稱</label>
+                                <div class="flex gap-2">
+                                    <input class="form-control" x-model="settingsCanvasName"
+                                           @keydown.enter="saveCanvasName()" style="flex:1;">
+                                    <button class="btn btn-primary" @click="saveCanvasName()">儲存</button>
+                                </div>
                             </div>
                         </div>
-                    </template>
-                    <div style="margin-top:12px;padding:8px;border:1px dashed var(--border-light);border-radius:4px;">
-                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">未分類（點擊指派到分類）</div>
-                        <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                            <template x-for="t in tags.filter(tt => !tt.category_id)" :key="'uiut-'+t.id">
-                                <div style="position:relative;display:inline-block;">
-                                    <span class="tag-badge"
-                                          :style="getTagStyle(t.color)"
-                                          style="cursor:pointer;font-size:11px;"
-                                          x-text="t.name"></span>
-                                    <select style="position:absolute;inset:0;opacity:0;cursor:pointer;"
-                                            @change="if($event.target.value) setTagCategory(t.id, parseInt($event.target.value)); $event.target.value=''">
-                                        <option value="">指派到...</option>
-                                        <template x-for="cat in tagCategories" :key="'uias-'+cat.id">
-                                            <option :value="cat.id" x-text="cat.name"></option>
+                        <!-- 標籤分類 -->
+                        <div x-show="uiSettingsTab === 'tag-categories'">
+                            <div class="flex gap-2 mb-4">
+                                <input class="form-control" x-model="newCategoryName" placeholder="新分類名稱..."
+                                       @keydown.enter="createCategory()" style="flex:1;">
+                                <button class="btn btn-primary" @click="createCategory()">建立</button>
+                            </div>
+                            <template x-for="cat in tagCategories" :key="'uic-'+cat.id">
+                                <div style="padding:8px;border:1px solid var(--border-light);border-radius:4px;margin-bottom:8px;">
+                                    <div class="flex items-center justify-between" style="margin-bottom:6px;">
+                                        <span style="font-weight:600;font-size:13px;" x-text="cat.name"></span>
+                                        <button class="btn-ghost btn-sm" style="color:var(--danger);font-size:11px;"
+                                                @click="if(confirm('刪除分類: '+cat.name+'?')) deleteCategory(cat.id)">刪除</button>
+                                    </div>
+                                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                        <template x-for="t in tags.filter(tt => tt.category_id === cat.id)" :key="'uict-'+t.id">
+                                            <span class="tag-badge"
+                                                  :style="getTagStyle(t.color)"
+                                                  style="cursor:pointer;font-size:11px;"
+                                                  @click="setTagCategory(t.id, null)"
+                                                  :title="'點擊移出分類'"
+                                                  x-text="t.name + ' x'"></span>
                                         </template>
-                                    </select>
+                                    </div>
                                 </div>
                             </template>
+                            <div style="margin-top:12px;padding:8px;border:1px dashed var(--border-light);border-radius:4px;">
+                                <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">未分類（點擊指派到分類）</div>
+                                <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                    <template x-for="t in tags.filter(tt => !tt.category_id)" :key="'uiut-'+t.id">
+                                        <div style="position:relative;display:inline-block;">
+                                            <span class="tag-badge"
+                                                  :style="getTagStyle(t.color)"
+                                                  style="cursor:pointer;font-size:11px;"
+                                                  x-text="t.name"></span>
+                                            <select style="position:absolute;inset:0;opacity:0;cursor:pointer;"
+                                                    @change="if($event.target.value) setTagCategory(t.id, parseInt($event.target.value)); $event.target.value=''">
+                                                <option value="">指派到...</option>
+                                                <template x-for="cat in tagCategories" :key="'uias-'+cat.id">
+                                                    <option :value="cat.id" x-text="cat.name"></option>
+                                                </template>
+                                            </select>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
