@@ -18,16 +18,24 @@
                 </template>
             </div>
 
-            <div class="sidebar-section">
+            <div class="sidebar-section sidebar-cards-section">
                 <div class="flex items-center justify-between mb-2">
-                    <div class="sidebar-title">標籤</div>
-                    <button class="btn-ghost btn-sm" @click="showTagModal=true">+</button>
+                    <div class="sidebar-title">卡片</div>
+                    <span class="text-sm text-muted" x-text="atoms.length"></span>
                 </div>
-                <template x-for="t in tags" :key="t.id">
-                    <div class="sidebar-item">
-                        <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
-                    </div>
-                </template>
-                <div x-show="tags.length === 0" class="text-sm text-muted" style="padding:4px 8px;">尚無標籤</div>
+                <div class="sidebar-card-list">
+                    <template x-for="ca in sidebarAtoms" :key="'sc-'+ca.atom_id">
+                        <div class="sidebar-card-item"
+                             :class="{ active: selectedAtomId === ca.atom_id }"
+                             @click="openCardEditor(ca.atom_id)"
+                             :title="ca.atom ? ca.atom.title : ''">
+                            <span class="sidebar-card-type"
+                                  :style="'color:' + (atomTypeConfig[ca.atom && ca.atom.atom_type] ? atomTypeConfig[ca.atom.atom_type].color : 'var(--text-muted)')"
+                                  x-text="ca.atom ? ca.atom.atom_type : '?'"></span>
+                            <span class="sidebar-card-title" x-text="ca.atom ? ca.atom.title : '#'+ca.atom_id"></span>
+                        </div>
+                    </template>
+                    <div x-show="atoms.length === 0" class="text-sm text-muted" style="padding:4px 8px;">白板上沒有卡片</div>
+                </div>
             </div>
         </div>

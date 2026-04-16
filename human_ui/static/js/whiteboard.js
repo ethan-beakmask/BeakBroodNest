@@ -22,6 +22,7 @@ function whiteboardApp(canvasId) {
         groups: [],
         canvases: [],
         tags: [],
+        tagCategories: [],
 
         // Viewport
         panX: 0, panY: 0, zoom: 1,
@@ -55,6 +56,11 @@ function whiteboardApp(canvasId) {
         showNewCanvasModal: false,
         showTagModal: false,
         showRelationModal: false,
+        showUISettingsModal: false,
+        showBatchTagModal: false,
+        batchTagActiveTab: 0,
+        uiSettingsTab: 'tag-categories',
+        newCategoryName: '',
 
         // Forms
         newAtom: { title: '', content: '', atom_type: 'F' },
@@ -236,8 +242,8 @@ function whiteboardApp(canvasId) {
         },
 
         async loadData() {
-            const [canvas, canvases, tags] = await Promise.all([
-                API.getCanvas(this.canvasId), API.getCanvases(), API.getTags(),
+            const [canvas, canvases, tags, tagCategories] = await Promise.all([
+                API.getCanvas(this.canvasId), API.getCanvases(), API.getTags(), API.getTagCategories(),
             ]);
             this.canvas = canvas;
             this.atoms = canvas.atoms || [];
@@ -245,6 +251,8 @@ function whiteboardApp(canvasId) {
             this.groups = canvas.groups || [];
             this.canvases = canvases;
             this.tags = tags;
+            this.tagCategories = tagCategories;
+            this.refreshSidebarAtoms();
             if (canvas.viewport_x || canvas.viewport_y || (canvas.viewport_zoom && canvas.viewport_zoom !== 1)) {
                 this.panX = canvas.viewport_x || 0; this.panY = canvas.viewport_y || 0;
                 this.zoom = canvas.viewport_zoom || 1; this.updateTransform();
@@ -399,6 +407,16 @@ function whiteboardApp(canvasId) {
         },
 
         get zoomPercent() { return Math.round(this.zoom * 100); },
+
+        sidebarAtoms: [],
+
+        refreshSidebarAtoms() {
+            this.sidebarAtoms = this.atoms.slice().sort(function(a, b) {
+                var ta = (a.atom && a.atom.updated_at) || '';
+                var tb = (b.atom && b.atom.updated_at) || '';
+                return tb.localeCompare(ta);
+            });
+        },
 
         screenToCanvas(sx, sy) {
             const vp = this.$refs.viewport; const rect = vp.getBoundingClientRect();
@@ -598,6 +616,45 @@ function whiteboardApp(canvasId) {
         },
 
         async deleteTag(tagId) { await API.deleteTag(tagId); this.tags = await API.getTags(); },
+
+        // ============================================
+        // Tag Categories
+        // ============================================
+        async createCategory() {
+            if (!this.newCategoryName.trim()) return;
+            await API.createTagCategory({ name: this.newCategoryName.trim() });
+            this.tagCategories = await API.getTagCategories();
+            this.newCategoryName = '';
+        },
+
+        async deleteCategory(catId) {
+            await API.deleteTagCategory(catId);
+            this.tagCategories = await API.getTagCategories();
+            this.tags = await API.getTags();
+        },
+
+        async setTagCategory(tagId, catId) {
+            await API.updateTag(tagId, { category_id: catId || null });
+            this.tags = await API.getTags();
+        },
+
+        get tagsByCategory() {
+            var self = this;
+            var result = [];
+            var cats = this.tagCategories.slice().sort(function(a, b) { return a.sort_order - b.sort_order; });
+            cats.forEach(function(cat) {
+                result.push({
+                    id: cat.id,
+                    name: cat.name,
+                    tags: self.tags.filter(function(t) { return t.category_id === cat.id; }),
+                });
+            });
+            var uncategorized = this.tags.filter(function(t) { return !t.category_id; });
+            if (uncategorized.length > 0) {
+                result.push({ id: 0, name: '未分類', tags: uncategorized });
+            }
+            return result;
+        },
 
         // ============================================
         // Canvas Management

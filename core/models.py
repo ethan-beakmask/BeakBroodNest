@@ -410,6 +410,27 @@ class CanvasConnection(Base):
 # 5.5 分類系統
 # ============================================================
 
+class TagCategory(Base):
+    __tablename__ = 'tag_categories'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    tags: Mapped[list["Tag"]] = relationship(back_populates='category')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'sort_order': self.sort_order,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class Tag(Base):
     __tablename__ = 'tags'
 
@@ -422,11 +443,15 @@ class Tag(Base):
     tag_type: Mapped[str] = mapped_column(
         String(20), default='tag'
     )  # tag, group, domain
+    category_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('tag_categories.id', ondelete='SET NULL'), nullable=True
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now
     )
 
     parent: Mapped["Tag | None"] = relationship(remote_side='Tag.id')
+    category: Mapped["TagCategory | None"] = relationship(back_populates='tags')
     atoms: Mapped[list["KnowledgeAtom"]] = relationship(
         secondary='atom_tags', back_populates='tags'
     )
@@ -438,6 +463,7 @@ class Tag(Base):
             'color': self.color,
             'parent_tag_id': self.parent_tag_id,
             'tag_type': self.tag_type,
+            'category_id': self.category_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 

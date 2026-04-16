@@ -210,7 +210,7 @@
                     <input class="card-editor-title-input"
                            x-model="cardEditorTitle"
                            placeholder="輸入標題..."
-                           @input="cardEditorDirty = true"
+                           @input="_ceIgnoreChange = false; cardEditorDirty = true"
                            @keydown.enter="$refs.tiptapHost && $refs.tiptapHost.focus()">
                     <div class="card-editor-meta">
                         <span x-text="cardEditorAtomType"></span>
@@ -327,6 +327,118 @@
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @click="showImportModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- UI 設定 -->
+    <template x-if="showUISettingsModal">
+        <div class="modal-overlay">
+            <div class="modal" style="max-width:600px;">
+                <div class="modal-header">
+                    <h3>UI 設定</h3>
+                    <button class="modal-close" @click="showUISettingsModal=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div style="font-weight:600;font-size:13px;margin-bottom:8px;">標籤分類管理</div>
+                    <div class="flex gap-2 mb-4">
+                        <input class="form-control" x-model="newCategoryName" placeholder="新分類名稱..."
+                               @keydown.enter="createCategory()" style="flex:1;">
+                        <button class="btn btn-primary" @click="createCategory()">建立</button>
+                    </div>
+                    <template x-for="cat in tagCategories" :key="'uic-'+cat.id">
+                        <div style="padding:8px;border:1px solid var(--border-light);border-radius:4px;margin-bottom:8px;">
+                            <div class="flex items-center justify-between" style="margin-bottom:6px;">
+                                <span style="font-weight:600;font-size:13px;" x-text="cat.name"></span>
+                                <button class="btn-ghost btn-sm" style="color:var(--danger);font-size:11px;"
+                                        @click="if(confirm('刪除分類: '+cat.name+'?')) deleteCategory(cat.id)">刪除</button>
+                            </div>
+                            <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                <template x-for="t in tags.filter(tt => tt.category_id === cat.id)" :key="'uict-'+t.id">
+                                    <span class="tag-badge"
+                                          :style="getTagStyle(t.color)"
+                                          style="cursor:pointer;font-size:11px;"
+                                          @click="setTagCategory(t.id, null)"
+                                          :title="'點擊移出分類'"
+                                          x-text="t.name + ' x'"></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <div style="margin-top:12px;padding:8px;border:1px dashed var(--border-light);border-radius:4px;">
+                        <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">未分類（點擊指派到分類）</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                            <template x-for="t in tags.filter(tt => !tt.category_id)" :key="'uiut-'+t.id">
+                                <div style="position:relative;display:inline-block;">
+                                    <span class="tag-badge"
+                                          :style="getTagStyle(t.color)"
+                                          style="cursor:pointer;font-size:11px;"
+                                          x-text="t.name"></span>
+                                    <select style="position:absolute;inset:0;opacity:0;cursor:pointer;"
+                                            @change="if($event.target.value) setTagCategory(t.id, parseInt($event.target.value)); $event.target.value=''">
+                                        <option value="">指派到...</option>
+                                        <template x-for="cat in tagCategories" :key="'uias-'+cat.id">
+                                            <option :value="cat.id" x-text="cat.name"></option>
+                                        </template>
+                                    </select>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showUISettingsModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 批次標籤 Panel 對話框 -->
+    <template x-if="showBatchTagModal">
+        <div class="modal-overlay">
+            <div class="modal" style="max-width:520px;">
+                <div class="modal-header">
+                    <h3>批次標籤<span class="text-muted text-sm" style="margin-left:8px;" x-text="selectedAtomIds.length + ' 個已選'"></span></h3>
+                    <button class="modal-close" @click="showBatchTagModal=false">x</button>
+                </div>
+                <div class="modal-body" style="padding:0;">
+                    <!-- 分類頁籤 -->
+                    <div style="display:flex;border-bottom:1px solid var(--border-light);overflow-x:auto;">
+                        <template x-for="(group, idx) in tagsByCategory" :key="'btt-'+group.id">
+                            <button style="padding:8px 14px;font-size:12px;white-space:nowrap;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;color:var(--text-secondary);"
+                                    :style="batchTagActiveTab === idx ? 'border-bottom-color:var(--accent);color:var(--accent);font-weight:600;' : ''"
+                                    @click="batchTagActiveTab = idx"
+                                    x-text="group.name + ' (' + group.tags.length + ')'"></button>
+                        </template>
+                    </div>
+                    <!-- 標籤陣列 -->
+                    <div style="padding:12px;">
+                        <template x-for="(group, idx) in tagsByCategory" :key="'btg-'+group.id">
+                            <div x-show="batchTagActiveTab === idx"
+                                 style="display:flex;flex-wrap:wrap;gap:6px;">
+                                <template x-for="t in group.tags" :key="'btgt-'+t.id">
+                                    <button class="batch-tag-btn"
+                                            :class="{ 'batch-tag-active': (function() {
+                                                var count = 0;
+                                                var arr = $data.atoms;
+                                                var sel = $data.selectedAtomIds;
+                                                for (var i = 0; i < arr.length; i++) {
+                                                    if (sel.includes(arr[i].atom_id) && arr[i].atom && (arr[i].atom.tags || []).some(function(x){ return x.id === t.id; })) count++;
+                                                }
+                                                return count > 0;
+                                            })() }"
+                                            :style="getTagStyle(t.color)"
+                                            @click="batchToggleTag(t.id)"
+                                            x-text="t.name"></button>
+                                </template>
+                                <div x-show="group.tags.length === 0" class="text-sm text-muted" style="padding:8px;">此分類沒有標籤</div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showBatchTagModal=false">關閉</button>
                 </div>
             </div>
         </div>

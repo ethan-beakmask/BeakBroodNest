@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
-from core.models import KnowledgeAtom, Tag
+from core.models import KnowledgeAtom, Tag, CanvasAtom
 from core import relations as rel_service
 from core import embeddings as embed_service
 
@@ -209,6 +209,8 @@ def delete_atom(atom_id):
         if not atom:
             return jsonify({'error': '原子不存在'}), 404
         atom.is_deleted = True
+        # 清理白板上的殘留卡片
+        s.query(CanvasAtom).filter(CanvasAtom.atom_id == atom_id).delete()
         return jsonify({'message': f'原子 {atom_id} 已刪除'})
 
 

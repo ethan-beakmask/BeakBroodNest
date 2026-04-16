@@ -59,5 +59,12 @@ const API = {
     // Tags
     getTags()               { return this.get('/api/tags'); },
     createTag(data)         { return this.post('/api/tags', data); },
+    updateTag(id, data)     { return this.put('/api/tags/' + id, data); },
     deleteTag(id)           { return this.del('/api/tags/' + id); },
+
+    // Tag Categories
+    getTagCategories()              { return this.get('/api/tag-categories'); },
+    createTagCategory(data)         { return this.post('/api/tag-categories', data); },
+    updateTagCategory(id, data)     { return this.put('/api/tag-categories/' + id, data); },
+    deleteTagCategory(id)           { return this.del('/api/tag-categories/' + id); },
 };

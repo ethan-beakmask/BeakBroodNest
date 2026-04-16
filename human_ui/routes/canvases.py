@@ -75,9 +75,11 @@ def get_canvas(canvas_id):
                 KnowledgeAtom.lifecycle,
                 KnowledgeAtom.vitality_score,
                 KnowledgeAtom.source,
+                KnowledgeAtom.updated_at.label('atom_updated_at'),
             )
             .join(KnowledgeAtom, KnowledgeAtom.id == CanvasAtom.atom_id)
             .filter(CanvasAtom.canvas_id == canvas_id)
+            .filter(KnowledgeAtom.is_deleted == False)
             .all()
         )
 
@@ -138,6 +140,7 @@ def get_canvas(canvas_id):
                     'vitality_score': r.vitality_score,
                     'source': r.source,
                     'tags': tags_map.get(r.atom_id, []),
+                    'updated_at': r.atom_updated_at.isoformat() if r.atom_updated_at else None,
                 },
                 'is_blocked': r.atom_id in blocked_ids,
             })
