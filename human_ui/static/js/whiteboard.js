@@ -62,6 +62,7 @@ function whiteboardApp(canvasId) {
         uiSettingsTab: 'canvas',
         newCategoryName: '',
         settingsCanvasName: '',
+        selectedCategoryIds: [],
 
         // Forms
         newAtom: { title: '', content: '', atom_type: 'F' },
@@ -124,12 +125,7 @@ function whiteboardApp(canvasId) {
         editingGroup: null,
         groupForm: { name: '', color: '#3b82f6' },
 
-        // Card Editor
-        cardEditorOpen: false,
-        cardEditorAtomId: null,
-        cardEditorAtomType: '',
-        cardEditorTitle: '',
-        cardEditorDirty: false,
+        // Card Editor (state managed by whiteboard-card-editor.js mixin)
 
         // Toast
         toasts: [],
@@ -162,6 +158,10 @@ function whiteboardApp(canvasId) {
         exportFormat: 'json',
         exportContent: '',
         importFile: null,
+
+        // Canvas sidebar
+        showArchivedCanvases: false,
+        archivedCanvasCount: 0,
 
         // Render test panel
         renderMode: 'normal',
@@ -243,14 +243,15 @@ function whiteboardApp(canvasId) {
         },
 
         async loadData() {
-            const [canvas, canvases, tags, tagCategories] = await Promise.all([
-                API.getCanvas(this.canvasId), API.getCanvases(), API.getTags(), API.getTagCategories(),
+            const [canvas, allCanvases, tags, tagCategories] = await Promise.all([
+                API.getCanvas(this.canvasId), API.getCanvases(true), API.getTags(), API.getTagCategories(),
             ]);
             this.canvas = canvas;
             this.atoms = canvas.atoms || [];
             this.connections = canvas.connections || [];
             this.groups = canvas.groups || [];
-            this.canvases = canvases;
+            this.archivedCanvasCount = allCanvases.filter(c => c.is_archived).length;
+            this.canvases = this.showArchivedCanvases ? allCanvases : allCanvases.filter(c => !c.is_archived);
             this.tags = tags;
             this.tagCategories = tagCategories;
             this.refreshSidebarAtoms();
@@ -466,18 +467,32 @@ function whiteboardApp(canvasId) {
             this.resizeStartH = el ? el.offsetHeight : (ca.height || 120);
         },
 
+        // Atom info dialog
+        showAtomInfoModal: false,
+
         async selectCard(atomId) {
-            this.selectedAtomId = atomId; this.showPanel = true;
+            this.selectedAtomId = atomId;
             this.selectedAtomDetails = null; this.blockChain = null; this.highlightedAtomIds = [];
-            try { var details = await API.getAtom(atomId); if (this.selectedAtomId === atomId) this.selectedAtomDetails = details; }
+        },
+
+        async loadAtomDetails(atomId) {
+            this.selectedAtomDetails = null; this.blockChain = null; this.highlightedAtomIds = [];
+            try { var details = await API.getAtom(atomId); this.selectedAtomDetails = details; }
             catch (e) { console.error('Failed to fetch atom details:', e); }
         },
 
-        deselectCard() { this.selectedAtomId = null; this.showPanel = false; this.selectedAtomDetails = null; this.blockChain = null; this.highlightedAtomIds = []; },
+        deselectCard() { this.selectedAtomId = null; this.selectedAtomDetails = null; this.blockChain = null; this.highlightedAtomIds = []; },
 
         onCardClick(ca) {
             if (this._justDragged) { this._justDragged = false; return; }
             this.selectedAtomIds = []; this.selectCard(ca.atom_id);
+        },
+
+        async onCardDblClick(ca) {
+            this.selectedAtomIds = [];
+            this.selectedAtomId = ca.atom_id;
+            await this.loadAtomDetails(ca.atom_id);
+            this.showAtomInfoModal = true;
         },
 
         // Box selection
@@ -559,6 +574,27 @@ function whiteboardApp(canvasId) {
             await API.updateAtom(ca.atom_id, { [field]: value }); this.$nextTick(() => this.renderConnections());
         },
 
+        async updateAtomFieldById(atomId, field, value) {
+            try {
+                await API.updateAtom(atomId, { [field]: value });
+                if (this.selectedAtomDetails && this.selectedAtomDetails.id === atomId) {
+                    this.selectedAtomDetails[field] = value;
+                }
+                var ca = this.atoms.find(a => a.atom_id === atomId);
+                if (ca && ca.atom) { ca.atom[field] = value; }
+                this.$nextTick(() => this.renderConnections());
+            } catch (e) { this.showToast(e.message || '更新失敗', 'error'); }
+        },
+
+        async toggleAtomTagById(atomId, tagId) {
+            if (!this.selectedAtomDetails) return;
+            var cur = (this.selectedAtomDetails.tags || []).map(t => t.id);
+            var newIds = cur.includes(tagId) ? cur.filter(id => id !== tagId) : cur.concat([tagId]);
+            await API.updateAtom(atomId, { tag_ids: newIds });
+            await this.loadAtomDetails(atomId);
+            await this.loadData(); this.$nextTick(() => this.renderConnections());
+        },
+
         async removeFromCanvas(ca) {
             await API.removeCanvasAtom(ca.id); if (this.selectedAtomId === ca.atom_id) this.deselectCard();
             await this.loadData(); this.$nextTick(() => this.renderConnections());
@@ -634,9 +670,53 @@ function whiteboardApp(canvasId) {
             this.tags = await API.getTags();
         },
 
-        async setTagCategory(tagId, catId) {
-            await API.updateTag(tagId, { category_id: catId || null });
+        async setTagCategories(tagId, categoryIds) {
+            await API.updateTag(tagId, { category_ids: categoryIds });
             this.tags = await API.getTags();
+        },
+
+        toggleCategorySelection(catId) {
+            var idx = this.selectedCategoryIds.indexOf(catId);
+            if (idx >= 0) { this.selectedCategoryIds.splice(idx, 1); }
+            else { this.selectedCategoryIds.push(catId); }
+        },
+
+        isTagInSelectedCats(tag) {
+            var catIds = tag.category_ids || [];
+            for (var i = 0; i < this.selectedCategoryIds.length; i++) {
+                var selId = this.selectedCategoryIds[i];
+                if (selId === 0 && catIds.length === 0) return true;
+                if (catIds.includes(selId)) return true;
+            }
+            return false;
+        },
+
+        async toggleTagInCategory(tag) {
+            if (this.selectedCategoryIds.length === 0) return;
+            var realCatIds = this.selectedCategoryIds.filter(id => id !== 0);
+            var curCatIds = tag.category_ids || [];
+
+            if (realCatIds.length === 0) {
+                // 只選了「未分類」：將標籤從所有分類移出
+                if (curCatIds.length > 0) {
+                    await this.setTagCategories(tag.id, []);
+                }
+                return;
+            }
+
+            // 判斷標籤是否已在所有被勾選的分類中
+            var allIn = realCatIds.every(function(id) { return curCatIds.includes(id); });
+            var newCatIds;
+            if (allIn) {
+                // 全在 -> 從被勾選的分類移出（保留其他分類）
+                newCatIds = curCatIds.filter(function(id) { return !realCatIds.includes(id); });
+            } else {
+                // 有缺 -> 加入所有被勾選的分類（保留現有）
+                var merged = curCatIds.slice();
+                realCatIds.forEach(function(id) { if (merged.indexOf(id) < 0) merged.push(id); });
+                newCatIds = merged;
+            }
+            await this.setTagCategories(tag.id, newCatIds);
         },
 
         get tagsByCategory() {
@@ -647,10 +727,10 @@ function whiteboardApp(canvasId) {
                 result.push({
                     id: cat.id,
                     name: cat.name,
-                    tags: self.tags.filter(function(t) { return t.category_id === cat.id; }),
+                    tags: self.tags.filter(function(t) { return (t.category_ids || []).includes(cat.id); }),
                 });
             });
-            var uncategorized = this.tags.filter(function(t) { return !t.category_id; });
+            var uncategorized = this.tags.filter(function(t) { return !t.category_ids || t.category_ids.length === 0; });
             if (uncategorized.length > 0) {
                 result.push({ id: 0, name: '未分類', tags: uncategorized });
             }
@@ -665,7 +745,7 @@ function whiteboardApp(canvasId) {
             if (!name) return;
             await API.updateCanvas(this.canvasId, { name: name });
             this.canvas.name = name;
-            this.canvases = await API.getCanvases();
+            await this.loadCanvases();
             this.showToast('白板名稱已更新', 'success');
         },
 
@@ -674,7 +754,50 @@ function whiteboardApp(canvasId) {
         async deleteCanvas(id) {
             if (this.canvases.length <= 1) return;
             await API.deleteCanvas(id);
-            if (id === this.canvasId) window.location.href = '/'; else this.canvases = await API.getCanvases();
+            if (id === this.canvasId) window.location.href = '/'; else await this.loadCanvases();
+        },
+
+        async archiveCurrentCanvas() {
+            if (!confirm('歸檔此白板？白板會隱藏但保留。')) return;
+            await API.updateCanvas(this.canvasId, { is_archived: true });
+            this.showUISettingsModal = false;
+            window.location.href = '/';
+        },
+
+        async deleteCurrentCanvas() {
+            if (!confirm('永久刪除此白板？原子不受影響，但白板上的佈局將無法復原。')) return;
+            await API.deleteCanvas(this.canvasId);
+            this.showUISettingsModal = false;
+            window.location.href = '/';
+        },
+
+        async loadCanvases() {
+            var all = await API.getCanvases(true);
+            this.archivedCanvasCount = all.filter(c => c.is_archived).length;
+            this.canvases = this.showArchivedCanvases ? all : all.filter(c => !c.is_archived);
+        },
+
+        get canvasGroups() {
+            var map = {};
+            var order = ['ethan', 'claude'];
+            (this.canvases || []).forEach(c => {
+                var o = c.owner || 'ethan';
+                if (!map[o]) map[o] = [];
+                map[o].push(c);
+            });
+            var result = [];
+            order.forEach(o => { if (map[o]) { result.push({ owner: o, items: map[o] }); delete map[o]; } });
+            Object.keys(map).sort().forEach(o => { result.push({ owner: o, items: map[o] }); });
+            return result;
+        },
+
+        ownerDisplayName(owner) {
+            if (owner === 'ethan') return 'Ethan';
+            if (owner === 'claude') return 'Claude';
+            if (owner && owner.startsWith('agent:')) return 'Agent';
+            if (owner && owner.startsWith('claude@')) return 'Claude (' + owner.split('@')[1] + ')';
+            if (owner && owner.startsWith('tool:')) return 'Tool';
+            return owner || 'Unknown';
         },
 
         // ============================================

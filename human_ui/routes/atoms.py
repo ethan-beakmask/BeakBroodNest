@@ -110,6 +110,7 @@ def create_atom():
             lifecycle=data.get('lifecycle', 'active'),
             source=data.get('source', 'human'),
             source_detail=data.get('source_detail', ''),
+            owner=data.get('owner', 'ethan'),
         )
         s.add(atom)
         s.flush()
@@ -179,9 +180,17 @@ def update_atom(atom_id):
         if not atom:
             return jsonify({'error': '原子不存在'}), 404
 
+        # Owner 保護：UI 預設身份 ethan，非本人原子拒絕寫入
+        if atom.owner != 'ethan' and not data.get('force_owner_override'):
+            return jsonify({
+                'error': f'原子屬於 {atom.owner}，無法從 UI 修改。',
+                'owner': atom.owner,
+                'readonly': True,
+            }), 403
+
         for field in ('title', 'content', 'content_json', 'content_type',
                        'atom_type', 'schema_id', 'lifecycle', 'source',
-                       'source_detail'):
+                       'source_detail', 'owner'):
             if field in data:
                 setattr(atom, field, data[field])
 

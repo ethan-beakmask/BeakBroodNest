@@ -3,8 +3,10 @@
 
 from flask import Blueprint, request, jsonify
 
+from sqlalchemy.orm import joinedload
+
 from core.db import session_scope
-from core.models import Tag, TagCategory
+from core.models import Tag, TagCategory, tag_category_members
 
 bp = Blueprint('tags', __name__)
 
@@ -67,7 +69,9 @@ def delete_tag_category(cat_id):
 @bp.route('/api/tags', methods=['GET'])
 def list_tags():
     with session_scope() as s:
-        tags = s.query(Tag).order_by(Tag.tag_type, Tag.name).all()
+        tags = (s.query(Tag)
+                .options(joinedload(Tag.categories))
+                .order_by(Tag.tag_type, Tag.name).all())
         return jsonify([t.to_dict() for t in tags])
 
 
@@ -94,12 +98,25 @@ def create_tag():
 def update_tag(tag_id):
     data = request.get_json()
     with session_scope() as s:
-        tag = s.get(Tag, tag_id)
+        tag = s.query(Tag).options(joinedload(Tag.categories)).filter(Tag.id == tag_id).first()
         if not tag:
             return jsonify({'error': '標籤不存在'}), 404
-        for field in ('name', 'color', 'parent_tag_id', 'tag_type', 'category_id'):
+        for field in ('name', 'color', 'parent_tag_id', 'tag_type'):
             if field in data:
                 setattr(tag, field, data[field])
+        # 多對多分類更新
+        if 'category_ids' in data:
+            cat_ids = data['category_ids'] or []
+            cats = s.query(TagCategory).filter(TagCategory.id.in_(cat_ids)).all() if cat_ids else []
+            tag.categories = cats
+        # 向下相容：舊的 category_id 單一值
+        elif 'category_id' in data:
+            cid = data['category_id']
+            if cid:
+                cat = s.get(TagCategory, cid)
+                tag.categories = [cat] if cat else []
+            else:
+                tag.categories = []
         s.flush()
         return jsonify(tag.to_dict())
 

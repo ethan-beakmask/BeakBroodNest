@@ -2,17 +2,167 @@
    BeakCortex -- Card Editor (Tiptap WYSIWYG)
    ============================================================ */
 
-/* ---- 全螢幕彈窗 ---- */
+/* ---- 全螢幕容器 ---- */
 .card-editor-overlay {
     position: fixed;
     inset: 0;
     z-index: 9000;
     background: rgba(0, 0, 0, 0.6);
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
 }
 
+/* ---- 頂部控制列 ---- */
+.ce-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 16px;
+    background: #1e293b;
+    flex-shrink: 0;
+}
+.ce-topbar-info {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+/* ---- 編輯器容器（多卡片排版） ---- */
+.ce-container {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    overflow: hidden;
+    padding: 8px;
+    gap: 8px;
+    min-width: 0;
+}
+
+/* 排版模式 */
+.ce-layout-single .ce-pane { width: 100%; height: 100%; }
+.ce-layout-horizontal .ce-pane { width: calc(50% - 4px); height: 100%; }
+.ce-layout-vertical .ce-pane { width: 100%; height: calc(50% - 4px); }
+.ce-layout-grid .ce-pane { width: calc(50% - 4px); height: calc(50% - 4px); }
+.ce-layout-list .ce-pane { width: 100%; min-height: 300px; flex-shrink: 0; }
+.ce-layout-list { flex-wrap: nowrap; flex-direction: column; overflow-y: auto; }
+
+/* ---- 單一編輯窗格 ---- */
+.ce-pane {
+    background: #fff;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+.ce-pane-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+}
+
+.ce-pane-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1px;
+    padding: 4px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    background: #f8fafc;
+}
+.ce-pane-toolbar .tb-sep {
+    width: 1px; height: 16px; background: #e2e8f0; margin: 0 3px;
+}
+.ce-pane-toolbar button {
+    padding: 2px 6px; border: none; background: none; font-size: 12px;
+    color: #475569; cursor: pointer; border-radius: 2px;
+    font-family: ui-monospace, SFMono-Regular, monospace; min-width: 22px; text-align: center;
+}
+.ce-pane-toolbar button:hover { background: #e2e8f0; }
+
+.ce-pane-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+
+.ce-pane-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12px;
+    border-top: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    background: #f8fafc;
+    min-height: 32px;
+}
+.ce-pane-footer .status-text { font-size: 11px; color: #94a3b8; }
+
+/* ---- 左側浮出卡片選擇面板 ---- */
+.ce-sidebar {
+    width: 0;
+    overflow: hidden;
+    background: #1e293b;
+    transition: width 0.2s ease;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+.ce-sidebar.open {
+    width: 240px;
+    border-right: 1px solid #334155;
+}
+.ce-sidebar-header {
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    border-bottom: 1px solid #334155;
+    flex-shrink: 0;
+}
+.ce-sidebar-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+.ce-sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #cbd5e1;
+    transition: background 0.12s;
+}
+.ce-sidebar-item:hover {
+    background: #334155;
+}
+.ce-sidebar-item.active {
+    background: #1e40af20;
+    color: #93c5fd;
+}
+.ce-sidebar-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+.ce-sidebar-badge {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: #1e40af40;
+    color: #93c5fd;
+    flex-shrink: 0;
+}
+
+/* old single-card dialog (no longer used) */
 .card-editor-dialog {
     background: #fff;
     border-radius: 8px;

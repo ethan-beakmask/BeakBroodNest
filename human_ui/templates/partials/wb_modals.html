@@ -2,6 +2,185 @@
     <!-- Modals -->
     <!-- ============================================ -->
 
+    <!-- 原子資訊對話框（雙擊卡片觸發） -->
+    <template x-if="showAtomInfoModal && selectedAtomDetails">
+        <div class="modal-overlay">
+            <div class="modal atom-info-modal">
+                <div class="modal-header">
+                    <h3 x-text="selectedAtomDetails.title || '(無標題)'"></h3>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 10px;"
+                                @click="showAtomInfoModal=false; openCardEditor(selectedAtomDetails.id)">開啟編輯器</button>
+                        <button class="modal-close" @click="showAtomInfoModal=false">x</button>
+                    </div>
+                </div>
+                <div class="modal-body" style="padding:0;">
+                    <div class="atom-info-layout">
+                        <!-- 左欄：基本資訊 -->
+                        <div class="atom-info-left">
+                            <!-- Owner 唯讀警告 -->
+                            <div class="wb-panel-readonly-notice"
+                                 x-show="selectedAtomDetails.owner && selectedAtomDetails.owner !== 'ethan'">
+                                <span>唯讀</span> -- 屬於 <strong x-text="ownerDisplayName(selectedAtomDetails.owner)"></strong>
+                            </div>
+
+                            <div class="form-group">
+                                <label>標題</label>
+                                <input class="form-control"
+                                       :value="selectedAtomDetails.title || ''"
+                                       :disabled="selectedAtomDetails.owner && selectedAtomDetails.owner !== 'ethan'"
+                                       @change="updateAtomFieldById(selectedAtomDetails.id, 'title', $event.target.value)">
+                            </div>
+                            <div class="form-group">
+                                <label>內容</label>
+                                <textarea class="form-control" rows="6"
+                                          :value="selectedAtomDetails.content || ''"
+                                          :disabled="selectedAtomDetails.owner && selectedAtomDetails.owner !== 'ethan'"
+                                          @change="updateAtomFieldById(selectedAtomDetails.id, 'content', $event.target.value)"></textarea>
+                            </div>
+                            <div style="display:flex;gap:8px;">
+                                <div class="form-group" style="flex:1;">
+                                    <label>類型</label>
+                                    <select class="form-control"
+                                            :value="selectedAtomDetails.atom_type || 'F'"
+                                            :disabled="selectedAtomDetails.owner && selectedAtomDetails.owner !== 'ethan'"
+                                            @change="updateAtomFieldById(selectedAtomDetails.id, 'atom_type', $event.target.value)">
+                                        <option value="A">A - 萬用</option>
+                                        <option value="B">B - 發散</option>
+                                        <option value="C">C - 流程</option>
+                                        <option value="D">D - 歸納</option>
+                                        <option value="E">E - 套表</option>
+                                        <option value="F">F - 碎片</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="flex:1;">
+                                    <label>生命週期</label>
+                                    <select class="form-control"
+                                            :value="selectedAtomDetails.lifecycle || 'active'"
+                                            :disabled="selectedAtomDetails.owner && selectedAtomDetails.owner !== 'ethan'"
+                                            @change="updateAtomFieldById(selectedAtomDetails.id, 'lifecycle', $event.target.value)">
+                                        <option value="active">active</option>
+                                        <option value="aging">aging</option>
+                                        <option value="archived">archived</option>
+                                        <option value="terminal">terminal</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- 標籤 -->
+                            <div class="form-group">
+                                <label>標籤</label>
+                                <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                    <template x-for="t in tags" :key="'ai-t-'+t.id">
+                                        <span class="tag-badge"
+                                              :style="getTagStyle(t.color) + 'cursor:pointer;'"
+                                              :class="{ selected: selectedAtomDetails.tags && selectedAtomDetails.tags.some(at => at.id === t.id) }"
+                                              @click="toggleAtomTagById(selectedAtomDetails.id, t.id)"
+                                              x-show="selectedAtomDetails.owner === 'ethan' || (selectedAtomDetails.tags && selectedAtomDetails.tags.some(at => at.id === t.id))">
+                                            <span x-show="selectedAtomDetails.tags && selectedAtomDetails.tags.some(at => at.id === t.id)">v </span>
+                                            <span x-text="t.name"></span>
+                                        </span>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- 資訊 -->
+                            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">
+                                <div class="text-sm text-muted">
+                                    <span>Vitality: <strong x-text="selectedAtomDetails.vitality_score != null ? selectedAtomDetails.vitality_score.toFixed(2) : '-'"></strong></span>
+                                    <span style="margin-left:12px;">擁有者: <span x-text="ownerDisplayName(selectedAtomDetails.owner)"></span></span>
+                                    <span style="margin-left:12px;">來源: <span x-text="selectedAtomDetails.source || ''"></span></span>
+                                </div>
+                                <div class="text-sm text-muted" style="margin-top:2px;">
+                                    <span>建立: <span x-text="formatDate(selectedAtomDetails.created_at)"></span></span>
+                                    <span style="margin-left:12px;">更新: <span x-text="formatDate(selectedAtomDetails.updated_at)"></span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 右欄：關係 + 阻塞 -->
+                        <div class="atom-info-right">
+                            <!-- 因果關係 -->
+                            <div style="margin-bottom:12px;">
+                                <div class="wb-panel-section-title">因果關係</div>
+
+                                <template x-if="selectedAtomDetails.relations_from && selectedAtomDetails.relations_from.length > 0">
+                                    <div class="relation-list">
+                                        <div class="relation-list-title">出 --></div>
+                                        <template x-for="r in selectedAtomDetails.relations_from" :key="'ai-rf-'+r.id">
+                                            <div class="relation-item"
+                                                 :class="{ 'off-canvas': !isAtomOnCanvas(r.to_atom_id) }"
+                                                 @click="if(isAtomOnCanvas(r.to_atom_id)){ showAtomInfoModal=false; navigateToAtom(r.to_atom_id); }">
+                                                <span class="relation-type-badge" x-text="relationLabelMap[r.relation_type] || r.relation_type"></span>
+                                                <span class="relation-target" x-text="r.to_atom ? r.to_atom.title : '#' + r.to_atom_id"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <template x-if="selectedAtomDetails.relations_to && selectedAtomDetails.relations_to.length > 0">
+                                    <div class="relation-list mt-2">
+                                        <div class="relation-list-title">入 <--</div>
+                                        <template x-for="r in selectedAtomDetails.relations_to" :key="'ai-rt-'+r.id">
+                                            <div class="relation-item"
+                                                 :class="{ 'off-canvas': !isAtomOnCanvas(r.from_atom_id) }"
+                                                 @click="if(isAtomOnCanvas(r.from_atom_id)){ showAtomInfoModal=false; navigateToAtom(r.from_atom_id); }">
+                                                <span class="relation-type-badge" x-text="relationLabelMap[r.relation_type] || r.relation_type"></span>
+                                                <span class="relation-target" x-text="r.from_atom ? r.from_atom.title : '#' + r.from_atom_id"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <div x-show="(!selectedAtomDetails.relations_from || selectedAtomDetails.relations_from.length === 0) && (!selectedAtomDetails.relations_to || selectedAtomDetails.relations_to.length === 0)"
+                                     class="text-sm text-muted mt-2">尚無關係</div>
+                            </div>
+
+                            <!-- 阻塞狀態 -->
+                            <template x-if="selectedAtomDetails.is_blocked">
+                                <div>
+                                    <div class="wb-panel-section-title">阻塞狀態</div>
+                                    <div class="block-status-badge">已阻塞</div>
+                                    <div class="mt-2">
+                                        <template x-for="b in (selectedAtomDetails.blockers || [])" :key="'ai-bl-'+b.id">
+                                            <div class="blocker-item"
+                                                 :class="{ 'off-canvas': !isAtomOnCanvas(b.id) }"
+                                                 @click="if(isAtomOnCanvas(b.id)){ showAtomInfoModal=false; navigateToAtom(b.id); }">
+                                                <span x-text="b.title"></span>
+                                                <span class="text-sm text-muted" x-text="'(' + b.lifecycle + ')'"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <button class="btn btn-sm btn-secondary mt-2"
+                                            @click="traceBlockChain(selectedAtomDetails.id)">追溯阻塞鍊</button>
+
+                                    <template x-if="blockChain && blockChain.chain && blockChain.chain.length > 0">
+                                        <div class="block-chain-result mt-2">
+                                            <div class="text-sm" style="font-weight:600;margin-bottom:4px;">阻塞鍊追溯</div>
+                                            <template x-for="node in blockChain.chain" :key="'ai-bc-'+node.atom_id+'-'+node.depth">
+                                                <div class="block-chain-node"
+                                                     :style="'padding-left:' + (node.depth * 16) + 'px;'"
+                                                     :class="{ 'off-canvas': !isAtomOnCanvas(node.atom_id) }"
+                                                     @click="if(isAtomOnCanvas(node.atom_id)){ showAtomInfoModal=false; navigateToAtom(node.atom_id); }">
+                                                    <span x-text="'--'.repeat(node.depth) + ' '"></span>
+                                                    <span x-text="node.title"></span>
+                                                    <span class="text-muted text-sm" x-text="'(' + node.lifecycle + ')'"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showAtomInfoModal=false">關閉</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <!-- 新增原子 -->
     <template x-if="showNewAtomModal">
         <div class="modal-overlay">
@@ -202,71 +381,89 @@
     </template>
 
     <!-- Card Editor 彈窗 -->
+    <!-- 多卡片編輯器 -->
     <template x-if="cardEditorOpen">
         <div class="card-editor-overlay" @keydown.escape.stop="closeCardEditor()">
-            <div class="card-editor-dialog" @click.stop>
-                <!-- Header -->
-                <div class="card-editor-header">
-                    <input class="card-editor-title-input"
-                           x-model="cardEditorTitle"
-                           placeholder="輸入標題..."
-                           @input="_ceIgnoreChange = false; cardEditorDirty = true"
-                           @keydown.enter="$refs.tiptapHost && $refs.tiptapHost.focus()">
-                    <div class="card-editor-meta">
-                        <span x-text="cardEditorAtomType"></span>
-                        <span x-text="cardEditorAtomId ? '#' + cardEditorAtomId : ''"></span>
-                    </div>
-                    <button class="card-editor-close" @click="closeCardEditor()">x</button>
+            <!-- 頂部控制列 -->
+            <div class="ce-topbar">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="btn btn-sm" style="background:rgba(255,255,255,0.1);color:#94a3b8;border:1px solid rgba(255,255,255,0.15);"
+                            @click="ceSidebarOpen = !ceSidebarOpen"
+                            x-text="ceSidebarOpen ? '< 收合' : '+ 加入卡片'"></button>
+                    <span class="ce-topbar-info" x-text="openEditors.length + ' 張卡片'"></span>
                 </div>
-                <!-- 工具列 -->
-                <div class="card-editor-toolbar">
-                    <button @click="ceCmd('bold')" :class="{ active: ceIsActive('bold') }" title="粗體"><b>B</b></button>
-                    <button @click="ceCmd('italic')" :class="{ active: ceIsActive('italic') }" title="斜體"><i>I</i></button>
-                    <button @click="ceCmd('underline')" :class="{ active: ceIsActive('underline') }" title="底線"><u>U</u></button>
-                    <button @click="ceCmd('strike')" :class="{ active: ceIsActive('strike') }" title="刪除線"><s>S</s></button>
-                    <button @click="ceCmd('code')" :class="{ active: ceIsActive('code') }" title="行內程式碼">&lt;&gt;</button>
-                    <span class="tb-sep"></span>
-                    <button @click="ceCmd('h1')" :class="{ active: ceIsActive('heading', {level:1}) }" title="標題 1">H1</button>
-                    <button @click="ceCmd('h2')" :class="{ active: ceIsActive('heading', {level:2}) }" title="標題 2">H2</button>
-                    <button @click="ceCmd('h3')" :class="{ active: ceIsActive('heading', {level:3}) }" title="標題 3">H3</button>
-                    <span class="tb-sep"></span>
-                    <button @click="ceCmd('bulletList')" :class="{ active: ceIsActive('bulletList') }" title="項目清單">-</button>
-                    <button @click="ceCmd('orderedList')" :class="{ active: ceIsActive('orderedList') }" title="編號清單">1.</button>
-                    <button @click="ceCmd('taskList')" :class="{ active: ceIsActive('taskList') }" title="任務清單">[]</button>
-                    <span class="tb-sep"></span>
-                    <button @click="ceCmd('blockquote')" :class="{ active: ceIsActive('blockquote') }" title="引用">"</button>
-                    <button @click="ceCmd('codeBlock')" :class="{ active: ceIsActive('codeBlock') }" title="程式區塊">{}</button>
-                    <button @click="ceCmd('hr')" title="分隔線">--</button>
-                    <span class="tb-sep"></span>
-                    <button @click="ceCmd('table')" title="插入表格">田</button>
-                    <template x-if="ceIsActive('table')">
-                        <span style="display:inline-flex; gap:2px;">
-                            <button @click="ceCmd('addRowAfter')" title="新增列">+行</button>
-                            <button @click="ceCmd('addColAfter')" title="新增欄">+欄</button>
-                            <button @click="ceCmd('deleteRow')" title="刪除列">-行</button>
-                            <button @click="ceCmd('deleteCol')" title="刪除欄">-欄</button>
-                            <button @click="ceCmd('deleteTable')" title="刪除表格">x表</button>
-                        </span>
-                    </template>
-                    <span class="tb-sep"></span>
-                    <button @click="ceInsertLink()" title="插入連結">Link</button>
-                    <span class="tb-sep"></span>
-                    <button @click="ceCmd('undo')" title="復原">&#8630;</button>
-                    <button @click="ceCmd('redo')" title="重做">&#8631;</button>
-                </div>
-                <!-- 編輯區 -->
-                <div class="card-editor-body">
-                    <div x-ref="tiptapHost"></div>
-                </div>
-                <!-- Footer -->
-                <div class="card-editor-footer">
-                    <span class="status-text" x-text="cardEditorDirty ? '已修改' : '已儲存'"></span>
-                    <div class="btn-group">
-                        <button class="btn btn-secondary" @click="closeCardEditor()">關閉</button>
-                        <button class="btn btn-primary" @click="saveCardEditor()" :disabled="!cardEditorDirty">儲存</button>
-                    </div>
-                </div>
+                <button class="btn btn-sm btn-secondary" @click="closeCardEditor()">全部關閉</button>
             </div>
+
+            <div style="display:flex;flex:1;overflow:hidden;">
+                <!-- 左側浮出卡片清單 -->
+                <div class="ce-sidebar" :class="{ open: ceSidebarOpen }">
+                    <div class="ce-sidebar-header">卡片清單</div>
+                    <div class="ce-sidebar-list">
+                        <template x-for="ca in sidebarAtoms" :key="'ces-'+ca.atom_id">
+                            <div class="ce-sidebar-item"
+                                 :class="{ active: openEditors.some(e => e.atomId === ca.atom_id) }"
+                                 @click="openCardEditor(ca.atom_id); ceSidebarOpen = false;">
+                                <span class="sidebar-card-type"
+                                      :style="'color:' + (atomTypeConfig[ca.atom && ca.atom.atom_type] ? atomTypeConfig[ca.atom.atom_type].color : 'var(--text-muted)')"
+                                      x-text="ca.atom ? ca.atom.atom_type : '?'"></span>
+                                <span class="ce-sidebar-title" x-text="ca.atom ? ca.atom.title : '#'+ca.atom_id"></span>
+                                <span class="ce-sidebar-badge" x-show="openEditors.some(e => e.atomId === ca.atom_id)">已開</span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            <!-- 編輯器容器 -->
+            <div class="ce-container" :class="editorLayoutClass">
+                <template x-for="ed in openEditors" :key="ed.id">
+                    <div class="ce-pane" :data-ce-id="ed.id">
+                        <!-- Pane Header -->
+                        <div class="ce-pane-header">
+                            <input class="card-editor-title-input"
+                                   x-model="ed.title"
+                                   :disabled="ed.readonly"
+                                   placeholder="輸入標題..."
+                                   @input="ed.dirty = true">
+                            <div class="card-editor-meta">
+                                <span x-text="ed.atomType"></span>
+                                <span x-text="'#' + ed.atomId"></span>
+                                <span x-show="ed.readonly" style="color:#d97706;font-weight:700;">唯讀</span>
+                            </div>
+                            <button class="card-editor-close" @click="closeEditor(ed.id)" title="關閉此卡片">x</button>
+                        </div>
+                        <!-- Pane Toolbar (compact) -->
+                        <div class="ce-pane-toolbar" x-show="!ed.readonly">
+                            <button @click="ceCmd('bold', ed.id)" title="粗體"><b>B</b></button>
+                            <button @click="ceCmd('italic', ed.id)" title="斜體"><i>I</i></button>
+                            <button @click="ceCmd('strike', ed.id)" title="刪除線"><s>S</s></button>
+                            <button @click="ceCmd('code', ed.id)" title="程式碼">&lt;&gt;</button>
+                            <span class="tb-sep"></span>
+                            <button @click="ceCmd('h2', ed.id)" title="H2">H2</button>
+                            <button @click="ceCmd('h3', ed.id)" title="H3">H3</button>
+                            <span class="tb-sep"></span>
+                            <button @click="ceCmd('bulletList', ed.id)" title="清單">-</button>
+                            <button @click="ceCmd('orderedList', ed.id)" title="編號">1.</button>
+                            <button @click="ceCmd('taskList', ed.id)" title="任務">[]</button>
+                            <span class="tb-sep"></span>
+                            <button @click="ceCmd('blockquote', ed.id)" title="引用">"</button>
+                            <button @click="ceCmd('codeBlock', ed.id)" title="程式區塊">{}</button>
+                            <span class="tb-sep"></span>
+                            <button @click="ceCmd('undo', ed.id)" title="復原">&#8630;</button>
+                            <button @click="ceCmd('redo', ed.id)" title="重做">&#8631;</button>
+                        </div>
+                        <!-- Pane Body (Tiptap mount point) -->
+                        <div class="ce-pane-body"></div>
+                        <!-- Pane Footer -->
+                        <div class="ce-pane-footer">
+                            <span class="status-text" x-text="ed.readonly ? '唯讀' : (ed.dirty ? '已修改' : '已儲存')"
+                                  :style="ed.readonly ? 'color:#d97706;' : ''"></span>
+                            <button class="btn btn-sm btn-primary" x-show="!ed.readonly && ed.dirty"
+                                    @click="saveEditor(ed.id)">儲存</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            </div><!-- close flex wrapper -->
         </div>
     </template>
 
@@ -335,7 +532,7 @@
     <!-- UI 設定 -->
     <template x-if="showUISettingsModal">
         <div class="modal-overlay">
-            <div class="modal" style="max-width:600px;">
+            <div class="modal settings-modal">
                 <div class="modal-header">
                     <h3>設定</h3>
                     <button class="modal-close" @click="showUISettingsModal=false">x</button>
@@ -350,7 +547,7 @@
                                 :class="{ active: uiSettingsTab === 'tag-categories' }"
                                 @click="uiSettingsTab = 'tag-categories'">標籤分類</button>
                     </div>
-                    <div style="padding:16px;">
+                    <div class="settings-content">
                         <!-- 白板設定 -->
                         <div x-show="uiSettingsTab === 'canvas'">
                             <div class="form-group">
@@ -361,52 +558,84 @@
                                     <button class="btn btn-primary" @click="saveCanvasName()">儲存</button>
                                 </div>
                             </div>
+
+                            <!-- 刪除白板 -->
+                            <div class="settings-danger-zone">
+                                <label style="font-size:12px;font-weight:600;color:var(--danger);">危險操作</label>
+                                <div style="margin-top:8px;display:flex;gap:8px;">
+                                    <button class="btn btn-sm"
+                                            style="border:1px solid var(--border-light);background:var(--bg-tertiary);color:var(--text-secondary);"
+                                            @click="archiveCurrentCanvas()">歸檔白板</button>
+                                    <button class="btn btn-sm"
+                                            style="border:1px solid var(--danger);color:var(--danger);background:transparent;"
+                                            @click="deleteCurrentCanvas()">刪除白板</button>
+                                </div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
+                                    歸檔：隱藏但保留。刪除：永久移除白板（原子不受影響）。
+                                </div>
+                            </div>
                         </div>
                         <!-- 標籤分類 -->
-                        <div x-show="uiSettingsTab === 'tag-categories'">
-                            <div class="flex gap-2 mb-4">
-                                <input class="form-control" x-model="newCategoryName" placeholder="新分類名稱..."
-                                       @keydown.enter="createCategory()" style="flex:1;">
-                                <button class="btn btn-primary" @click="createCategory()">建立</button>
-                            </div>
-                            <template x-for="cat in tagCategories" :key="'uic-'+cat.id">
-                                <div style="padding:8px;border:1px solid var(--border-light);border-radius:4px;margin-bottom:8px;">
-                                    <div class="flex items-center justify-between" style="margin-bottom:6px;">
-                                        <span style="font-weight:600;font-size:13px;" x-text="cat.name"></span>
-                                        <button class="btn-ghost btn-sm" style="color:var(--danger);font-size:11px;"
-                                                @click="if(confirm('刪除分類: '+cat.name+'?')) deleteCategory(cat.id)">刪除</button>
-                                    </div>
-                                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                                        <template x-for="t in tags.filter(tt => tt.category_id === cat.id)" :key="'uict-'+t.id">
-                                            <span class="tag-badge"
-                                                  :style="getTagStyle(t.color)"
-                                                  style="cursor:pointer;font-size:11px;"
-                                                  @click="setTagCategory(t.id, null)"
-                                                  :title="'點擊移出分類'"
-                                                  x-text="t.name + ' x'"></span>
-                                        </template>
-                                    </div>
+                        <div x-show="uiSettingsTab === 'tag-categories'" class="tag-cat-layout">
+                            <!-- 左欄：分類（多選） -->
+                            <div class="tag-cat-left">
+                                <div style="font-size:12px;font-weight:600;margin-bottom:8px;">分類（可多選）</div>
+                                <div class="flex gap-2 mb-3">
+                                    <input class="form-control" x-model="newCategoryName" placeholder="新分類..."
+                                           @keydown.enter="createCategory()" style="flex:1;font-size:12px;">
+                                    <button class="btn btn-primary btn-sm" @click="createCategory()">+</button>
                                 </div>
-                            </template>
-                            <div style="margin-top:12px;padding:8px;border:1px dashed var(--border-light);border-radius:4px;">
-                                <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">未分類（點擊指派到分類）</div>
-                                <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                                    <template x-for="t in tags.filter(tt => !tt.category_id)" :key="'uiut-'+t.id">
-                                        <div style="position:relative;display:inline-block;">
-                                            <span class="tag-badge"
-                                                  :style="getTagStyle(t.color)"
-                                                  style="cursor:pointer;font-size:11px;"
-                                                  x-text="t.name"></span>
-                                            <select style="position:absolute;inset:0;opacity:0;cursor:pointer;"
-                                                    @change="if($event.target.value) setTagCategory(t.id, parseInt($event.target.value)); $event.target.value=''">
-                                                <option value="">指派到...</option>
-                                                <template x-for="cat in tagCategories" :key="'uias-'+cat.id">
-                                                    <option :value="cat.id" x-text="cat.name"></option>
-                                                </template>
-                                            </select>
-                                        </div>
+                                <template x-for="cat in tagCategories" :key="'uic-'+cat.id">
+                                    <div class="tag-cat-item"
+                                         :class="{ active: selectedCategoryIds.includes(cat.id) }"
+                                         @click="toggleCategorySelection(cat.id)">
+                                        <input type="checkbox" :checked="selectedCategoryIds.includes(cat.id)"
+                                               @click.stop="toggleCategorySelection(cat.id)"
+                                               style="margin:0;">
+                                        <span style="flex:1;font-size:12px;" x-text="cat.name"></span>
+                                        <span style="font-size:10px;color:var(--text-muted);"
+                                              x-text="tags.filter(t => (t.category_ids || []).includes(cat.id)).length"></span>
+                                        <button class="btn-ghost" style="padding:0 2px;font-size:10px;color:var(--danger);opacity:0.6;"
+                                                @click.stop="if(confirm('刪除分類: '+cat.name+'?')) deleteCategory(cat.id)">x</button>
+                                    </div>
+                                </template>
+                                <div class="tag-cat-item"
+                                     :class="{ active: selectedCategoryIds.includes(0) }"
+                                     @click="toggleCategorySelection(0)">
+                                    <input type="checkbox" :checked="selectedCategoryIds.includes(0)"
+                                           @click.stop="toggleCategorySelection(0)"
+                                           style="margin:0;">
+                                    <span style="flex:1;font-size:12px;color:var(--text-muted);">未分類</span>
+                                    <span style="font-size:10px;color:var(--text-muted);"
+                                          x-text="tags.filter(t => !t.category_ids || t.category_ids.length === 0).length"></span>
+                                </div>
+                            </div>
+                            <!-- 右欄：標籤 -->
+                            <div class="tag-cat-right">
+                                <div style="font-size:12px;font-weight:600;margin-bottom:8px;">
+                                    <template x-if="selectedCategoryIds.length === 0">
+                                        <span>選擇左側分類</span>
+                                    </template>
+                                    <template x-if="selectedCategoryIds.length > 0">
+                                        <span>已選 <span x-text="selectedCategoryIds.length"></span> 個分類 -- 點擊標籤增減歸屬</span>
                                     </template>
                                 </div>
+                                <template x-if="selectedCategoryIds.length > 0">
+                                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                        <template x-for="t in tags" :key="'tcr-'+t.id">
+                                            <span class="tag-badge tag-cat-tag"
+                                                  :style="getTagStyle(t.color)"
+                                                  :class="{ 'tag-in-cat': isTagInSelectedCats(t) }"
+                                                  @click="toggleTagInCategory(t)"
+                                                  x-text="t.name"></span>
+                                        </template>
+                                    </div>
+                                </template>
+                                <template x-if="selectedCategoryIds.length === 0">
+                                    <div style="font-size:12px;color:var(--text-muted);padding:20px 0;text-align:center;">
+                                        勾選左側分類後，點擊標籤可增減歸屬
+                                    </div>
+                                </template>
                             </div>
                         </div>
                     </div>

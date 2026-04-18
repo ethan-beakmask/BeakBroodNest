@@ -128,6 +128,11 @@ class KnowledgeAtom(Base):
     )  # human, ai, import, derived
     source_detail: Mapped[str] = mapped_column(Text, default='')
 
+    # 擁有者（身份標記，非認證）
+    owner: Mapped[str] = mapped_column(
+        String(100), default='ethan'
+    )  # ethan, claude, agent:<task_id>, claude@<host>, tool:<name>
+
     # 敏感度標記（為 #3013 跨機同步 / #3014 匿名共享 預埋）
     sensitivity: Mapped[str] = mapped_column(
         String(20), default='internal'
@@ -150,6 +155,7 @@ class KnowledgeAtom(Base):
         Index('idx_atoms_atom_type', 'atom_type'),
         Index('idx_atoms_is_deleted', 'is_deleted'),
         Index('idx_atoms_sensitivity', 'sensitivity'),
+        Index('idx_atoms_owner', 'owner'),
     )
 
     def to_dict(self, include_tags=False, include_values=False):
@@ -169,6 +175,7 @@ class KnowledgeAtom(Base):
             'access_count': self.access_count,
             'source': self.source,
             'source_detail': self.source_detail,
+            'owner': self.owner,
             'sensitivity': self.sensitivity,
         }
         if include_tags:
@@ -259,6 +266,10 @@ class Canvas(Base):
     canvas_type: Mapped[str] = mapped_column(
         String(30), default='whiteboard'
     )  # whiteboard, mindmap, flowchart, cornell, template
+    owner: Mapped[str] = mapped_column(
+        String(100), default='ethan'
+    )  # ethan, claude, agent:<task_id>, claude@<host>
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     viewport_x: Mapped[float] = mapped_column(Float, default=0)
     viewport_y: Mapped[float] = mapped_column(Float, default=0)
     viewport_zoom: Mapped[float] = mapped_column(Float, default=1.0)
@@ -286,6 +297,8 @@ class Canvas(Base):
             'name': self.name,
             'description': self.description,
             'canvas_type': self.canvas_type,
+            'owner': self.owner,
+            'is_archived': self.is_archived,
             'viewport_x': self.viewport_x,
             'viewport_y': self.viewport_y,
             'viewport_zoom': self.viewport_zoom,
@@ -420,7 +433,9 @@ class TagCategory(Base):
         DateTime, default=datetime.datetime.now
     )
 
-    tags: Mapped[list["Tag"]] = relationship(back_populates='category')
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary='tag_category_members', back_populates='categories'
+    )
 
     def to_dict(self):
         return {
@@ -443,6 +458,7 @@ class Tag(Base):
     tag_type: Mapped[str] = mapped_column(
         String(20), default='tag'
     )  # tag, group, domain
+    # category_id 保留欄位但不再使用（多對多取代）
     category_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('tag_categories.id', ondelete='SET NULL'), nullable=True
     )
@@ -451,7 +467,9 @@ class Tag(Base):
     )
 
     parent: Mapped["Tag | None"] = relationship(remote_side='Tag.id')
-    category: Mapped["TagCategory | None"] = relationship(back_populates='tags')
+    categories: Mapped[list["TagCategory"]] = relationship(
+        secondary='tag_category_members', back_populates='tags'
+    )
     atoms: Mapped[list["KnowledgeAtom"]] = relationship(
         secondary='atom_tags', back_populates='tags'
     )
@@ -463,7 +481,7 @@ class Tag(Base):
             'color': self.color,
             'parent_tag_id': self.parent_tag_id,
             'tag_type': self.tag_type,
-            'category_id': self.category_id,
+            'category_ids': [c.id for c in self.categories] if self.categories else [],
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -475,6 +493,12 @@ atom_tags = Table(
     'atom_tags', Base.metadata,
     Column('atom_id', Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), primary_key=True),
     Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True),
+)
+
+tag_category_members = Table(
+    'tag_category_members', Base.metadata,
+    Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True),
+    Column('category_id', Integer, ForeignKey('tag_categories.id', ondelete='CASCADE'), primary_key=True),
 )
 
 

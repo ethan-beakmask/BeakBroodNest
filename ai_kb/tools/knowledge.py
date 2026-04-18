@@ -29,6 +29,7 @@ def register(mcp):
         content_type: str = 'markdown',
         source: str = 'ai',
         source_detail: str = '',
+        owner: str = 'claude',
         tags: list[str] | None = None,
         lifecycle: str = 'active',
         schema_id: int | None = None,
@@ -41,6 +42,7 @@ def register(mcp):
           A=萬用  B=創意發散  C=思考過程/流程  D=總結歸納  E=套表  F=碎片
         lifecycle: active(活躍) / aging(老化) / archived(歸檔) / terminal(終止)
         source: human / ai / import / derived
+        owner: 擁有者 (ethan/claude/agent:xxx/claude@host/tool:name)，預設 claude
         tags: 標籤名稱列表，不存在的標籤會自動建立
         schema_id: E 類型時關聯的 schema ID
         field_values: E 類型的結構化欄位值，格式 {"欄位name": "值"}
@@ -70,6 +72,7 @@ def register(mcp):
                 lifecycle=lifecycle,
                 source=source,
                 source_detail=source_detail,
+                owner=owner,
                 schema_id=schema_id,
                 sensitivity=sensitivity,
             )
@@ -112,6 +115,7 @@ def register(mcp):
                 'title': atom.title,
                 'atom_type': atom.atom_type,
                 'lifecycle': atom.lifecycle,
+                'owner': atom.owner,
                 'tags': [t.name for t in atom.tags],
                 'message': f'知識原子已建立 (id={atom.id})',
             }
@@ -129,10 +133,12 @@ def register(mcp):
         tag: str = '',
         tags: list[str] | None = None,
         source: str = '',
+        owner: str = '',
         schema_id: int | None = None,
         limit: int = 20,
         search_mode: str = 'keyword',
         sort: str = '',
+        scope: str = 'default',
     ) -> str:
         """搜尋知識庫中的原子。
 
@@ -142,6 +148,7 @@ def register(mcp):
         tag: 篩選單一標籤名稱(向下相容)
         tags: 多標籤 AND 篩選,原子必須同時擁有所有指定標籤
         source: 篩選來源 (human/ai/import/derived)
+        owner: 篩選擁有者 (ethan/claude/agent:xxx)
         schema_id: 篩選 E 類型的 schema ID
         limit: 回傳上限(預設 20,最大 100)
         search_mode: 搜尋模式
@@ -152,9 +159,13 @@ def register(mcp):
           vitality   -- 依 vitality_score 排序(高到低)
           created_at -- 依建立時間排序(新到舊)
           updated_at -- 依更新時間排序(新到舊)
+        scope: 搜尋範圍
+          default -- 僅搜尋 active + aging（預設，減少噪音）
+          full    -- 搜尋全部生命週期（含 archived/terminal）
 
         tag 與 tags 同時提供時,tag 會併入 tags 一起做 AND 篩選。
         semantic/hybrid 模式需要 query 非空,否則自動退回 keyword 模式。
+        lifecycle 參數明確指定時,scope 設定會被忽略（以 lifecycle 為準）。
         E 類型原子會附帶 field_values 結構化欄位值。
         """
         limit = min(limit, 100)
@@ -196,6 +207,7 @@ def register(mcp):
                     'lifecycle': a.lifecycle,
                     'vitality_score': a.vitality_score,
                     'source': a.source,
+                    'owner': a.owner,
                     'sensitivity': a.sensitivity,
                     'tags': [t.name for t in a.tags],
                     'updated_at': a.updated_at.isoformat() if a.updated_at else None,
@@ -216,8 +228,12 @@ def register(mcp):
                     q = q.filter(KnowledgeAtom.atom_type == atom_type)
                 if lifecycle:
                     q = q.filter(KnowledgeAtom.lifecycle == lifecycle)
+                elif scope != 'full':
+                    q = q.filter(KnowledgeAtom.lifecycle.in_(['active', 'aging']))
                 if source:
                     q = q.filter(KnowledgeAtom.source == source)
+                if owner:
+                    q = q.filter(KnowledgeAtom.owner == owner)
                 if schema_id is not None:
                     q = q.filter(KnowledgeAtom.schema_id == schema_id)
                 if tag_filtered_ids is not None:
@@ -295,9 +311,14 @@ def register(mcp):
                 if lifecycle:
                     conditions.append("a.lifecycle = :lifecycle")
                     params['lifecycle'] = lifecycle
+                elif scope != 'full':
+                    conditions.append("a.lifecycle IN ('active', 'aging')")
                 if source:
                     conditions.append("a.source = :source")
                     params['source'] = source
+                if owner:
+                    conditions.append("a.owner = :owner")
+                    params['owner'] = owner
                 if schema_id is not None:
                     conditions.append("a.schema_id = :schema_id")
                     params['schema_id'] = schema_id
@@ -353,6 +374,7 @@ def register(mcp):
                         'lifecycle': row[4],
                         'vitality_score': row[5],
                         'source': row[6],
+                        'owner': atom_obj.owner if atom_obj else 'ethan',
                         'sensitivity': atom_obj.sensitivity if atom_obj else 'internal',
                         'tags': [t.name for t in atom_obj.tags] if atom_obj else [],
                         'updated_at': row[7].isoformat() if row[7] else None,
@@ -465,6 +487,7 @@ def register(mcp):
         tags: list[str] | None = None,
         append_content: str = '',
         sensitivity: str = '',
+        force_owner_override: bool = False,
     ) -> str:
         """更新現有知識原子的欄位。
 
@@ -472,6 +495,10 @@ def register(mcp):
         append_content: 在現有內容後追加（不覆蓋），適合漸進式補充。
         tags: 提供時會替換所有標籤，不存在的標籤會自動建立。
         sensitivity: 敏感度 (public/internal/confidential/restricted)
+        force_owner_override: 強制覆寫非自己擁有的原子（預設 False，需明確啟用）
+
+        owner 保護：MCP 呼叫者預設身份為 claude，無法修改 owner != claude 的原子。
+        需跨 owner 寫入時設 force_owner_override=True。
         """
         valid_sensitivity = ('public', 'internal', 'confidential', 'restricted')
         if sensitivity and sensitivity not in valid_sensitivity:
@@ -483,6 +510,13 @@ def register(mcp):
             ).first()
             if not atom:
                 return json.dumps({'error': f'原子 {atom_id} 不存在'})
+
+            if atom.owner != 'claude' and not force_owner_override:
+                return json.dumps({
+                    'error': f'原子 {atom_id} 屬於 {atom.owner}，MCP 預設不可修改。'
+                             f'需要跨 owner 寫入請設 force_owner_override=True',
+                    'owner': atom.owner,
+                })
 
             if title:
                 atom.title = title
@@ -520,6 +554,7 @@ def register(mcp):
                 'id': atom.id,
                 'title': atom.title,
                 'lifecycle': atom.lifecycle,
+                'owner': atom.owner,
                 'sensitivity': atom.sensitivity,
                 'tags': [t.name for t in atom.tags],
                 'message': f'原子 {atom_id} 已更新',

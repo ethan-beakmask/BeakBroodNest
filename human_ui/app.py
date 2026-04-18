@@ -29,7 +29,7 @@ logger = logging.getLogger('beak_cortex')
 # IP 白名單（僅限內網）
 # ============================================================
 
-ALLOWED_IPS = {'192.168.0.10', '192.168.0.12', '192.168.0.13', '192.168.0.16'}
+ALLOWED_IPS = {'127.0.0.1', '192.168.0.10', '192.168.0.12', '192.168.0.13', '192.168.0.16'}
 
 
 @app.before_request
@@ -40,6 +40,21 @@ def _check_ip_whitelist():
         logger.warning(f'IP 拒絕: {remote} -> {request.path}')
         abort(403)
 
+
+# ============================================================
+# 健康檢查端點
+# ============================================================
+
+@app.route("/health")
+def _health_check():
+    """回傳服務狀態與知識原子數量"""
+    from flask import jsonify
+    try:
+        with session_scope() as sess:
+            count = sess.query(KnowledgeAtom).count()
+        return jsonify({"status": "healthy", "atoms": count})
+    except Exception as e:
+        return jsonify({"status": "unhealthy", "error": str(e)}), 503
 
 # 註冊所有 Blueprint
 for bp in ALL_BLUEPRINTS:
@@ -65,9 +80,9 @@ def inject_cache_ver():
 def index():
     """首頁：導向第一個白板，若無則自動建立"""
     with session_scope() as s:
-        canvas = s.query(Canvas).order_by(Canvas.id).first()
+        canvas = s.query(Canvas).filter(Canvas.is_archived == False).order_by(Canvas.id).first()
         if not canvas:
-            canvas = Canvas(name='預設白板', description='')
+            canvas = Canvas(name='預設白板', description='', owner='ethan')
             s.add(canvas)
             s.flush()
         canvas_id = canvas.id

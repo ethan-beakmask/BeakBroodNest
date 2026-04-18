@@ -20,8 +20,12 @@ bp = Blueprint('canvases', __name__)
 
 @bp.route('/api/canvases', methods=['GET'])
 def list_canvases():
+    include_archived = request.args.get('include_archived', '0') == '1'
     with session_scope() as s:
-        canvases = s.query(Canvas).order_by(Canvas.updated_at.desc()).all()
+        q = s.query(Canvas)
+        if not include_archived:
+            q = q.filter(Canvas.is_archived == False)
+        canvases = q.order_by(Canvas.updated_at.desc()).all()
         return jsonify([c.to_dict() for c in canvases])
 
 
@@ -36,6 +40,7 @@ def create_canvas():
             name=data['name'],
             description=data.get('description', ''),
             canvas_type=data.get('canvas_type', 'whiteboard'),
+            owner=data.get('owner', 'ethan'),
         )
         s.add(canvas)
         s.flush()
@@ -75,6 +80,7 @@ def get_canvas(canvas_id):
                 KnowledgeAtom.lifecycle,
                 KnowledgeAtom.vitality_score,
                 KnowledgeAtom.source,
+                KnowledgeAtom.owner.label('atom_owner'),
                 KnowledgeAtom.updated_at.label('atom_updated_at'),
             )
             .join(KnowledgeAtom, KnowledgeAtom.id == CanvasAtom.atom_id)
@@ -139,6 +145,7 @@ def get_canvas(canvas_id):
                     'lifecycle': r.lifecycle,
                     'vitality_score': r.vitality_score,
                     'source': r.source,
+                    'owner': r.atom_owner or 'ethan',
                     'tags': tags_map.get(r.atom_id, []),
                     'updated_at': r.atom_updated_at.isoformat() if r.atom_updated_at else None,
                 },
@@ -213,7 +220,7 @@ def update_canvas(canvas_id):
         canvas = s.get(Canvas, canvas_id)
         if not canvas:
             return jsonify({'error': '白板不存在'}), 404
-        for field in ('name', 'description', 'canvas_type',
+        for field in ('name', 'description', 'canvas_type', 'owner', 'is_archived',
                        'viewport_x', 'viewport_y', 'viewport_zoom', 'settings'):
             if field in data:
                 setattr(canvas, field, data[field])

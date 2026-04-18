@@ -29,7 +29,7 @@ const API = {
     deleteAtom(id)          { return this.del('/api/atoms/' + id); },
 
     // Canvases
-    getCanvases()           { return this.get('/api/canvases'); },
+    getCanvases(includeArchived) { return this.get('/api/canvases' + (includeArchived ? '?include_archived=1' : '')); },
     getCanvas(id)           { return this.get('/api/canvases/' + id); },
     createCanvas(data)      { return this.post('/api/canvases', data); },
     updateCanvas(id, data)  { return this.put('/api/canvases/' + id, data); },

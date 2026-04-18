@@ -13,10 +13,18 @@ from core.models import (
 def register(mcp):
 
     @mcp.tool()
-    def canvas_list() -> str:
-        """列出所有畫布及其基本資訊。"""
+    def canvas_list(
+        include_archived: bool = False,
+    ) -> str:
+        """列出所有畫布及其基本資訊。
+
+        include_archived: 是否包含已歸檔的畫布（預設 False）
+        """
         with session_scope() as s:
-            canvases = s.query(Canvas).order_by(Canvas.updated_at.desc()).all()
+            q = s.query(Canvas)
+            if not include_archived:
+                q = q.filter(Canvas.is_archived == False)
+            canvases = q.order_by(Canvas.updated_at.desc()).all()
             return json.dumps({
                 'total': len(canvases),
                 'items': [c.to_dict() for c in canvases],
@@ -27,10 +35,12 @@ def register(mcp):
         name: str,
         description: str = '',
         canvas_type: str = 'whiteboard',
+        owner: str = 'claude',
     ) -> str:
         """建立新畫布。
 
         canvas_type: whiteboard / mindmap / flowchart / cornell / template
+        owner: 擁有者 (ethan/claude/agent:xxx)，預設 claude
         """
         valid_types = ('whiteboard', 'mindmap', 'flowchart', 'cornell', 'template')
         if canvas_type not in valid_types:
@@ -41,6 +51,7 @@ def register(mcp):
                 name=name,
                 description=description,
                 canvas_type=canvas_type,
+                owner=owner,
             )
             s.add(canvas)
             s.flush()

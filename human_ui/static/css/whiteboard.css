@@ -868,10 +868,20 @@
     cursor: text;
 }
 
-/* ---- 設定對話框分頁 ---- */
+/* ---- 設定對話框 ---- */
+.settings-modal {
+    max-width: 700px;
+    height: 80vh;
+}
+.settings-content {
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+}
 .settings-tabs {
     display: flex;
     border-bottom: 1px solid var(--border-light);
+    flex-shrink: 0;
 }
 .settings-tab {
     padding: 8px 16px;
@@ -887,6 +897,62 @@
     color: var(--accent);
     border-bottom-color: var(--accent);
     font-weight: 600;
+}
+
+/* ---- 設定：危險操作 ---- */
+.settings-danger-zone {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-light);
+}
+
+/* ---- 設定：標籤分類左右布局 ---- */
+.tag-cat-layout {
+    display: flex;
+    gap: 16px;
+    height: 100%;
+    min-height: 300px;
+}
+.tag-cat-left {
+    width: 200px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-light);
+    padding-right: 16px;
+    overflow-y: auto;
+}
+.tag-cat-right {
+    flex: 1;
+    overflow-y: auto;
+}
+.tag-cat-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    transition: background 0.12s;
+}
+.tag-cat-item:hover {
+    background: var(--bg-tertiary);
+}
+.tag-cat-item.active {
+    background: var(--accent-light);
+}
+.tag-cat-tag {
+    cursor: pointer;
+    font-size: 11px;
+    opacity: 0.5;
+    transition: opacity 0.12s;
+}
+.tag-cat-tag:hover {
+    opacity: 0.8;
+}
+.tag-cat-tag.tag-in-cat {
+    opacity: 1;
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 /* ---- 批次標籤按鈕 ---- */
@@ -906,6 +972,63 @@
 .batch-tag-btn.batch-tag-active {
     font-weight: 600;
     box-shadow: inset 0 0 0 1px currentColor;
+}
+
+/* ---- 原子資訊對話框 ---- */
+.atom-info-modal {
+    max-width: 800px;
+    height: 80vh;
+}
+.atom-info-layout {
+    display: flex;
+    gap: 0;
+    height: 100%;
+    padding: 16px;
+}
+.atom-info-left {
+    flex: 1;
+    padding-right: 16px;
+    border-right: 1px solid var(--border-light);
+    overflow-y: auto;
+}
+.atom-info-right {
+    width: 260px;
+    flex-shrink: 0;
+    padding-left: 16px;
+    overflow-y: auto;
+}
+
+/* ---- 原子資訊 owner 唯讀 ---- */
+.wb-panel-readonly-notice {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+.wb-panel-readonly-notice span:first-child {
+    font-weight: 700;
+    color: #d97706;
+}
+
+/* ---- 左側邊欄 owner 分組 ---- */
+.sidebar-owner-group {
+    margin-bottom: 4px;
+}
+.sidebar-owner-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    padding: 4px 8px 2px;
+}
+.sidebar-archived-toggle {
+    padding: 4px 8px;
+    margin-top: 2px;
+    border-top: 1px solid var(--border);
 }
 
 /* ---- 左側邊欄卡片清單 ---- */

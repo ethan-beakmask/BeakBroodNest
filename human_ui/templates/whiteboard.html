@@ -18,7 +18,7 @@
 {% block body %}
 <div x-data="whiteboardApp({{ canvas_id }})" x-init="init()"
      @click="closeContextMenu()"
-     @keydown.escape.window="if(cardEditorOpen){ closeCardEditor(); return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
+     @keydown.escape.window="if(cardEditorOpen){ closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
 
     <!-- Toast -->
     <div class="toast-container">
@@ -103,6 +103,7 @@
                          }"
                          :style="getCardStyle(ca)"
                          @click.stop="mode === 'connect' ? onCardClickForConnect($event, ca) : onCardClick(ca)"
+                         @dblclick.stop="onCardDblClick(ca)"
                          @contextmenu.prevent.stop
                          @mouseenter="onCardMouseEnterForConn(ca)"
                          @mouseleave="onCardMouseLeaveForConn(ca)">
@@ -161,163 +162,6 @@
                 <canvas x-ref="minimapCanvas" width="200" height="140"></canvas>
             </div>
 
-        </div>
-
-        <!-- 右側面板 -->
-        <div class="wb-panel" :class="{ hidden: !showPanel || !selectedAtom }">
-            <template x-if="selectedAtom">
-                <div>
-                    <div class="wb-panel-header">
-                        <h3 x-text="selectedAtom.atom ? selectedAtom.atom.title : '(無標題)'"></h3>
-                        <button class="btn btn-sm btn-primary" style="margin-right:8px; font-size:11px; padding:2px 10px;"
-                                @click="openCardEditor(selectedAtom.atom_id)">開啟卡片</button>
-                        <button class="modal-close" @click="deselectCard()">x</button>
-                    </div>
-                    <div class="wb-panel-body">
-                        <div class="wb-panel-section">
-                            <div class="wb-panel-section-title">原子資訊</div>
-                            <div class="form-group">
-                                <label>標題</label>
-                                <input class="form-control"
-                                       :value="selectedAtom.atom ? selectedAtom.atom.title : ''"
-                                       @change="updateAtomField(selectedAtom, 'title', $event.target.value)">
-                            </div>
-                            <div class="form-group">
-                                <label>內容</label>
-                                <textarea class="form-control" rows="5"
-                                          :value="selectedAtom.atom ? selectedAtom.atom.content : ''"
-                                          @change="updateAtomField(selectedAtom, 'content', $event.target.value)"></textarea>
-                            </div>
-                            <div class="form-group">
-                                <label>類型</label>
-                                <select class="form-control"
-                                        :value="selectedAtom.atom ? selectedAtom.atom.atom_type : 'F'"
-                                        @change="updateAtomField(selectedAtom, 'atom_type', $event.target.value)">
-                                    <option value="A">A - 萬用</option>
-                                    <option value="B">B - 發散</option>
-                                    <option value="C">C - 流程</option>
-                                    <option value="D">D - 歸納</option>
-                                    <option value="E">E - 套表</option>
-                                    <option value="F">F - 碎片</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>生命週期</label>
-                                <select class="form-control"
-                                        :value="selectedAtom.atom ? selectedAtom.atom.lifecycle : 'active'"
-                                        @change="updateAtomField(selectedAtom, 'lifecycle', $event.target.value)">
-                                    <option value="active">active (活躍)</option>
-                                    <option value="aging">aging (老化)</option>
-                                    <option value="archived">archived (歸檔)</option>
-                                    <option value="terminal">terminal (終止)</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="wb-panel-section">
-                            <div class="wb-panel-section-title">標籤</div>
-                            <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                                <template x-for="t in tags" :key="t.id">
-                                    <span class="tag-badge"
-                                          :style="getTagStyle(t.color) + 'cursor:pointer;'"
-                                          :class="{ selected: atomHasTag(selectedAtom, t.id) }"
-                                          @click="toggleAtomTag(selectedAtom, t.id)">
-                                        <span x-show="atomHasTag(selectedAtom, t.id)">v </span>
-                                        <span x-text="t.name"></span>
-                                    </span>
-                                </template>
-                            </div>
-                        </div>
-
-                        <!-- 因果關係 -->
-                        <div class="wb-panel-section" x-show="selectedAtomDetails">
-                            <div class="wb-panel-section-title">因果關係</div>
-
-                            <!-- 出 -->
-                            <template x-if="selectedAtomDetails && selectedAtomDetails.relations_from && selectedAtomDetails.relations_from.length > 0">
-                                <div class="relation-list">
-                                    <div class="relation-list-title">出 --></div>
-                                    <template x-for="r in selectedAtomDetails.relations_from" :key="r.id">
-                                        <div class="relation-item"
-                                             :class="{ 'off-canvas': !isAtomOnCanvas(r.to_atom_id) }"
-                                             @click="isAtomOnCanvas(r.to_atom_id) && navigateToAtom(r.to_atom_id)">
-                                            <span class="relation-type-badge" x-text="relationLabelMap[r.relation_type] || r.relation_type"></span>
-                                            <span class="relation-target" x-text="r.to_atom ? r.to_atom.title : '#' + r.to_atom_id"></span>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-
-                            <!-- 入 -->
-                            <template x-if="selectedAtomDetails && selectedAtomDetails.relations_to && selectedAtomDetails.relations_to.length > 0">
-                                <div class="relation-list mt-2">
-                                    <div class="relation-list-title">入 <--</div>
-                                    <template x-for="r in selectedAtomDetails.relations_to" :key="r.id">
-                                        <div class="relation-item"
-                                             :class="{ 'off-canvas': !isAtomOnCanvas(r.from_atom_id) }"
-                                             @click="isAtomOnCanvas(r.from_atom_id) && navigateToAtom(r.from_atom_id)">
-                                            <span class="relation-type-badge" x-text="relationLabelMap[r.relation_type] || r.relation_type"></span>
-                                            <span class="relation-target" x-text="r.from_atom ? r.from_atom.title : '#' + r.from_atom_id"></span>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-
-                            <div x-show="selectedAtomDetails && (!selectedAtomDetails.relations_from || selectedAtomDetails.relations_from.length === 0) && (!selectedAtomDetails.relations_to || selectedAtomDetails.relations_to.length === 0)"
-                                 class="text-sm text-muted mt-2">尚無關係</div>
-                        </div>
-
-                        <!-- 阻塞狀態 -->
-                        <div class="wb-panel-section" x-show="selectedAtomDetails && selectedAtomDetails.is_blocked">
-                            <div class="wb-panel-section-title">阻塞狀態</div>
-                            <div>
-                                <div class="block-status-badge">已阻塞</div>
-                                <div class="mt-2">
-                                    <template x-for="b in (selectedAtomDetails ? selectedAtomDetails.blockers : [])" :key="b.id">
-                                        <div class="blocker-item"
-                                             :class="{ 'off-canvas': !isAtomOnCanvas(b.id) }"
-                                             @click="isAtomOnCanvas(b.id) && navigateToAtom(b.id)">
-                                            <span x-text="b.title"></span>
-                                            <span class="text-sm text-muted" x-text="'(' + b.lifecycle + ')'"></span>
-                                        </div>
-                                    </template>
-                                </div>
-                                <button class="btn btn-sm btn-secondary mt-2"
-                                        @click="traceBlockChain(selectedAtomDetails.id)">
-                                    追溯阻塞鍊
-                                </button>
-                            </div>
-
-                            <!-- 阻塞鍊結果 -->
-                            <template x-if="blockChain && blockChain.chain && blockChain.chain.length > 0">
-                                <div class="block-chain-result mt-2">
-                                    <div class="text-sm" style="font-weight:600; margin-bottom:4px;">阻塞鍊追溯</div>
-                                    <template x-for="node in blockChain.chain" :key="node.atom_id + '-' + node.depth">
-                                        <div class="block-chain-node"
-                                             :style="'padding-left:' + (node.depth * 16) + 'px;'"
-                                             :class="{ 'off-canvas': !isAtomOnCanvas(node.atom_id) }"
-                                             @click="isAtomOnCanvas(node.atom_id) && navigateToAtom(node.atom_id)">
-                                            <span x-text="'--'.repeat(node.depth) + ' '"></span>
-                                            <span x-text="node.title"></span>
-                                            <span class="text-muted text-sm" x-text="'(' + node.lifecycle + ')'"></span>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
-
-                        <div class="wb-panel-section">
-                            <div class="wb-panel-section-title">資訊</div>
-                            <div class="text-sm text-muted">
-                                <div>Vitality: <span x-text="selectedAtom.atom && selectedAtom.atom.vitality_score != null ? selectedAtom.atom.vitality_score.toFixed(2) : '-'"></span></div>
-                                <div>來源: <span x-text="selectedAtom.atom ? selectedAtom.atom.source : ''"></span></div>
-                                <div>建立: <span x-text="formatDate(selectedAtom.atom ? selectedAtom.atom.created_at : '')"></span></div>
-                                <div>更新: <span x-text="formatDate(selectedAtom.atom ? selectedAtom.atom.updated_at : '')"></span></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </template>
         </div>
 
     </div>

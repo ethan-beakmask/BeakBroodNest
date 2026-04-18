@@ -80,6 +80,10 @@ class CardEditor {
             editorConfig.content = ''
         }
 
+        if (options.editable === false) {
+            editorConfig.editable = false
+        }
+
         this.editor = new Editor(editorConfig)
         this.onChangeCallback = options.onChange || null
 

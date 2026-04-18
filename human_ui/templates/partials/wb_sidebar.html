@@ -5,17 +5,32 @@
                     <div class="sidebar-title">白板</div>
                     <button class="btn-ghost btn-sm" @click="showNewCanvasModal=true">+</button>
                 </div>
-                <template x-for="c in canvases" :key="c.id">
-                    <a :href="'/canvas/' + c.id"
-                       class="sidebar-item"
-                       :class="{ active: c.id == canvasId }">
-                        <span class="icon icon-wb">W</span>
-                        <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-                        <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
-                                @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.id)"
-                                x-show="canvases.length > 1">x</button>
-                    </a>
+
+                <!-- 依 owner 分組 -->
+                <template x-for="group in canvasGroups" :key="group.owner">
+                    <div class="sidebar-owner-group">
+                        <div class="sidebar-owner-label" x-text="ownerDisplayName(group.owner)"></div>
+                        <template x-for="c in group.items" :key="c.id">
+                            <a :href="'/canvas/' + c.id"
+                               class="sidebar-item"
+                               :class="{ active: c.id == canvasId }">
+                                <span class="icon icon-wb">W</span>
+                                <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                                <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
+                                        @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.id)"
+                                        x-show="canvases.length > 1">x</button>
+                            </a>
+                        </template>
+                    </div>
                 </template>
+
+                <!-- 歸檔白板開關 -->
+                <div class="sidebar-archived-toggle" x-show="archivedCanvasCount > 0">
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:var(--text-muted);">
+                        <input type="checkbox" x-model="showArchivedCanvases" @change="loadCanvases()">
+                        <span>已歸檔 (<span x-text="archivedCanvasCount"></span>)</span>
+                    </label>
+                </div>
             </div>
 
             <div class="sidebar-section sidebar-cards-section">
