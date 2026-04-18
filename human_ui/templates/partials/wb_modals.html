@@ -392,7 +392,13 @@
                             x-text="ceSidebarOpen ? '< 收合' : '+ 加入卡片'"></button>
                     <span class="ce-topbar-info" x-text="openEditors.length + ' 張卡片'"></span>
                 </div>
-                <button class="btn btn-sm btn-secondary" @click="closeCardEditor()">全部關閉</button>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <button class="btn btn-sm"
+                            :style="ceStagingOpen ? 'background:#1e40af;color:#93c5fd;border:1px solid #3b82f6;' : 'background:rgba(255,255,255,0.1);color:#94a3b8;border:1px solid rgba(255,255,255,0.15);'"
+                            @click="toggleStaging()"
+                            x-text="'抓重點' + (stagingItems.length > 0 ? ' (' + stagingItems.length + ')' : '')"></button>
+                    <button class="btn btn-sm btn-secondary" @click="closeCardEditor()">全部關閉</button>
+                </div>
             </div>
 
             <div style="display:flex;flex:1;overflow:hidden;">
@@ -403,7 +409,7 @@
                         <template x-for="ca in sidebarAtoms" :key="'ces-'+ca.atom_id">
                             <div class="ce-sidebar-item"
                                  :class="{ active: openEditors.some(e => e.atomId === ca.atom_id) }"
-                                 @click="openCardEditor(ca.atom_id); ceSidebarOpen = false;">
+                                 @click="openCardEditor(ca.atom_id)">
                                 <span class="sidebar-card-type"
                                       :style="'color:' + (atomTypeConfig[ca.atom && ca.atom.atom_type] ? atomTypeConfig[ca.atom.atom_type].color : 'var(--text-muted)')"
                                       x-text="ca.atom ? ca.atom.atom_type : '?'"></span>
@@ -416,7 +422,7 @@
             <!-- 編輯器容器 -->
             <div class="ce-container" :class="editorLayoutClass">
                 <template x-for="ed in openEditors" :key="ed.id">
-                    <div class="ce-pane" :data-ce-id="ed.id">
+                    <div class="ce-pane" :data-ce-id="ed.id" @mouseup="ceHandleSelection(ed.id)">
                         <!-- Pane Header -->
                         <div class="ce-pane-header">
                             <input class="card-editor-title-input"
@@ -463,6 +469,54 @@
                     </div>
                 </template>
             </div>
+
+            <!-- 右側抓重點面板 -->
+            <div class="ce-staging" :class="{ open: ceStagingOpen }">
+                <div class="ce-staging-header">
+                    <span class="ce-staging-header-label">標題</span>
+                    <input class="ce-staging-title-input" x-model="stagingTitle"
+                           placeholder="空白=自動命名">
+                </div>
+
+                <div class="ce-staging-mode-bar">
+                    <button class="ce-staging-mode-btn"
+                            :class="{ active: stagingMode === 'copy' }"
+                            @click="stagingMode = 'copy'">複製</button>
+                    <button class="ce-staging-mode-btn"
+                            :class="{ active: stagingMode === 'move' }"
+                            @click="stagingMode = 'move'">移動</button>
+                    <span class="ce-staging-bar-sep"></span>
+                    <button class="ce-staging-mode-btn"
+                            @click="clearStaging()"
+                            :disabled="stagingItems.length === 0">清空</button>
+                    <button class="ce-staging-mode-btn ce-staging-save-btn"
+                            :class="{ active: stagingItems.length > 0 }"
+                            @click="saveStagingAsAtom()"
+                            :disabled="stagingItems.length === 0">存卡片</button>
+                </div>
+
+                <div class="ce-staging-hint" x-show="stagingItems.length === 0">
+                    在卡片中圈選文字，放開滑鼠後自動加入
+                </div>
+
+                <div class="ce-staging-list">
+                    <template x-for="(si, idx) in stagingItems" :key="si.id">
+                        <div class="ce-staging-item">
+                            <div class="ce-staging-item-source">
+                                <span x-text="'#' + si.sourceAtomId"></span>
+                                <span x-text="si.sourceTitle" class="ce-staging-item-src-title"></span>
+                            </div>
+                            <div class="ce-staging-item-text" x-text="si.text.length > 200 ? si.text.substring(0, 200) + '...' : si.text"></div>
+                            <div class="ce-staging-item-actions">
+                                <button title="上移" @click="moveStagingItem(idx, -1)" :disabled="idx === 0">&uarr;</button>
+                                <button title="下移" @click="moveStagingItem(idx, 1)" :disabled="idx === stagingItems.length - 1">&darr;</button>
+                                <button title="移除" @click="removeStagingItem(si.id)" class="ce-staging-remove">x</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
             </div><!-- close flex wrapper -->
         </div>
     </template>

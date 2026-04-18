@@ -108,6 +108,7 @@ function whiteboardApp(canvasId) {
         boxSelectStartX: 0, boxSelectStartY: 0,
         boxSelectCurrentX: 0, boxSelectCurrentY: 0,
         selectedAtomIds: [],
+        batchBarX: 0, batchBarY: 0,
 
         // Multi-drag
         multiDragStarts: null,
@@ -353,7 +354,7 @@ function whiteboardApp(canvasId) {
                 else this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' };
                 return;
             }
-            if (this.isBoxSelecting) { this.isBoxSelecting = false; this.boxSelectPending = false; return; }
+            if (this.isBoxSelecting) { this.isBoxSelecting = false; this.boxSelectPending = false; if (this.selectedAtomIds.length >= 2) { this.batchBarX = e.clientX; this.batchBarY = e.clientY - 10; } return; }
             if (this.boxSelectPending) { this.boxSelectPending = false; this.selectedAtomIds = []; this.deselectCard(); return; }
             if (this.bodyDragPending) { this.bodyDragPending = false; var ca = this.bodyDragCa; this.bodyDragCa = null; if (ca) { this.selectCard(ca.atom_id); this.startInlineEdit(ca); } return; }
             if (this.isConnDragging) { this.endConnDrag(); return; }

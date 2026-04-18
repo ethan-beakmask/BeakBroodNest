@@ -162,6 +162,169 @@
     flex-shrink: 0;
 }
 
+/* ---- 右側暫存區面板 ---- */
+.ce-staging {
+    width: 0;
+    overflow: hidden;
+    background: #1e293b;
+    transition: width 0.2s ease;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+}
+.ce-staging.open {
+    width: 280px;
+    border-left: 1px solid #334155;
+}
+.ce-staging-header {
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    border-bottom: 1px solid #334155;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ce-staging-header-label {
+    font-size: 12px;
+    flex-shrink: 0;
+}
+.ce-staging-title-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    padding: 3px 6px;
+    border: 1px solid #475569;
+    border-radius: 3px;
+    background: #0f172a;
+    color: #e2e8f0;
+    outline: none;
+}
+.ce-staging-title-input:focus {
+    border-color: #3b82f6;
+}
+.ce-staging-title-input::placeholder {
+    color: #475569;
+}
+.ce-staging-bar-sep {
+    width: 1px;
+    height: 16px;
+    background: #475569;
+    flex-shrink: 0;
+}
+.ce-staging-save-btn.active {
+    background: #1e40af;
+    color: #93c5fd;
+    border-color: #3b82f6;
+}
+
+/* mode toggle bar */
+.ce-staging-mode-bar {
+    display: flex;
+    padding: 6px 8px;
+    gap: 4px;
+    border-bottom: 1px solid #334155;
+    flex-shrink: 0;
+}
+.ce-staging-mode-btn {
+    flex: 1;
+    padding: 4px 0;
+    font-size: 11px;
+    border: 1px solid #475569;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    border-radius: 3px;
+    text-align: center;
+    transition: all 0.12s;
+}
+.ce-staging-mode-btn.active {
+    background: #334155;
+    color: #e2e8f0;
+    border-color: #64748b;
+    font-weight: 600;
+}
+.ce-staging-mode-btn:hover {
+    background: #334155;
+}
+
+/* (topbar mode toggle removed -- mode controls now in staging bar) */
+
+/* hint */
+.ce-staging-hint {
+    padding: 20px 12px;
+    font-size: 11px;
+    color: #64748b;
+    text-align: center;
+    line-height: 1.5;
+}
+
+/* staging list */
+.ce-staging-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+.ce-staging-item {
+    padding: 8px 10px;
+    border-bottom: 1px solid #334155;
+}
+.ce-staging-item-source {
+    font-size: 10px;
+    color: #64748b;
+    margin-bottom: 4px;
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+.ce-staging-item-src-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+}
+.ce-staging-item-text {
+    font-size: 12px;
+    color: #cbd5e1;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 80px;
+    overflow: hidden;
+}
+.ce-staging-item-actions {
+    display: flex;
+    gap: 2px;
+    margin-top: 4px;
+    justify-content: flex-end;
+}
+.ce-staging-item-actions button {
+    padding: 1px 6px;
+    font-size: 11px;
+    border: 1px solid #475569;
+    background: transparent;
+    color: #94a3b8;
+    cursor: pointer;
+    border-radius: 2px;
+}
+.ce-staging-item-actions button:hover {
+    background: #334155;
+    color: #e2e8f0;
+}
+.ce-staging-item-actions button:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+.ce-staging-remove:hover {
+    border-color: #ef4444;
+    color: #fca5a5;
+}
+
+/* (staging footer removed -- buttons moved to mode bar) */
+
 /* old single-card dialog (no longer used) */
 .card-editor-dialog {
     background: #fff;

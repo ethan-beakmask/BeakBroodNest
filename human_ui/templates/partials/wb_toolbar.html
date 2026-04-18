@@ -73,6 +73,7 @@
 
             <!-- 批次操作列 -->
             <div class="wb-batch-bar" x-show="selectedAtomIds.length >= 2" x-transition
+                 :style="'left:' + batchBarX + 'px; top:' + batchBarY + 'px;'"
                  @mousedown.stop @click.stop>
                 <span style="font-size:12px;margin-right:8px;"
                       x-text="selectedAtomIds.length + ' 個已選'"></span>
@@ -93,6 +94,7 @@
                     <option value="terminal">terminal</option>
                 </select>
                 <button class="wb-batch-select" @click="batchTagActiveTab=0; showBatchTagModal=true">標籤...</button>
+                <button class="wb-batch-select" @click="openSelectedInEditor()">編輯</button>
                 <div style="flex:1;"></div>
                 <button class="btn-ghost btn-sm" style="color:var(--danger);" @click="deleteSelected()">移除</button>
             </div>

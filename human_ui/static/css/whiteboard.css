@@ -815,10 +815,8 @@
 
 /* ---- 批次操作列 ---- */
 .wb-batch-bar {
-    position: absolute;
-    top: 44px;
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed;
+    transform: translate(-50%, -100%);
     z-index: 115;
     background: var(--bg-primary);
     border: 1px solid var(--border-light);

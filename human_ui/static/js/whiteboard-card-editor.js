@@ -1,16 +1,27 @@
 /**
  * 白板 Mixin: Multi-Card Editor (Tiptap WYSIWYG)
  * 支援同時開啟 1~N 張卡片，自動排版
+ *
+ * _ceStore: Tiptap CardEditor 實例存放在閉包變數，
+ * 避免 Alpine Proxy 包裹導致 ProseMirror transaction identity 檢查失敗。
  */
+var _ceStore = {};  // { atomId: CardEditor instance } -- 不進入 Alpine reactive
+
 function whiteboardCardEditorMixin() {
     return {
 
         // 多卡片編輯器狀態
         openEditors: [],       // [{ id, atomId, title, atomType, dirty, readonly }]
-        _editorInstances: {},  // { atomId: CardEditor instance }
         _ceSeq: 0,
         cardEditorOpen: false, // 是否有任何卡片編輯器開啟
         ceSidebarOpen: false,  // 左側卡片選擇面板
+
+        // 右側抓重點
+        ceStagingOpen: false,
+        stagingMode: 'copy',     // 'copy' or 'move'
+        stagingItems: [],        // [{ id, text, sourceAtomId, sourceTitle }]
+        stagingTitle: '',        // 自訂新卡片標題（空白時用預設）
+        _stagingSeq: 0,
 
         // 排版模式
         editorLayout: 'auto',  // auto, horizontal, vertical, grid, list
@@ -48,6 +59,10 @@ function whiteboardCardEditorMixin() {
                 _contentJson: atom.content_json || null,
                 _content: atom.content || '',
             });
+            if (!this.cardEditorOpen) {
+                this.ceSidebarOpen = true;
+                this.ceStagingOpen = true;
+            }
             this.cardEditorOpen = true;
 
             var self = this;
@@ -61,7 +76,7 @@ function whiteboardCardEditorMixin() {
                     onChange: function() { self._markEditorDirty(editorId); },
                     editable: (atom.owner || 'ethan') === 'ethan',
                 });
-                self._editorInstances[atomId] = ce;
+                _ceStore[atomId] = ce;
             });
         },
 
@@ -78,7 +93,7 @@ function whiteboardCardEditorMixin() {
         async saveEditor(editorId) {
             var ed = this.openEditors.find(e => e.id === editorId);
             if (!ed) return;
-            var ce = this._editorInstances[ed.atomId];
+            var ce = _ceStore[ed.atomId];
             if (!ce) return;
 
             var md = ce.getMarkdown();
@@ -107,8 +122,8 @@ function whiteboardCardEditorMixin() {
             if (ed.dirty) { if (!confirm('「' + ed.title + '」尚未儲存，確定關閉？')) return; }
 
             // 清理 Tiptap
-            var ce = this._editorInstances[ed.atomId];
-            if (ce) { ce.destroy(); delete this._editorInstances[ed.atomId]; }
+            var ce = _ceStore[ed.atomId];
+            if (ce) { ce.destroy(); delete _ceStore[ed.atomId]; }
 
             this.openEditors.splice(idx, 1);
             if (this.openEditors.length === 0) {
@@ -126,8 +141,8 @@ function whiteboardCardEditorMixin() {
                 if (ed && ed.dirty) {
                     if (!confirm('「' + ed.title + '」尚未儲存，確定關閉？')) return;
                 }
-                var ce = this._editorInstances[ed.atomId];
-                if (ce) { ce.destroy(); delete this._editorInstances[ed.atomId]; }
+                var ce = _ceStore[ed.atomId];
+                if (ce) { ce.destroy(); delete _ceStore[ed.atomId]; }
                 var idx = this.openEditors.findIndex(e => e.id === ids[i]);
                 if (idx >= 0) this.openEditors.splice(idx, 1);
             }
@@ -141,7 +156,7 @@ function whiteboardCardEditorMixin() {
             if (!ed) return;
             var url = prompt('輸入連結 URL:');
             if (url) {
-                var ce = this._editorInstances[ed.atomId];
+                var ce = _ceStore[ed.atomId];
                 if (ce) ce.cmd('link', url);
             }
         },
@@ -149,14 +164,14 @@ function whiteboardCardEditorMixin() {
         ceCmd(command, editorId) {
             var ed = this.openEditors.find(e => e.id === editorId);
             if (!ed) return;
-            var ce = this._editorInstances[ed.atomId];
+            var ce = _ceStore[ed.atomId];
             if (ce) ce.cmd(command);
         },
 
         ceIsActive(name, attrs, editorId) {
             var ed = this.openEditors.find(e => e.id === editorId);
             if (!ed) return false;
-            var ce = this._editorInstances[ed.atomId];
+            var ce = _ceStore[ed.atomId];
             if (!ce) return false;
             return ce.isActive(name, attrs);
         },
@@ -164,6 +179,97 @@ function whiteboardCardEditorMixin() {
         saveCardEditor() {
             // 儲存所有 dirty 的（兼容舊呼叫）
             this.openEditors.forEach(ed => { if (ed.dirty) this.saveEditor(ed.id); });
+        },
+
+        async openSelectedInEditor() {
+            if (!this.selectedAtomIds || this.selectedAtomIds.length === 0) return;
+            var ids = this.selectedAtomIds.slice();
+            for (var i = 0; i < ids.length; i++) {
+                await this.openCardEditor(ids[i]);
+            }
+        },
+
+        // ============================================
+        // 暫存區 Staging
+        // ============================================
+
+        toggleStaging() {
+            this.ceStagingOpen = !this.ceStagingOpen;
+        },
+
+        ceHandleSelection(editorId) {
+            if (!this.ceStagingOpen) return;
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed || ed.readonly) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce) return;
+
+            // 單一原子操作：讀取 + 刪除（若為移動模式）在同一 state 上完成
+            var shouldDelete = this.stagingMode === 'move';
+            var info = ce.captureSelection(shouldDelete);
+            if (!info) return;
+
+            if (shouldDelete) this._markEditorDirty(editorId);
+            this.addToStaging(info.markdown, ed.atomId, ed.title);
+        },
+
+        addToStaging(text, atomId, title) {
+            this.stagingItems.push({
+                id: ++this._stagingSeq,
+                text: text,
+                sourceAtomId: atomId,
+                sourceTitle: title || '#' + atomId,
+            });
+            this.$nextTick(function() {
+                var list = document.querySelector('.ce-staging-list');
+                if (list) list.scrollTop = list.scrollHeight;
+            });
+        },
+
+        removeStagingItem(itemId) {
+            var idx = this.stagingItems.findIndex(function(s) { return s.id === itemId; });
+            if (idx >= 0) this.stagingItems.splice(idx, 1);
+        },
+
+        moveStagingItem(idx, direction) {
+            var target = idx + direction;
+            if (target < 0 || target >= this.stagingItems.length) return;
+            var items = this.stagingItems;
+            var tmp = items[idx];
+            items.splice(idx, 1);
+            items.splice(target, 0, tmp);
+        },
+
+        clearStaging() {
+            if (this.stagingItems.length === 0) return;
+            if (!confirm('清空暫存區所有片段？')) return;
+            this.stagingItems = [];
+        },
+
+        async saveStagingAsAtom() {
+            if (this.stagingItems.length === 0) { this.showToast('暫存區無內容', 'error'); return; }
+
+            var combined = this.stagingItems.map(function(s) { return s.text; }).join('\n\n');
+            var title = this.stagingTitle.trim() || ('重組筆記 (' + this.stagingItems.length + ' 片段)');
+            try {
+                var atom = await API.createAtom({
+                    title: title,
+                    content: combined,
+                    atom_type: 'F',
+                    source: 'human',
+                });
+                var vpX = (-this.panX / this.zoom) + 300 + Math.random() * 100;
+                var vpY = (-this.panY / this.zoom) + 200 + Math.random() * 100;
+                await API.addAtomToCanvas(this.canvasId, { atom_id: atom.id, pos_x: vpX, pos_y: vpY });
+
+                this.stagingItems = [];
+                this.stagingTitle = '';
+                await this.loadData();
+                this.$nextTick(function() { this.renderConnections(); }.bind(this));
+                this.showToast('已建立新卡片 #' + atom.id, 'success');
+            } catch (e) {
+                this.showToast('建立失敗: ' + e.message, 'error');
+            }
         },
     };
 }

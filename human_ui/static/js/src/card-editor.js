@@ -167,6 +167,30 @@ class CardEditor {
         return this.editor.isActive(name, attrs)
     }
 
+    /**
+     * 擷取選取文字並可選地刪除（單一原子操作）
+     * @param {boolean} shouldDelete - true 時刪除選取範圍（移動模式）
+     * @returns {{ from, to, markdown }} | null
+     */
+    captureSelection(shouldDelete) {
+        if (!this.editor) return null
+        const view = this.editor.view
+        const state = view.state
+        const { from, to, empty } = state.selection
+        if (empty) return null
+
+        // 先取文字（純文字，避免序列化產生副作用）
+        const text = state.doc.textBetween(from, to, '\n\n', '\n')
+        if (!text.trim()) return null
+
+        // 刪除必須在同一個 state 上操作
+        if (shouldDelete) {
+            view.dispatch(state.tr.delete(from, to))
+        }
+
+        return { from, to, markdown: text }
+    }
+
     /** 銷毀編輯器 */
     destroy() {
         if (this.editor) {
