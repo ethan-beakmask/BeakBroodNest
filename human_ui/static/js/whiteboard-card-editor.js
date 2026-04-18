@@ -23,6 +23,9 @@ function whiteboardCardEditorMixin() {
         stagingTitle: '',        // 自訂新卡片標題（空白時用預設）
         _stagingSeq: 0,
 
+        // 最大化
+        maximizedEditorId: null,  // 目前最大化的 editorId，null = 無
+
         // 排版模式
         editorLayout: 'auto',  // auto, horizontal, vertical, grid, list
 
@@ -77,6 +80,7 @@ function whiteboardCardEditorMixin() {
                     editable: (atom.owner || 'ethan') === 'ethan',
                 });
                 _ceStore[atomId] = ce;
+                self._focusEditor(editorId);
             });
         },
 
@@ -87,7 +91,12 @@ function whiteboardCardEditorMixin() {
 
         _focusEditor(editorId) {
             var el = document.querySelector('[data-ce-id="' + editorId + '"]');
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            if (!el) return;
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            el.classList.remove('ce-pane-flash');
+            void el.offsetWidth;
+            el.classList.add('ce-pane-flash');
+            setTimeout(function() { el.classList.remove('ce-pane-flash'); }, 2000);
         },
 
         async saveEditor(editorId) {
@@ -115,13 +124,42 @@ function whiteboardCardEditorMixin() {
             this.showToast('已儲存', 'success');
         },
 
+        toggleMaximize(editorId) {
+            if (this.maximizedEditorId === editorId) {
+                // 還原：清除 inline style
+                this.maximizedEditorId = null;
+                var pane = document.querySelector('[data-ce-id="' + editorId + '"]');
+                if (pane) {
+                    pane.style.top = '';
+                    pane.style.left = '';
+                    pane.style.width = '';
+                    pane.style.height = '';
+                }
+                return;
+            }
+            this.maximizedEditorId = editorId;
+            this.$nextTick(function() {
+                var pane = document.querySelector('[data-ce-id="' + editorId + '"]');
+                var container = pane && pane.parentElement;
+                if (!pane || !container) return;
+                pane.style.top = container.scrollTop + 'px';
+                pane.style.left = '0';
+                pane.style.width = container.clientWidth + 'px';
+                pane.style.height = container.clientHeight + 'px';
+            });
+        },
+
         closeEditor(editorId) {
             var idx = this.openEditors.findIndex(e => e.id === editorId);
             if (idx < 0) return;
             var ed = this.openEditors[idx];
             if (ed.dirty) { if (!confirm('「' + ed.title + '」尚未儲存，確定關閉？')) return; }
 
-            // 清理 Tiptap
+            if (this.maximizedEditorId === editorId) {
+                this.maximizedEditorId = null;
+                var pane = document.querySelector('[data-ce-id="' + editorId + '"]');
+                if (pane) { pane.style.top = ''; pane.style.left = ''; pane.style.width = ''; pane.style.height = ''; }
+            }
             var ce = _ceStore[ed.atomId];
             if (ce) { ce.destroy(); delete _ceStore[ed.atomId]; }
 
@@ -133,22 +171,38 @@ function whiteboardCardEditorMixin() {
             this.$nextTick(() => { this.renderConnections(); });
         },
 
-        closeCardEditor() {
-            // 關閉所有（兼容舊呼叫）
-            var ids = this.openEditors.map(e => e.id).slice();
-            for (var i = ids.length - 1; i >= 0; i--) {
-                var ed = this.openEditors.find(e => e.id === ids[i]);
-                if (ed && ed.dirty) {
-                    if (!confirm('「' + ed.title + '」尚未儲存，確定關閉？')) return;
-                }
+        _closeAllEditors() {
+            for (var i = this.openEditors.length - 1; i >= 0; i--) {
+                var ed = this.openEditors[i];
                 var ce = _ceStore[ed.atomId];
                 if (ce) { ce.destroy(); delete _ceStore[ed.atomId]; }
-                var idx = this.openEditors.findIndex(e => e.id === ids[i]);
-                if (idx >= 0) this.openEditors.splice(idx, 1);
             }
+            this.openEditors = [];
+            this.maximizedEditorId = null;
             this.cardEditorOpen = false;
             this.dragCard = null; this.bodyDragPending = false; this.bodyDragCa = null;
             this.$nextTick(() => { this.renderConnections(); });
+        },
+
+        async saveAllAndClose() {
+            for (var i = 0; i < this.openEditors.length; i++) {
+                var ed = this.openEditors[i];
+                if (ed.dirty && !ed.readonly) await this.saveEditor(ed.id);
+            }
+            this._closeAllEditors();
+        },
+
+        discardAllAndClose() {
+            this._closeAllEditors();
+        },
+
+        // 兼容舊呼叫（ESC 鍵等）
+        closeCardEditor() {
+            var hasDirty = this.openEditors.some(function(e) { return e.dirty; });
+            if (hasDirty) {
+                if (!confirm('有未儲存的卡片，確定不儲存並關閉？')) return;
+            }
+            this._closeAllEditors();
         },
 
         ceInsertLink(editorId) {

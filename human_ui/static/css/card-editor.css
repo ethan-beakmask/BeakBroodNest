@@ -35,6 +35,7 @@
     padding: 8px;
     gap: 8px;
     min-width: 0;
+    position: relative;
 }
 
 /* 排版模式 */
@@ -53,6 +54,45 @@
     flex-direction: column;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    position: relative;
+}
+
+/* 最大化 */
+.ce-pane-maximized {
+    position: absolute;
+    z-index: 50;
+    border-radius: 0;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+/* 閃爍提示特效（整張卡片底色） */
+@keyframes ce-flash {
+    0%   { background-color: #dbeafe; }
+    30%  { background-color: #fff; }
+    55%  { background-color: #dbeafe; }
+    100% { background-color: #fff; }
+}
+.ce-pane-flash {
+    animation: ce-flash 2s ease-out;
+}
+
+.card-editor-maximize {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    font-size: 14px;
+    color: #94a3b8;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.card-editor-maximize:hover {
+    background: #f1f5f9;
+    color: #475569;
 }
 
 .ce-pane-header {

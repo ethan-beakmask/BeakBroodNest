@@ -397,7 +397,9 @@
                             :style="ceStagingOpen ? 'background:#1e40af;color:#93c5fd;border:1px solid #3b82f6;' : 'background:rgba(255,255,255,0.1);color:#94a3b8;border:1px solid rgba(255,255,255,0.15);'"
                             @click="toggleStaging()"
                             x-text="'抓重點' + (stagingItems.length > 0 ? ' (' + stagingItems.length + ')' : '')"></button>
-                    <button class="btn btn-sm btn-secondary" @click="closeCardEditor()">全部關閉</button>
+                    <button class="btn btn-sm" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);"
+                            @click="saveAllAndClose()">全部儲存並關閉</button>
+                    <button class="btn btn-sm btn-secondary" @click="discardAllAndClose()">全部不儲存並關閉</button>
                 </div>
             </div>
 
@@ -422,7 +424,9 @@
             <!-- 編輯器容器 -->
             <div class="ce-container" :class="editorLayoutClass">
                 <template x-for="ed in openEditors" :key="ed.id">
-                    <div class="ce-pane" :data-ce-id="ed.id" @mouseup="ceHandleSelection(ed.id)">
+                    <div class="ce-pane" :data-ce-id="ed.id"
+                         :class="{ 'ce-pane-maximized': maximizedEditorId === ed.id }"
+                         @mouseup="ceHandleSelection(ed.id)">
                         <!-- Pane Header -->
                         <div class="ce-pane-header">
                             <input class="card-editor-title-input"
@@ -435,6 +439,9 @@
                                 <span x-text="'#' + ed.atomId"></span>
                                 <span x-show="ed.readonly" style="color:#d97706;font-weight:700;">唯讀</span>
                             </div>
+                            <button class="card-editor-maximize" @click="toggleMaximize(ed.id)"
+                                    :title="maximizedEditorId === ed.id ? '還原' : '最大化'"
+                                    x-text="maximizedEditorId === ed.id ? '&#9724;' : '&#9723;'"></button>
                             <button class="card-editor-close" @click="closeEditor(ed.id)" title="關閉此卡片">x</button>
                         </div>
                         <!-- Pane Toolbar (compact) -->
