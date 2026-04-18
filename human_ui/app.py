@@ -98,6 +98,18 @@ def dashboard_page():
     return render_template('dashboard.html')
 
 
+@app.route('/health')
+def health():
+    """健康檢查端點（供 Nginx / install.sh 使用）"""
+    from flask import jsonify
+    try:
+        with session_scope() as s:
+            count = s.query(KnowledgeAtom).count()
+        return jsonify({"status": "healthy", "atoms": count})
+    except Exception as e:
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+
+
 # ============================================================
 # 啟動
 # ============================================================

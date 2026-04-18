@@ -1,15 +1,24 @@
+# BeakCortex 組態檔範本
+# 複製為 config.ini 後修改為實際值
+# config.ini 已在 .gitignore 中排除
+
 [postgresql]
-host = 192.168.0.16
+host = localhost
 port = 5432
-database = beak_note
-username = beak_note
-password = YOUR_PASSWORD_HERE
+database = beak_cortex
+username = beak_cortex
+password = postgres123
 
 [flask]
-host = 192.168.0.16
+host = 127.0.0.1
 port = 5170
-debug = true
-secret_key = CHANGE_THIS_SECRET_KEY
+debug = false
+secret_key = CHANGE-ME-TO-RANDOM-STRING
+
+[relay]
+host = 127.0.0.1
+port = 5200
+token = CHANGE-ME-TO-RANDOM-TOKEN
 
 [logging]
 level = INFO
