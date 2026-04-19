@@ -199,7 +199,24 @@ function whiteboardConnectionsMixin() {
             return insideConns.concat(kept);
         },
 
-        applyRenderSettings() { this.renderConnections(); },
+        applyRenderSettings() {
+            this.renderConnections();
+            this.saveRenderSettings();
+        },
+
+        saveRenderSettings() {
+            if (this.isSnapshot) return;
+            var rt = {
+                rtEngine: this.rtEngine,
+                rtLineStyle: this.rtLineStyle,
+                rtOptEnabled: this.rtOptEnabled,
+                rtOptPerSector: this.rtOptPerSector,
+            };
+            var settings;
+            try { settings = JSON.parse((this.canvas && this.canvas.settings) || '{}'); } catch (e) { settings = {}; }
+            settings.renderTest = rt;
+            API.updateCanvas(this.canvasId, { settings: JSON.stringify(settings) });
+        },
 
         _connGeometry: [],
 

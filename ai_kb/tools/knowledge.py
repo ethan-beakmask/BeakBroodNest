@@ -104,11 +104,7 @@ def register(mcp):
                         ))
 
             s.flush()
-
-            try:
-                embed_service.embed_atom(s, atom.id)
-            except Exception as e:
-                logger.warning(f'Auto-embed failed for atom {atom.id}: {e}')
+            # needs_embedding=True (default)，由背景 embedder 處理
 
             result = {
                 'id': atom.id,
@@ -542,13 +538,10 @@ def register(mcp):
                     tag_objects.append(tag)
                 atom.tags = tag_objects
 
-            s.flush()
-
             if title or content or append_content:
-                try:
-                    embed_service.embed_atom(s, atom.id)
-                except Exception as e:
-                    logger.warning(f'Auto-embed failed for atom {atom.id}: {e}')
+                atom.needs_embedding = True
+
+            s.flush()
 
             return json.dumps({
                 'id': atom.id,

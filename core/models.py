@@ -139,6 +139,9 @@ class KnowledgeAtom(Base):
         String(20), default='internal'
     )  # public, internal, confidential, restricted
 
+    # Embedding 排程
+    needs_embedding: Mapped[bool] = mapped_column(Boolean, default=True)
+
     # 軟刪除
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -157,6 +160,7 @@ class KnowledgeAtom(Base):
         Index('idx_atoms_is_deleted', 'is_deleted'),
         Index('idx_atoms_sensitivity', 'sensitivity'),
         Index('idx_atoms_owner', 'owner'),
+        Index('idx_atoms_needs_embedding', 'needs_embedding'),
     )
 
     def to_dict(self, include_tags=False, include_values=False):

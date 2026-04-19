@@ -459,6 +459,48 @@ print('  資料表建立完成')
 atom_count=$(get_atom_count)
 log_info "資料庫就緒 (知識原子: $atom_count)"
 
+# 建立 Standalone 登入帳密
+log_info "設定 Web UI 登入帳號..."
+echo ""
+echo "  請設定 BeakCortex Web UI 的登入帳號與密碼"
+echo "  （整合 BeakPlatform 後此帳號將停用）"
+echo ""
+
+read -p "  帳號: " AUTH_USER
+while [ -z "$AUTH_USER" ]; do
+    echo "  帳號不可為空"
+    read -p "  帳號: " AUTH_USER
+done
+
+while true; do
+    read -sp "  密碼（至少 8 字元）: " AUTH_PASS
+    echo ""
+    if [ ${#AUTH_PASS} -lt 8 ]; then
+        echo "  密碼至少 8 個字元，請重新輸入"
+        continue
+    fi
+    read -sp "  確認密碼: " AUTH_PASS2
+    echo ""
+    if [ "$AUTH_PASS" != "$AUTH_PASS2" ]; then
+        echo "  密碼不一致，請重新輸入"
+        continue
+    fi
+    break
+done
+
+"$INSTALL_DIR/venv/bin/python3" -c "
+import sys
+sys.path.insert(0, '$INSTALL_DIR')
+from core.db import init_engine
+init_engine('$INSTALL_DIR/config.ini')
+from human_ui.app import generate_auth_credentials
+u, p = generate_auth_credentials('$AUTH_USER', '$AUTH_PASS')
+if u:
+    print('  帳號建立完成: ' + u)
+else:
+    print('  帳號已存在，跳過')
+"
+
 
 # === [7/7] systemd + Nginx ===
 log_step "7/7" "設定服務..."
@@ -544,7 +586,8 @@ echo ""
 echo "============================================"
 log_info "全新安裝完成"
 echo ""
-echo "  URL:     http://${SERVER_IP}:${NGINX_PORT}"
+echo "  URL:     http://${SERVER_IP}:${NGINX_PORT}/bc/login"
+echo "  帳號:    ${AUTH_USER}"
 echo "  原子數:  $(get_atom_count)"
 echo ""
 echo "  服務管理:"
@@ -552,6 +595,9 @@ echo "    sudo bash $INSTALL_DIR/scripts/install.sh --status"
 echo "    sudo bash $INSTALL_DIR/scripts/install.sh --update"
 echo "    sudo bash $INSTALL_DIR/scripts/install.sh --start"
 echo "    sudo bash $INSTALL_DIR/scripts/install.sh --stop"
+echo ""
+echo "  重設帳密:"
+echo "    cd $INSTALL_DIR && venv/bin/python human_ui/app.py --reset-auth"
 echo ""
 echo "  日誌查看:"
 echo "    journalctl -u $SERVICE_NAME -f"

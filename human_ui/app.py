@@ -74,23 +74,28 @@ def _init_app_secret():
         app.secret_key = 'dev-fallback-not-secure'
 
 
-_app_initialized = False
+# 模組載入時即初始化 secret key（gunicorn import 時觸發）
+try:
+    _init_app_secret()
+except Exception:
+    app.secret_key = 'dev-fallback-not-secure'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=365)
+
+_migrations_done = False
 
 
 @app.before_request
 def _check_auth():
     """登入檢查（IP 白名單通過後）"""
-    global _app_initialized
-    if not _app_initialized:
-        _init_app_secret()
-        app.config['SESSION_COOKIE_HTTPONLY'] = True
-        app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-        app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=365)
+    global _migrations_done
+    if not _migrations_done:
         try:
             ensure_canvas_slugs()
-        except Exception as e:
-            logger.warning(f'Canvas slug migration 跳過: {e}')
-        _app_initialized = True
+        except Exception:
+            pass
+        _migrations_done = True
 
     exempt = (
         request.path == '/bc/login'
@@ -147,11 +152,14 @@ def login_page():
 
 @app.route('/bc/logout')
 def logout():
+    last_slug = session.get('last_canvas_slug')
     session.clear()
+    if last_slug:
+        session['last_canvas_slug'] = last_slug
     return redirect('/bc/login')
 
 
-@app.route('/bc/api/auth/change-password', methods=['POST'])
+@app.route('/bc/api/auth/change-password', methods=['PUT'])
 def change_password():
     """變更密碼"""
     data = request.get_json()
@@ -221,8 +229,16 @@ def inject_cache_ver():
 @app.route('/bc/')
 @app.route('/bc')
 def index():
-    """首頁：導向第一個白板，若無則自動建立"""
+    """首頁：導向最後存取的白板，若無則導向第一個"""
+    last_slug = session.get('last_canvas_slug')
     with session_scope() as s:
+        if last_slug:
+            canvas = s.query(Canvas).filter(
+                Canvas.slug == last_slug, Canvas.is_archived == False
+            ).first()
+            if canvas:
+                return redirect(f'/bc/canvas/{last_slug}')
+
         canvas = s.query(Canvas).filter(Canvas.is_archived == False).order_by(Canvas.id).first()
         if not canvas:
             canvas = Canvas(name='預設白板', description='', owner='ethan')
@@ -239,6 +255,8 @@ def canvas_page(slug):
         canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
         if not canvas:
             abort(404)
+    session['last_canvas_slug'] = slug
+    session.modified = True
     return render_template('whiteboard.html', canvas_slug=slug)
 
 
@@ -283,12 +301,15 @@ def create_argument_parser():
     parser.add_argument('--init-db', action='store_true', help='初始化資料庫（建立所有表）')
     parser.add_argument('--reset', action='store_true', help='重置資料庫（刪除後重建）')
     parser.add_argument('--seed', action='store_true', help='載入測試資料')
+    parser.add_argument('--reset-auth', action='store_true', help='重設登入帳號與密碼')
     parser.add_argument('--config', '-c', type=str, default=None, help='組態檔路徑')
     return parser
 
 
-def generate_auth_credentials():
-    """產生 standalone 模式的登入帳密，寫入 system_config"""
+def generate_auth_credentials(username=None, password=None):
+    """產生或指定 standalone 模式的登入帳密，寫入 system_config。
+    若 username/password 為 None，則自動產生。
+    """
     with session_scope() as s:
         existing = s.query(SystemConfig).filter(
             SystemConfig.key == 'auth_username'
@@ -297,12 +318,11 @@ def generate_auth_credentials():
             print(f'  帳號已存在: {existing.value}（密碼不再顯示）')
             return None, None
 
-        # 帳號: cortex_ + 8 碼隨機 hex
-        username = 'cortex_' + secrets.token_hex(4)
-
-        # 密碼: 12 碼英數（避免 bash 特殊字元問題）
-        alphabet = string.ascii_letters + string.digits
-        password = ''.join(secrets.choice(alphabet) for _ in range(12))
+        if not username:
+            username = 'cortex_' + secrets.token_hex(4)
+        if not password:
+            alphabet = string.ascii_letters + string.digits
+            password = ''.join(secrets.choice(alphabet) for _ in range(12))
 
         password_hash = generate_password_hash(password)
         flask_secret = secrets.token_hex(32)
@@ -329,6 +349,52 @@ def generate_auth_credentials():
         return username, password
 
 
+def reset_auth_credentials(username=None, password=None):
+    """重設 standalone 帳密（覆蓋既有）。
+    若 username/password 為 None，則互動式詢問。
+    """
+    if not username:
+        username = input('  新帳號: ').strip()
+    if not username:
+        print('  帳號不可為空')
+        return False
+    if not password:
+        import getpass
+        password = getpass.getpass('  新密碼: ')
+        confirm = getpass.getpass('  確認密碼: ')
+        if password != confirm:
+            print('  密碼不一致')
+            return False
+    if len(password) < 8:
+        print('  密碼至少 8 個字元')
+        return False
+
+    password_hash = generate_password_hash(password)
+
+    with session_scope() as s:
+        for key, value, desc in [
+            ('auth_username', username, 'Standalone 登入帳號'),
+            ('auth_password_hash', password_hash, 'Standalone 登入密碼 hash'),
+            ('deployment_mode', 'standalone', '部署模式: standalone / platform'),
+        ]:
+            row = s.query(SystemConfig).filter(SystemConfig.key == key).first()
+            if row:
+                row.value = value
+            else:
+                s.add(SystemConfig(key=key, value=value, description=desc))
+
+        # 確保 flask_secret_key 存在
+        if not s.query(SystemConfig).filter(SystemConfig.key == 'flask_secret_key').first():
+            s.add(SystemConfig(
+                key='flask_secret_key',
+                value=secrets.token_hex(32),
+                description='Flask session secret key',
+            ))
+
+    print(f'  帳號已重設: {username}')
+    return True
+
+
 def ensure_canvas_slugs():
     """Migration: 確保所有 canvas 都有 slug"""
     from sqlalchemy import text, inspect as sa_inspect
@@ -350,6 +416,21 @@ def ensure_canvas_slugs():
             ))
             conn.commit()
         logger.info('Migration: canvases 表已加入 slug 欄位')
+
+    # needs_embedding 欄位（背景 embedding 用）
+    if 'knowledge_atoms' in inspector.get_table_names():
+        atom_cols = [c['name'] for c in inspector.get_columns('knowledge_atoms')]
+        if 'needs_embedding' not in atom_cols:
+            with engine.connect() as conn:
+                conn.execute(text(
+                    "ALTER TABLE knowledge_atoms ADD COLUMN needs_embedding BOOLEAN DEFAULT FALSE"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_atoms_needs_embedding "
+                    "ON knowledge_atoms(needs_embedding)"
+                ))
+                conn.commit()
+            logger.info('Migration: knowledge_atoms 表已加入 needs_embedding 欄位')
 
     # snapshot 欄位（歸檔快照用）
     columns = [c['name'] for c in inspector.get_columns('canvases')]
@@ -444,19 +525,21 @@ def main():
         print('BeakCortex -- 知識白板與 AI 共用知識庫')
         print()
         print('必要動作（擇一）:')
-        print('  --serve      啟動 Web 伺服器')
-        print('  --init-db    初始化資料庫')
+        print('  --serve        啟動 Web 伺服器')
+        print('  --init-db      初始化資料庫')
+        print('  --reset-auth   重設登入帳號與密碼')
         print()
         print('選項:')
-        print('  --port N     伺服器埠號')
-        print('  --host ADDR  綁定位址')
-        print('  --reset      重置資料庫（搭配 --init-db）')
-        print('  --seed       載入測試資料（搭配 --init-db）')
-        print('  --config     組態檔路徑 (預設: ../config.ini)')
+        print('  --port N       伺服器埠號')
+        print('  --host ADDR    綁定位址')
+        print('  --reset        重置資料庫（搭配 --init-db）')
+        print('  --seed         載入測試資料（搭配 --init-db）')
+        print('  --config       組態檔路徑 (預設: ../config.ini)')
         print()
         print('使用範例:')
         print('  python app.py --init-db --seed')
         print('  python app.py --serve')
+        print('  python app.py --reset-auth')
         print()
         sys.exit(1)
 
@@ -480,6 +563,16 @@ def main():
 
     # 初始化資料庫引擎
     init_engine(config_path)
+
+    if args.reset_auth:
+        print()
+        print('重設 Standalone 登入帳密')
+        print('-' * 40)
+        if reset_auth_credentials():
+            print()
+            print('請重啟服務使變更生效:')
+            print('  sudo systemctl restart beakcortex')
+        sys.exit(0)
 
     if args.init_db:
         if args.reset:

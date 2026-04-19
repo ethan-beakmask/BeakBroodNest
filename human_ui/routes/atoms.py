@@ -123,12 +123,7 @@ def create_atom():
 
         s.flush()
         result = atom.to_dict(include_tags=True)
-
-        # Auto-embed
-        try:
-            embed_service.embed_atom(s, atom.id)
-        except Exception as e:
-            logger.warning(f'Auto-embed failed for atom {atom.id}: {e}')
+        # needs_embedding=True (default)，由背景 embedder 處理
 
         return jsonify(result), 201
 
@@ -198,15 +193,11 @@ def update_atom(atom_id):
             tags = s.query(Tag).filter(Tag.id.in_(data['tag_ids'])).all()
             atom.tags = tags
 
-        s.flush()
-
-        # 若 title 或 content 有變更，重新 embed
+        # 若 title 或 content 有變更，標記需重新 embed
         if 'title' in data or 'content' in data:
-            try:
-                embed_service.embed_atom(s, atom_id)
-            except Exception as e:
-                logger.warning(f'Auto-embed failed for atom {atom_id}: {e}')
+            atom.needs_embedding = True
 
+        s.flush()
         return jsonify(atom.to_dict(include_tags=True))
 
 

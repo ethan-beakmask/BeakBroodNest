@@ -266,6 +266,20 @@ function whiteboardApp(canvasId) {
                 this.panX = canvas.viewport_x || 0; this.panY = canvas.viewport_y || 0;
                 this.zoom = canvas.viewport_zoom || 1; this.updateTransform();
             }
+            // 還原 RT 設定（URL 參數優先於 DB）
+            var urlOverride = new URLSearchParams(window.location.search).get('render');
+            if (!urlOverride) {
+                try {
+                    var settings = JSON.parse(canvas.settings || '{}');
+                    if (settings.renderTest) {
+                        var rt = settings.renderTest;
+                        if (rt.rtEngine) this.rtEngine = rt.rtEngine;
+                        if (rt.rtLineStyle) this.rtLineStyle = rt.rtLineStyle;
+                        if (rt.rtOptEnabled !== undefined) this.rtOptEnabled = rt.rtOptEnabled;
+                        if (rt.rtOptPerSector !== undefined) this.rtOptPerSector = rt.rtOptPerSector;
+                    }
+                } catch (e) { /* ignore parse errors */ }
+            }
             this.$nextTick(() => this.renderMinimap());
         },
 

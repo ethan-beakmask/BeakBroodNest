@@ -32,11 +32,7 @@
     <div class="app-header">
         <div class="logo">BeakCortex</div>
         <div class="header-right">
-            <template x-if="rtLineStyle !== 'curve' || rtOptEnabled || rtEngine !== 'individual'">
-                <span class="render-mode-badge"
-                      x-text="(rtEngine === 'grouped' ? 'GRP ' : '') + (rtOptEnabled ? '8way/' + rtOptPerSector + ' ' : '') + (rtLineStyle === 'straight' ? 'STRAIGHT' : rtLineStyle === 'none' ? 'NO-EDGE' : 'CURVE')"></span>
-            </template>
-            <button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
+<button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
             <a href="/bc/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
             <a href="/bc/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
