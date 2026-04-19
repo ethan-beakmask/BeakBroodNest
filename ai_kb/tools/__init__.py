@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """MCP 工具註冊入口"""
 
-from . import knowledge, schema, orchestrator, canvas, sanitize
+from . import knowledge, schema, orchestrator, canvas, sanitize, messaging
 
 
 def register_all(mcp):
@@ -11,3 +11,4 @@ def register_all(mcp):
     orchestrator.register(mcp)
     canvas.register(mcp)
     sanitize.register(mcp)
+    messaging.register(mcp)

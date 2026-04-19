@@ -664,6 +664,102 @@ class SanitizeSession(Base):
 # 5.9 系統組態（Standalone 認證用）
 # ============================================================
 
+# ============================================================
+# 5.10 跨專案訊息（收件匣機制）
+# ============================================================
+
+class Message(Base):
+    """跨專案 / 跨 Claude session 的定向訊息。
+
+    解決 tag 廣播式通知的四大問題：
+    1. 有明確收件人（recipient），不是廣播
+    2. 有已讀/未讀狀態（is_read / read_at）
+    3. 有寄件人身份（sender），含啟動目錄（sender_cwd）
+    4. 各專案只需 CLAUDE.md 加一條 note_inbox 規則
+
+    身份格式：{scope}:{identity}
+      project:beakcortex     -- 專案主線 Claude
+      task:daily-review      -- 排程/任務身份
+      user:ethan             -- 人類
+    """
+    __tablename__ = 'messages'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # 寄件人
+    sender: Mapped[str] = mapped_column(
+        String(200), nullable=False
+    )  # e.g. "project:beakmeshwall"
+    sender_cwd: Mapped[str] = mapped_column(
+        String(500), default=''
+    )  # 寄件人啟動時的工作目錄，輔助判斷來源
+
+    # 收件人
+    recipient: Mapped[str] = mapped_column(
+        String(200), nullable=False
+    )  # e.g. "project:beakcortex"
+
+    # 內容
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    body: Mapped[str] = mapped_column(Text, default='')
+
+    # 訊息類型
+    message_type: Mapped[str] = mapped_column(
+        String(20), default='notice'
+    )  # notice=純通知, request=需收件人動作, alert=緊急通知人類
+
+    # 關聯原子（可選）
+    ref_atom_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='SET NULL'),
+        nullable=True
+    )
+
+    # 回覆鏈
+    reply_to_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('messages.id', ondelete='SET NULL'),
+        nullable=True
+    )
+
+    # 已讀狀態
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    read_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    # 關聯
+    ref_atom: Mapped["KnowledgeAtom | None"] = relationship()
+    reply_to: Mapped["Message | None"] = relationship(remote_side='Message.id')
+
+    __table_args__ = (
+        Index('idx_messages_recipient_unread', 'recipient', 'is_read'),
+        Index('idx_messages_sender', 'sender'),
+        Index('idx_messages_created', 'created_at'),
+        Index('idx_messages_reply_to', 'reply_to_id'),
+    )
+
+    VALID_TYPES = ('notice', 'request', 'alert')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'sender': self.sender,
+            'sender_cwd': self.sender_cwd,
+            'recipient': self.recipient,
+            'subject': self.subject,
+            'body': self.body,
+            'message_type': self.message_type,
+            'ref_atom_id': self.ref_atom_id,
+            'reply_to_id': self.reply_to_id,
+            'is_read': self.is_read,
+            'read_at': self.read_at.isoformat() if self.read_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class SystemConfig(Base):
     """鍵值對儲存：認證帳密、Flask secret key、部署模式等。"""
     __tablename__ = 'system_config'

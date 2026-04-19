@@ -10,6 +10,7 @@ BeakCortex MCP Server -- AI 知識庫介面
   tools/orchestrator.py -- 任務派發 (4 個)
   tools/canvas.py       -- 畫布操作 (5 個)
   tools/sanitize.py     -- 脫敏/還原 (7 個)
+  tools/messaging.py    -- 跨專案訊息 (3 個)
 
 啟動方式:
   python mcp_server.py                    顯示說明
@@ -17,6 +18,8 @@ BeakCortex MCP Server -- AI 知識庫介面
   python mcp_server.py --config path.ini  指定組態檔
 """
 import argparse
+import configparser
+import os
 import sys
 from pathlib import Path
 
@@ -26,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from mcp.server.fastmcp import FastMCP
 from core.db import init_engine
 from ai_kb.tools import register_all
+from ai_kb.tools.messaging import init_identity
 
 # ============================================================
 # MCP Server 定義
@@ -52,10 +56,13 @@ def create_argument_parser():
 使用範例:
   python mcp_server.py --stdio              以 stdio 模式啟動（供 Claude Code）
   python mcp_server.py --stdio -c path.ini  指定組態檔
+  python mcp_server.py --stdio --identity task:daily-review  指定身份
         """
     )
     parser.add_argument('--stdio', action='store_true', help='以 stdio 傳輸模式啟動')
     parser.add_argument('--config', '-c', type=str, default=None, help='組態檔路徑')
+    parser.add_argument('--identity', type=str, default='',
+                        help='覆寫訊息身份 (如 task:daily-review)，預設從 config 或啟動目錄推斷')
     return parser
 
 
@@ -110,6 +117,16 @@ def main():
         print('  task_list               列出所有任務')
         print('  task_collect            取得任務報告')
         print()
+        print('跨專案訊息工具:')
+        print('  note_send               發送訊息給指定專案/Claude/人類')
+        print('  note_inbox              查詢收件匣（未讀訊息）')
+        print('  note_inbox_read         標記訊息為已讀')
+        print()
+        print('身份識別（寄件人/收件人格式）:')
+        print('  project:beakcortex      專案主線 Claude')
+        print('  task:daily-review       排程任務身份')
+        print('  user:ethan              人類')
+        print()
         print('Claude Code 設定範例 (~/.claude/settings.json):')
         print('  "mcpServers": {')
         print('    "beak_cortex": {')
@@ -127,6 +144,24 @@ def main():
     if config_path is None:
         config_path = str(Path(__file__).resolve().parent.parent / 'config.ini')
     init_engine(config_path)
+
+    # 初始化訊息身份
+    # 優先順序: --identity 參數 > config.ini [identity] > 啟動目錄推斷
+    identity_str = args.identity
+    if not identity_str:
+        try:
+            cfg = configparser.ConfigParser()
+            cfg.read(config_path, encoding='utf-8')
+            if cfg.has_section('identity'):
+                project_id = cfg.get('identity', 'project_id', fallback='')
+                if project_id:
+                    identity_str = f'project:{project_id}'
+        except Exception:
+            pass
+
+    # MCP server 由 claude code 啟動，取得呼叫端的 cwd
+    caller_cwd = os.environ.get('CLAUDE_CWD', os.getcwd())
+    init_identity(config_identity=identity_str, cwd=caller_cwd)
 
     if args.stdio:
         mcp.run(transport='stdio')
