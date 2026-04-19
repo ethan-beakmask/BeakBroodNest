@@ -5,24 +5,32 @@ BeakCortex -- 人類介面 Flask 入口
 路由已拆分至 routes/ 子模組
 """
 import argparse
+import functools
+import secrets
+import string
 import sys
 import configparser
 import logging
+from datetime import timedelta
 from pathlib import Path
 
 # 讓 core 可以被 import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from flask import Flask, render_template, redirect, request, abort
+from flask import Flask, render_template, redirect, request, abort, jsonify, session
+from werkzeug.security import check_password_hash, generate_password_hash
 
-from core.db import init_engine, get_session, session_scope, create_all_tables, Base
-from core.models import KnowledgeAtom, Canvas, CanvasAtom, Tag
+from core.db import init_engine, get_engine, get_session, session_scope, create_all_tables, Base
+from core.models import (
+    KnowledgeAtom, Canvas, CanvasAtom, Tag,
+    SystemConfig, _gen_canvas_slug,
+)
 from core import relations as rel_service
 
 from human_ui.routes import ALL_BLUEPRINTS
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/bc/static')
 logger = logging.getLogger('beak_cortex')
 
 # ============================================================
@@ -42,13 +50,147 @@ def _check_ip_whitelist():
 
 
 # ============================================================
+# Standalone 認證
+# ============================================================
+
+def _load_auth_config():
+    """從 system_config 表載入認證設定"""
+    with session_scope() as s:
+        rows = s.query(SystemConfig).filter(
+            SystemConfig.key.in_([
+                'auth_username', 'auth_password_hash',
+                'flask_secret_key', 'deployment_mode',
+            ])
+        ).all()
+        return {r.key: r.value for r in rows}
+
+
+def _init_app_secret():
+    """啟動時從 DB 載入 Flask secret key"""
+    try:
+        cfg = _load_auth_config()
+        app.secret_key = cfg.get('flask_secret_key', 'dev-fallback-not-secure')
+    except Exception:
+        app.secret_key = 'dev-fallback-not-secure'
+
+
+_app_initialized = False
+
+
+@app.before_request
+def _check_auth():
+    """登入檢查（IP 白名單通過後）"""
+    global _app_initialized
+    if not _app_initialized:
+        _init_app_secret()
+        app.config['SESSION_COOKIE_HTTPONLY'] = True
+        app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+        app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=365)
+        try:
+            ensure_canvas_slugs()
+        except Exception as e:
+            logger.warning(f'Canvas slug migration 跳過: {e}')
+        _app_initialized = True
+
+    exempt = (
+        request.path == '/bc/login'
+        or request.path == '/bc/health'
+        or request.path.startswith('/bc/static/')
+        or request.path.startswith('/bc/api/worker/')
+    )
+    if exempt:
+        return
+
+    if not session.get('authenticated'):
+        if request.is_json or request.path.startswith('/bc/api/'):
+            return jsonify({'error': '未登入'}), 401
+        return redirect('/bc/login')
+
+
+@app.route('/bc/login', methods=['GET', 'POST'])
+def login_page():
+    if session.get('authenticated'):
+        return redirect('/bc/')
+
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        try:
+            cfg = _load_auth_config()
+        except Exception:
+            error = '系統錯誤，無法讀取認證設定'
+            return render_template('login.html', error=error)
+
+        if cfg.get('deployment_mode') != 'standalone':
+            error = '認證系統尚未初始化，請先執行 python app.py --init-db'
+            return render_template('login.html', error=error)
+
+        stored_user = cfg.get('auth_username', '')
+        stored_hash = cfg.get('auth_password_hash', '')
+
+        if not stored_user or not stored_hash:
+            error = '尚未初始化帳號，請先執行 python app.py --init-db'
+            return render_template('login.html', error=error)
+
+        if username == stored_user and check_password_hash(stored_hash, password):
+            session.permanent = True
+            session['authenticated'] = True
+            session['username'] = username
+            return redirect('/bc/')
+        else:
+            error = '帳號或密碼錯誤'
+
+    return render_template('login.html', error=error)
+
+
+@app.route('/bc/logout')
+def logout():
+    session.clear()
+    return redirect('/bc/login')
+
+
+@app.route('/bc/api/auth/change-password', methods=['POST'])
+def change_password():
+    """變更密碼"""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': '需要 JSON body'}), 400
+
+    old_pw = data.get('old_password', '')
+    new_pw = data.get('new_password', '')
+
+    if not old_pw or not new_pw:
+        return jsonify({'error': '需要 old_password 和 new_password'}), 400
+    if len(new_pw) < 8:
+        return jsonify({'error': '新密碼至少 8 個字元'}), 400
+
+    try:
+        cfg = _load_auth_config()
+    except Exception:
+        return jsonify({'error': '無法讀取認證設定'}), 500
+
+    stored_hash = cfg.get('auth_password_hash', '')
+    if not check_password_hash(stored_hash, old_pw):
+        return jsonify({'error': '舊密碼錯誤'}), 403
+
+    new_hash = generate_password_hash(new_pw)
+    with session_scope() as s:
+        row = s.query(SystemConfig).filter(SystemConfig.key == 'auth_password_hash').first()
+        if row:
+            row.value = new_hash
+
+    return jsonify({'message': '密碼已變更'})
+
+
+# ============================================================
 # 健康檢查端點
 # ============================================================
 
-@app.route("/health")
+@app.route("/bc/health")
 def _health_check():
     """回傳服務狀態與知識原子數量"""
-    from flask import jsonify
     try:
         with session_scope() as sess:
             count = sess.query(KnowledgeAtom).count()
@@ -56,9 +198,9 @@ def _health_check():
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": str(e)}), 503
 
-# 註冊所有 Blueprint
+# 註冊所有 Blueprint（統一前綴 /bc）
 for bp in ALL_BLUEPRINTS:
-    app.register_blueprint(bp)
+    app.register_blueprint(bp, url_prefix='/bc')
 
 
 @app.context_processor
@@ -76,7 +218,8 @@ def inject_cache_ver():
 # 頁面路由
 # ============================================================
 
-@app.route('/')
+@app.route('/bc/')
+@app.route('/bc')
 def index():
     """首頁：導向第一個白板，若無則自動建立"""
     with session_scope() as s:
@@ -85,44 +228,36 @@ def index():
             canvas = Canvas(name='預設白板', description='', owner='ethan')
             s.add(canvas)
             s.flush()
-        canvas_id = canvas.id
-    return redirect(f'/canvas/{canvas_id}')
+        slug = canvas.slug
+    return redirect(f'/bc/canvas/{slug}')
 
 
-@app.route('/canvas/<int:canvas_id>')
-def canvas_page(canvas_id):
+@app.route('/bc/canvas/<slug>')
+def canvas_page(slug):
     """白板頁面"""
-    return render_template('whiteboard.html', canvas_id=canvas_id)
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
+        if not canvas:
+            abort(404)
+    return render_template('whiteboard.html', canvas_slug=slug)
 
 
-@app.route('/help')
+@app.route('/bc/help')
 def help_page():
     """線上說明"""
     return render_template('help.html')
 
 
-@app.route('/card-test')
+@app.route('/bc/card-test')
 def card_test_page():
     """Card Editor 獨立測試頁"""
     return render_template('card_test.html')
 
 
-@app.route('/dashboard')
+@app.route('/bc/dashboard')
 def dashboard_page():
     """Orchestrator 儀錶板"""
     return render_template('dashboard.html')
-
-
-@app.route('/health')
-def health():
-    """健康檢查端點（供 Nginx / install.sh 使用）"""
-    from flask import jsonify
-    try:
-        with session_scope() as s:
-            count = s.query(KnowledgeAtom).count()
-        return jsonify({"status": "healthy", "atoms": count})
-    except Exception as e:
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 
 # ============================================================
@@ -150,6 +285,89 @@ def create_argument_parser():
     parser.add_argument('--seed', action='store_true', help='載入測試資料')
     parser.add_argument('--config', '-c', type=str, default=None, help='組態檔路徑')
     return parser
+
+
+def generate_auth_credentials():
+    """產生 standalone 模式的登入帳密，寫入 system_config"""
+    with session_scope() as s:
+        existing = s.query(SystemConfig).filter(
+            SystemConfig.key == 'auth_username'
+        ).first()
+        if existing:
+            print(f'  帳號已存在: {existing.value}（密碼不再顯示）')
+            return None, None
+
+        # 帳號: cortex_ + 8 碼隨機 hex
+        username = 'cortex_' + secrets.token_hex(4)
+
+        # 密碼: 12 碼英數（避免 bash 特殊字元問題）
+        alphabet = string.ascii_letters + string.digits
+        password = ''.join(secrets.choice(alphabet) for _ in range(12))
+
+        password_hash = generate_password_hash(password)
+        flask_secret = secrets.token_hex(32)
+
+        configs = [
+            SystemConfig(
+                key='auth_username', value=username,
+                description='Standalone 登入帳號',
+            ),
+            SystemConfig(
+                key='auth_password_hash', value=password_hash,
+                description='Standalone 登入密碼 hash',
+            ),
+            SystemConfig(
+                key='flask_secret_key', value=flask_secret,
+                description='Flask session secret key',
+            ),
+            SystemConfig(
+                key='deployment_mode', value='standalone',
+                description='部署模式: standalone / platform',
+            ),
+        ]
+        s.add_all(configs)
+        return username, password
+
+
+def ensure_canvas_slugs():
+    """Migration: 確保所有 canvas 都有 slug"""
+    from sqlalchemy import text, inspect as sa_inspect
+
+    engine = get_engine()
+    inspector = sa_inspect(engine)
+
+    # 檢查 canvases 表是否存在
+    if 'canvases' not in inspector.get_table_names():
+        return
+
+    # 檢查 slug 欄位是否存在
+    columns = [c['name'] for c in inspector.get_columns('canvases')]
+    if 'slug' not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE canvases ADD COLUMN slug VARCHAR(20)"))
+            conn.execute(text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_canvas_slug ON canvases(slug)"
+            ))
+            conn.commit()
+        logger.info('Migration: canvases 表已加入 slug 欄位')
+
+    # snapshot 欄位（歸檔快照用）
+    columns = [c['name'] for c in inspector.get_columns('canvases')]
+    if 'snapshot' not in columns:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE canvases ADD COLUMN snapshot JSONB"))
+            conn.commit()
+        logger.info('Migration: canvases 表已加入 snapshot 欄位')
+
+    # 為缺少 slug 的 canvas 補上
+    with session_scope() as s:
+        nulls = s.query(Canvas).filter(
+            (Canvas.slug == None) | (Canvas.slug == '')
+        ).all()
+        for c in nulls:
+            c.slug = _gen_canvas_slug()
+        if nulls:
+            logger.info(f'Migration: 已為 {len(nulls)} 個 canvas 產生 slug')
 
 
 def seed_test_data():
@@ -274,6 +492,23 @@ def main():
         create_all_tables()
         logger.info('資料表建立完成')
 
+        # Migration: 既有 canvas 補 slug
+        ensure_canvas_slugs()
+
+        # 產生 standalone 認證帳密
+        username, password = generate_auth_credentials()
+        if username and password:
+            print()
+            print('=' * 55)
+            print('  Standalone Web UI 登入帳號（僅顯示一次）')
+            print('=' * 55)
+            print(f'  帳號: {username}')
+            print(f'  密碼: {password}')
+            print()
+            print('  * 此密碼不會再次顯示，不提供密碼救援')
+            print('  * 整合 BeakPlatform 後此帳號將永久失效')
+            print('=' * 55)
+
         if args.seed:
             seed_test_data()
 
@@ -281,10 +516,18 @@ def main():
             sys.exit(0)
 
     if args.serve:
+        # Migration: 確保 canvas slug 已填充
+        ensure_canvas_slugs()
+
         host = args.host or cfg.get('flask', 'host', fallback='192.168.0.16')
         port = args.port or cfg.getint('flask', 'port', fallback=5170)
         debug = cfg.getboolean('flask', 'debug', fallback=True)
-        app.config['SECRET_KEY'] = cfg.get('flask', 'secret_key', fallback='dev')
+
+        # 從 DB 載入 secret key
+        _init_app_secret()
+        app.config['SESSION_COOKIE_HTTPONLY'] = True
+        app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+        app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=365)
 
         logger.info(f'BeakCortex 啟動於 http://{host}:{port}')
         app.run(host=host, port=port, debug=debug)

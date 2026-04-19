@@ -43,8 +43,10 @@
 .ce-layout-horizontal .ce-pane { width: calc(50% - 4px); height: 100%; }
 .ce-layout-vertical .ce-pane { width: 100%; height: calc(50% - 4px); }
 .ce-layout-grid .ce-pane { width: calc(50% - 4px); height: calc(50% - 4px); }
-.ce-layout-list .ce-pane { width: 100%; min-height: 300px; flex-shrink: 0; }
+.ce-layout-list .ce-pane { width: 100%; min-height: 300px; max-height: 66vh; flex-shrink: 0; }
 .ce-layout-list { flex-wrap: nowrap; flex-direction: column; overflow-y: auto; }
+.ce-layout-list::-webkit-scrollbar-thumb { background: #3b82f6; }
+.ce-layout-list::-webkit-scrollbar-thumb:hover { background: #2563eb; }
 
 /* ---- 單一編輯窗格 ---- */
 .ce-pane {

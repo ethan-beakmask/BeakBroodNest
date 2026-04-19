@@ -3,6 +3,7 @@
 對應 VISION.md Section 5 的資料模型
 """
 import datetime
+import secrets
 from sqlalchemy import (
     Integer, String, Text, Float, Boolean, DateTime,
     ForeignKey, UniqueConstraint, Index
@@ -253,6 +254,10 @@ class AtomRelation(Base):
         return d
 
 
+def _gen_canvas_slug():
+    return secrets.token_urlsafe(6)
+
+
 # ============================================================
 # 5.3 白板
 # ============================================================
@@ -261,6 +266,9 @@ class Canvas(Base):
     __tablename__ = 'canvases'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(
+        String(20), unique=True, nullable=True, default=_gen_canvas_slug
+    )  # URL 用，取代可猜測的數字 ID
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     description: Mapped[str] = mapped_column(Text, default='')
     canvas_type: Mapped[str] = mapped_column(
@@ -270,6 +278,9 @@ class Canvas(Base):
         String(100), default='ethan'
     )  # ethan, claude, agent:<task_id>, claude@<host>
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    snapshot: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True
+    )  # 歸檔時凍結的完整白板快照（原子內容、連線、群組）
     viewport_x: Mapped[float] = mapped_column(Float, default=0)
     viewport_y: Mapped[float] = mapped_column(Float, default=0)
     viewport_zoom: Mapped[float] = mapped_column(Float, default=1.0)
@@ -294,6 +305,7 @@ class Canvas(Base):
     def to_dict(self):
         return {
             'id': self.id,
+            'slug': self.slug,
             'name': self.name,
             'description': self.description,
             'canvas_type': self.canvas_type,
@@ -642,3 +654,19 @@ class SanitizeSession(Base):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'expires_at': self.expires_at.isoformat() if self.expires_at else None,
         }
+
+
+# ============================================================
+# 5.9 系統組態（Standalone 認證用）
+# ============================================================
+
+class SystemConfig(Base):
+    """鍵值對儲存：認證帳密、Flask secret key、部署模式等。"""
+    __tablename__ = 'system_config'
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default='')
+    description: Mapped[str] = mapped_column(Text, default='')
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now
+    )

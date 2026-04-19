@@ -17,6 +17,7 @@ function whiteboardApp(canvasId) {
     var app = {
         canvasId,
         canvas: null,
+        isSnapshot: false,
         atoms: [],
         connections: [],
         groups: [],
@@ -164,6 +165,10 @@ function whiteboardApp(canvasId) {
         showArchivedCanvases: false,
         archivedCanvasCount: 0,
 
+        // Account
+        pwOld: '', pwNew: '', pwConfirm: '',
+        pwMsg: '', pwMsgOk: false,
+
         // Render test panel
         renderMode: 'normal',
         renderStats: { total: 0, rendered: 0 },
@@ -248,6 +253,7 @@ function whiteboardApp(canvasId) {
                 API.getCanvas(this.canvasId), API.getCanvases(true), API.getTags(), API.getTagCategories(),
             ]);
             this.canvas = canvas;
+            this.isSnapshot = !!canvas.is_snapshot;
             this.atoms = canvas.atoms || [];
             this.connections = canvas.connections || [];
             this.groups = canvas.groups || [];
@@ -391,7 +397,7 @@ function whiteboardApp(canvasId) {
             this.renderMinimap();
         },
 
-        saveViewport() { API.updateCanvas(this.canvasId, { viewport_x: this.panX, viewport_y: this.panY, viewport_zoom: this.zoom }); },
+        saveViewport() { if (this.isSnapshot) return; API.updateCanvas(this.canvasId, { viewport_x: this.panX, viewport_y: this.panY, viewport_zoom: this.zoom }); },
         zoomIn() { this.zoom = Math.min(3, this.zoom * 1.2); this.updateTransform(); this.renderConnections(); },
         zoomOut() { this.zoom = Math.max(0.15, this.zoom / 1.2); this.updateTransform(); this.renderConnections(); },
         resetZoom() { this.zoom = 1; this.panX = 0; this.panY = 0; this.updateTransform(); this.renderConnections(); this.saveViewport(); },
@@ -536,6 +542,7 @@ function whiteboardApp(canvasId) {
         // New Atom
         // ============================================
         openNewAtomModal(e) {
+            if (this.isSnapshot) { this.showToast('歸檔白板為唯讀快照', 'warn'); return; }
             this.newAtom = { title: '', content: '', atom_type: 'F' };
             if (e && e.clientX) { const pos = this.screenToCanvas(e.clientX, e.clientY); this.newAtomPos = { x: pos.x, y: pos.y }; }
             else { this.newAtomPos = { x: (-this.panX / this.zoom) + 200, y: (-this.panY / this.zoom) + 200 }; }
@@ -543,6 +550,7 @@ function whiteboardApp(canvasId) {
         },
 
         async createNewAtom() {
+            if (this.isSnapshot) return;
             const atom = await API.createAtom({ title: this.newAtom.title || '新原子', content: this.newAtom.content, atom_type: this.newAtom.atom_type, source: 'human' });
             await API.addAtomToCanvas(this.canvasId, { atom_id: atom.id, pos_x: this.newAtomPos.x, pos_y: this.newAtomPos.y });
             this.showNewAtomModal = false; await this.loadData(); this.$nextTick(() => this.renderConnections());
@@ -597,11 +605,13 @@ function whiteboardApp(canvasId) {
         },
 
         async removeFromCanvas(ca) {
+            if (this.isSnapshot) return;
             await API.removeCanvasAtom(ca.id); if (this.selectedAtomId === ca.atom_id) this.deselectCard();
             await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
         async deleteAtomEntirely(ca) {
+            if (this.isSnapshot) return;
             await API.deleteAtom(ca.atom_id); if (this.selectedAtomId === ca.atom_id) this.deselectCard();
             await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
@@ -750,26 +760,26 @@ function whiteboardApp(canvasId) {
             this.showToast('白板名稱已更新', 'success');
         },
 
-        async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/canvas/' + c.id; },
+        async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/bc/canvas/' + c.slug; },
 
-        async deleteCanvas(id) {
+        async deleteCanvas(slug) {
             if (this.canvases.length <= 1) return;
-            await API.deleteCanvas(id);
-            if (id === this.canvasId) window.location.href = '/'; else await this.loadCanvases();
+            await API.deleteCanvas(slug);
+            if (slug === this.canvasId) window.location.href = '/bc/'; else await this.loadCanvases();
         },
 
         async archiveCurrentCanvas() {
             if (!confirm('歸檔此白板？白板會隱藏但保留。')) return;
             await API.updateCanvas(this.canvasId, { is_archived: true });
             this.showUISettingsModal = false;
-            window.location.href = '/';
+            window.location.href = '/bc/';
         },
 
         async deleteCurrentCanvas() {
             if (!confirm('永久刪除此白板？原子不受影響，但白板上的佈局將無法復原。')) return;
             await API.deleteCanvas(this.canvasId);
             this.showUISettingsModal = false;
-            window.location.href = '/';
+            window.location.href = '/bc/';
         },
 
         async loadCanvases() {
@@ -854,6 +864,20 @@ function whiteboardApp(canvasId) {
         // ============================================
         // Utilities
         // ============================================
+        async changePassword() {
+            this.pwMsg = '';
+            if (!this.pwOld) { this.pwMsg = '請輸入舊密碼'; this.pwMsgOk = false; return; }
+            if (!this.pwNew || this.pwNew.length < 8) { this.pwMsg = '新密碼至少 8 字元'; this.pwMsgOk = false; return; }
+            if (this.pwNew !== this.pwConfirm) { this.pwMsg = '新密碼不一致'; this.pwMsgOk = false; return; }
+            try {
+                var resp = await API.put('/bc/api/auth/change-password', { old_password: this.pwOld, new_password: this.pwNew });
+                this.pwMsg = resp.message || '密碼已變更'; this.pwMsgOk = true;
+                this.pwOld = ''; this.pwNew = ''; this.pwConfirm = '';
+            } catch (e) {
+                this.pwMsg = e.message || '變更失敗'; this.pwMsgOk = false;
+            }
+        },
+
         truncate(text, n) { if (!text) return ''; return text.length > n ? text.substring(0, n) + '...' : text; },
         formatDate(iso) { if (!iso) return ''; return new Date(iso).toLocaleString('zh-TW'); },
     };

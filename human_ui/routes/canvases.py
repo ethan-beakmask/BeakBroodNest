@@ -14,6 +14,129 @@ from core import relations as rel_service
 bp = Blueprint('canvases', __name__)
 
 
+def _get_canvas_by_slug(s, slug):
+    """以 slug 查詢 canvas，回傳 Canvas 或 None"""
+    return s.query(Canvas).filter(Canvas.slug == slug).first()
+
+
+def _build_canvas_snapshot(s, canvas_id):
+    """建立白板的完整快照：原子（完整內容）、連線、群組、標籤"""
+    from core.models import AtomRelation
+
+    # 原子 + 完整內容
+    ca_rows = (
+        s.query(CanvasAtom, KnowledgeAtom)
+        .join(KnowledgeAtom, KnowledgeAtom.id == CanvasAtom.atom_id)
+        .filter(CanvasAtom.canvas_id == canvas_id)
+        .all()
+    )
+
+    atom_ids = [ca.atom_id for ca, _ in ca_rows]
+
+    # 批次標籤
+    tags_map = {}
+    if atom_ids:
+        tag_rows = (
+            s.query(atom_tags.c.atom_id, Tag.id, Tag.name, Tag.color)
+            .join(Tag, Tag.id == atom_tags.c.tag_id)
+            .filter(atom_tags.c.atom_id.in_(atom_ids))
+            .all()
+        )
+        for aid, tid, tname, tcolor in tag_rows:
+            tags_map.setdefault(aid, []).append(
+                {'id': tid, 'name': tname, 'color': tcolor}
+            )
+
+    # 阻塞狀態
+    blocked_ids = set()
+    if atom_ids:
+        blocking = (
+            s.query(AtomRelation.to_atom_id)
+            .join(KnowledgeAtom, KnowledgeAtom.id == AtomRelation.from_atom_id)
+            .filter(
+                AtomRelation.to_atom_id.in_(atom_ids),
+                AtomRelation.relation_type == 'blocks',
+                KnowledgeAtom.lifecycle.in_(['active', 'aging']),
+                KnowledgeAtom.is_deleted == False,
+            )
+            .distinct().all()
+        )
+        blocked_ids = {r[0] for r in blocking}
+
+    atoms = []
+    for ca, ka in ca_rows:
+        atoms.append({
+            'id': ca.id,
+            'canvas_id': ca.canvas_id,
+            'atom_id': ca.atom_id,
+            'pos_x': ca.pos_x,
+            'pos_y': ca.pos_y,
+            'width': ca.width,
+            'height': ca.height,
+            'z_index': ca.z_index,
+            'visual_style': ca.visual_style,
+            'group_id': ca.group_id,
+            'atom': {
+                'id': ka.id,
+                'title': ka.title,
+                'content': ka.content or '',
+                'content_type': ka.content_type,
+                'atom_type': ka.atom_type,
+                'lifecycle': ka.lifecycle,
+                'vitality_score': ka.vitality_score,
+                'source': ka.source,
+                'owner': ka.owner or 'ethan',
+                'tags': tags_map.get(ca.atom_id, []),
+                'updated_at': ka.updated_at.isoformat() if ka.updated_at else None,
+            },
+            'is_blocked': ca.atom_id in blocked_ids,
+        })
+
+    # 群組
+    groups = s.query(CanvasGroup).filter(CanvasGroup.canvas_id == canvas_id).all()
+    group_member_rows = (
+        s.query(CanvasAtom.group_id, CanvasAtom.atom_id)
+        .filter(CanvasAtom.canvas_id == canvas_id, CanvasAtom.group_id.isnot(None))
+        .all()
+    )
+    group_members = {}
+    for gid, aid in group_member_rows:
+        group_members.setdefault(gid, []).append(aid)
+
+    snap_groups = [{
+        'id': g.id, 'canvas_id': g.canvas_id, 'name': g.name, 'color': g.color,
+        'pos_x': g.pos_x, 'pos_y': g.pos_y, 'width': g.width, 'height': g.height,
+        'z_index': g.z_index, 'atom_ids': group_members.get(g.id, []),
+    } for g in groups]
+
+    # 連線
+    conn_rows = (
+        s.query(
+            CanvasConnection.id, CanvasConnection.canvas_id,
+            CanvasConnection.source_atom_id, CanvasConnection.target_atom_id,
+            CanvasConnection.relation_id, CanvasConnection.line_style,
+            CanvasConnection.color, CanvasConnection.label, CanvasConnection.animated,
+            AtomRelation.relation_type,
+        )
+        .outerjoin(AtomRelation, AtomRelation.id == CanvasConnection.relation_id)
+        .filter(CanvasConnection.canvas_id == canvas_id)
+        .all()
+    )
+    snap_conns = [{
+        'id': cr.id, 'canvas_id': cr.canvas_id,
+        'source_atom_id': cr.source_atom_id, 'target_atom_id': cr.target_atom_id,
+        'relation_id': cr.relation_id, 'line_style': cr.line_style,
+        'color': cr.color, 'label': cr.label, 'animated': cr.animated,
+        'relation_type': cr.relation_type,
+    } for cr in conn_rows]
+
+    return {
+        'atoms': atoms,
+        'groups': snap_groups,
+        'connections': snap_conns,
+    }
+
+
 # ============================================================
 # Canvas CRUD
 # ============================================================
@@ -47,16 +170,26 @@ def create_canvas():
         return jsonify(canvas.to_dict()), 201
 
 
-@bp.route('/api/canvases/<int:canvas_id>', methods=['GET'])
-def get_canvas(canvas_id):
-    """取得白板完整資料（輕量查詢：不用 joinedload，content 截斷）"""
+@bp.route('/api/canvases/<slug>', methods=['GET'])
+def get_canvas(slug):
+    """取得白板完整資料（歸檔白板回傳快照）"""
     CONTENT_PREVIEW_LEN = 500
 
     with session_scope() as s:
-        canvas = s.get(Canvas, canvas_id)
+        canvas = _get_canvas_by_slug(s, slug)
         if not canvas:
             return jsonify({'error': '白板不存在'}), 404
 
+        # 歸檔白板且有快照：直接回傳凍結的資料
+        if canvas.is_archived and canvas.snapshot:
+            result = canvas.to_dict()
+            result['atoms'] = canvas.snapshot.get('atoms', [])
+            result['groups'] = canvas.snapshot.get('groups', [])
+            result['connections'] = canvas.snapshot.get('connections', [])
+            result['is_snapshot'] = True
+            return jsonify(result)
+
+        canvas_id = canvas.id
         result = canvas.to_dict()
 
         # --- 1. 原子：輕量查詢，content 在 DB 層截斷 ---
@@ -213,13 +346,18 @@ def get_canvas(canvas_id):
         return jsonify(result)
 
 
-@bp.route('/api/canvases/<int:canvas_id>', methods=['PUT'])
-def update_canvas(canvas_id):
+@bp.route('/api/canvases/<slug>', methods=['PUT'])
+def update_canvas(slug):
     data = request.get_json()
     with session_scope() as s:
-        canvas = s.get(Canvas, canvas_id)
+        canvas = _get_canvas_by_slug(s, slug)
         if not canvas:
             return jsonify({'error': '白板不存在'}), 404
+
+        # 歸檔時自動建立快照
+        if data.get('is_archived') and not canvas.is_archived:
+            canvas.snapshot = _build_canvas_snapshot(s, canvas.id)
+
         for field in ('name', 'description', 'canvas_type', 'owner', 'is_archived',
                        'viewport_x', 'viewport_y', 'viewport_zoom', 'settings'):
             if field in data:
@@ -228,30 +366,34 @@ def update_canvas(canvas_id):
         return jsonify(canvas.to_dict())
 
 
-@bp.route('/api/canvases/<int:canvas_id>', methods=['DELETE'])
-def delete_canvas(canvas_id):
+@bp.route('/api/canvases/<slug>', methods=['DELETE'])
+def delete_canvas(slug):
     with session_scope() as s:
-        canvas = s.get(Canvas, canvas_id)
+        canvas = _get_canvas_by_slug(s, slug)
         if not canvas:
             return jsonify({'error': '白板不存在'}), 404
         s.delete(canvas)
-        return jsonify({'message': f'白板 {canvas_id} 已刪除'})
+        return jsonify({'message': f'白板已刪除'})
 
 
 # ============================================================
 # Canvas Atoms
 # ============================================================
 
-@bp.route('/api/canvases/<int:canvas_id>/atoms', methods=['POST'])
-def add_atom_to_canvas(canvas_id):
+@bp.route('/api/canvases/<slug>/atoms', methods=['POST'])
+def add_atom_to_canvas(slug):
     """在白板上放置原子"""
     data = request.get_json()
     if not data or 'atom_id' not in data:
         return jsonify({'error': '需要 atom_id'}), 400
 
     with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
         ca = CanvasAtom(
-            canvas_id=canvas_id,
+            canvas_id=canvas.id,
             atom_id=data['atom_id'],
             pos_x=data.get('pos_x', 100),
             pos_y=data.get('pos_y', 100),
@@ -295,13 +437,17 @@ def remove_atom_from_canvas(ca_id):
 # Canvas Groups
 # ============================================================
 
-@bp.route('/api/canvases/<int:canvas_id>/groups', methods=['POST'])
-def create_canvas_group(canvas_id):
+@bp.route('/api/canvases/<slug>/groups', methods=['POST'])
+def create_canvas_group(slug):
     """建立群組"""
     data = request.get_json() or {}
     with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
         g = CanvasGroup(
-            canvas_id=canvas_id,
+            canvas_id=canvas.id,
             name=data.get('name', 'Group'),
             color=data.get('color', '#3b82f6'),
             pos_x=data.get('pos_x', 0),
@@ -315,7 +461,7 @@ def create_canvas_group(canvas_id):
         atom_ids = data.get('atom_ids', [])
         if atom_ids:
             s.query(CanvasAtom).filter(
-                CanvasAtom.canvas_id == canvas_id,
+                CanvasAtom.canvas_id == canvas.id,
                 CanvasAtom.atom_id.in_(atom_ids),
             ).update({CanvasAtom.group_id: g.id}, synchronize_session='fetch')
             s.flush()
@@ -376,6 +522,16 @@ def create_canvas_connection():
             return jsonify({'error': f'缺少必要欄位: {f}'}), 400
 
     with session_scope() as s:
+        # canvas_id 接受 slug 字串
+        canvas_ref = data['canvas_id']
+        if isinstance(canvas_ref, str):
+            canvas = _get_canvas_by_slug(s, canvas_ref)
+            if not canvas:
+                return jsonify({'error': '白板不存在'}), 404
+            canvas_id = canvas.id
+        else:
+            canvas_id = canvas_ref
+
         relation = s.query(AtomRelation).filter(
             AtomRelation.from_atom_id == data['source_atom_id'],
             AtomRelation.to_atom_id == data['target_atom_id'],
@@ -411,7 +567,7 @@ def create_canvas_connection():
         style = rel_styles.get(data['relation_type'], {'color': '#94a3b8', 'line_style': 'solid'})
 
         conn = CanvasConnection(
-            canvas_id=data['canvas_id'],
+            canvas_id=canvas_id,
             source_atom_id=data['source_atom_id'],
             target_atom_id=data['target_atom_id'],
             relation_id=relation.id,

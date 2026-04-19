@@ -607,6 +607,9 @@
                         <button class="settings-tab"
                                 :class="{ active: uiSettingsTab === 'tag-categories' }"
                                 @click="uiSettingsTab = 'tag-categories'">標籤分類</button>
+                        <button class="settings-tab"
+                                :class="{ active: uiSettingsTab === 'account' }"
+                                @click="uiSettingsTab = 'account'">帳號</button>
                     </div>
                     <div class="settings-content">
                         <!-- 白板設定 -->
@@ -697,6 +700,26 @@
                                         勾選左側分類後，點擊標籤可增減歸屬
                                     </div>
                                 </template>
+                            </div>
+                        </div>
+                        <!-- 帳號管理 -->
+                        <div x-show="uiSettingsTab === 'account'">
+                            <div class="form-group">
+                                <label style="font-size:12px;font-weight:600;">變更密碼</label>
+                                <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+                                    <input class="form-control" type="password" placeholder="舊密碼"
+                                           x-model="pwOld" style="font-size:13px;">
+                                    <input class="form-control" type="password" placeholder="新密碼（至少 8 字元）"
+                                           x-model="pwNew" style="font-size:13px;">
+                                    <input class="form-control" type="password" placeholder="確認新密碼"
+                                           x-model="pwConfirm" style="font-size:13px;"
+                                           @keydown.enter="changePassword()">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <button class="btn btn-primary btn-sm" @click="changePassword()">變更</button>
+                                        <span x-show="pwMsg" x-text="pwMsg"
+                                              :style="'font-size:12px;color:' + (pwMsgOk ? 'var(--success)' : 'var(--danger)')"></span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

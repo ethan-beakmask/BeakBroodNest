@@ -63,7 +63,7 @@ check_ubuntu() {
 resolve_ports() {
     NGINX_PORT="$CORTEX_PORT"
     APP_PORT=$((CORTEX_PORT + 1))
-    HEALTH_URL="http://127.0.0.1:${APP_PORT}/health"
+    HEALTH_URL="http://127.0.0.1:${APP_PORT}/bc/health"
 }
 
 health_check() {
@@ -521,7 +521,7 @@ server {
         proxy_send_timeout 60s;
     }
 
-    location /health {
+    location /bc/health {
         proxy_pass http://beakcortex;
         access_log off;
     }

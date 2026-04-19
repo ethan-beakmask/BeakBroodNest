@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 {% block title %}白板 - BeakCortex{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/whiteboard.css?v={{ cache_ver }}">
-<link rel="stylesheet" href="/static/css/card-editor.css?v={{ cache_ver }}">
+<link rel="stylesheet" href="/bc/static/css/whiteboard.css?v={{ cache_ver }}">
+<link rel="stylesheet" href="/bc/static/css/card-editor.css?v={{ cache_ver }}">
 {% endblock %}
 {% block extra_js %}
-<script src="/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
-<script src="/static/js/whiteboard-connections.js?v={{ cache_ver }}"></script>
-<script src="/static/js/whiteboard-minimap.js?v={{ cache_ver }}"></script>
-<script src="/static/js/whiteboard-card-editor.js?v={{ cache_ver }}"></script>
-<script src="/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
-<script src="/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
-<script src="/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
-<script src="/static/js/whiteboard.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/whiteboard-connections.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/whiteboard-minimap.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/whiteboard-card-editor.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
+<script src="/bc/static/js/whiteboard.js?v={{ cache_ver }}"></script>
 {% endblock %}
 
 {% block body %}
-<div x-data="whiteboardApp({{ canvas_id }})" x-init="init()"
+<div x-data="whiteboardApp('{{ canvas_slug }}')" x-init="init()"
      @click="closeContextMenu()"
      @keydown.escape.window="if(cardEditorOpen){ closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
 
@@ -37,8 +37,10 @@
                       x-text="(rtEngine === 'grouped' ? 'GRP ' : '') + (rtOptEnabled ? '8way/' + rtOptPerSector + ' ' : '') + (rtLineStyle === 'straight' ? 'STRAIGHT' : rtLineStyle === 'none' ? 'NO-EDGE' : 'CURVE')"></span>
             </template>
             <button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
-            <a href="/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
+            <a href="/bc/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
+            <a href="/bc/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
+            <span x-show="isSnapshot" style="font-size:11px;padding:2px 8px;background:#f59e0b;color:#fff;border-radius:3px;font-weight:600;">ARCHIVED</span>
         </div>
     </div>
 

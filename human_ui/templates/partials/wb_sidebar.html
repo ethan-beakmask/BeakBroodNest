@@ -10,14 +10,14 @@
                 <template x-for="group in canvasGroups" :key="group.owner">
                     <div class="sidebar-owner-group">
                         <div class="sidebar-owner-label" x-text="ownerDisplayName(group.owner)"></div>
-                        <template x-for="c in group.items" :key="c.id">
-                            <a :href="'/canvas/' + c.id"
+                        <template x-for="c in group.items" :key="c.slug">
+                            <a :href="'/bc/canvas/' + c.slug"
                                class="sidebar-item"
-                               :class="{ active: c.id == canvasId }">
+                               :class="{ active: c.slug == canvasId }">
                                 <span class="icon icon-wb">W</span>
                                 <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
                                 <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
-                                        @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.id)"
+                                        @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.slug)"
                                         x-show="canvases.length > 1">x</button>
                             </a>
                         </template>

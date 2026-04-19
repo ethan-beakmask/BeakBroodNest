@@ -58,7 +58,7 @@ function whiteboardCardEditorMixin() {
                 title: atom.title || '',
                 atomType: typeCfg.label || atom.atom_type,
                 dirty: false,
-                readonly: (atom.owner || 'ethan') !== 'ethan',
+                readonly: this.isSnapshot || (atom.owner || 'ethan') !== 'ethan',
                 _contentJson: atom.content_json || null,
                 _content: atom.content || '',
             });

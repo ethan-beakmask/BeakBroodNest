@@ -5,6 +5,10 @@ const API = {
     async _fetch(url, options = {}) {
         const defaults = { headers: { 'Content-Type': 'application/json' } };
         const resp = await fetch(url, { ...defaults, ...options });
+        if (resp.status === 401) {
+            window.location.href = '/bc/login';
+            throw new Error('未登入');
+        }
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ error: resp.statusText }));
             throw new Error(err.error || resp.statusText);
@@ -20,51 +24,51 @@ const API = {
     // Atoms
     getAtoms(params = {}) {
         const q = new URLSearchParams(params).toString();
-        return this.get('/api/atoms' + (q ? '?' + q : ''));
+        return this.get('/bc/api/atoms' + (q ? '?' + q : ''));
     },
-    getAtom(id)             { return this.get('/api/atoms/' + id); },
-    getBlockChain(id)       { return this.get('/api/atoms/' + id + '/block-chain'); },
-    createAtom(data)        { return this.post('/api/atoms', data); },
-    updateAtom(id, data)    { return this.put('/api/atoms/' + id, data); },
-    deleteAtom(id)          { return this.del('/api/atoms/' + id); },
+    getAtom(id)             { return this.get('/bc/api/atoms/' + id); },
+    getBlockChain(id)       { return this.get('/bc/api/atoms/' + id + '/block-chain'); },
+    createAtom(data)        { return this.post('/bc/api/atoms', data); },
+    updateAtom(id, data)    { return this.put('/bc/api/atoms/' + id, data); },
+    deleteAtom(id)          { return this.del('/bc/api/atoms/' + id); },
 
     // Canvases
-    getCanvases(includeArchived) { return this.get('/api/canvases' + (includeArchived ? '?include_archived=1' : '')); },
-    getCanvas(id)           { return this.get('/api/canvases/' + id); },
-    createCanvas(data)      { return this.post('/api/canvases', data); },
-    updateCanvas(id, data)  { return this.put('/api/canvases/' + id, data); },
-    deleteCanvas(id)        { return this.del('/api/canvases/' + id); },
+    getCanvases(includeArchived) { return this.get('/bc/api/canvases' + (includeArchived ? '?include_archived=1' : '')); },
+    getCanvas(id)           { return this.get('/bc/api/canvases/' + id); },
+    createCanvas(data)      { return this.post('/bc/api/canvases', data); },
+    updateCanvas(id, data)  { return this.put('/bc/api/canvases/' + id, data); },
+    deleteCanvas(id)        { return this.del('/bc/api/canvases/' + id); },
 
     // Canvas Atoms
-    addAtomToCanvas(canvasId, data) { return this.post('/api/canvases/' + canvasId + '/atoms', data); },
-    updateCanvasAtom(caId, data)    { return this.put('/api/canvas-atoms/' + caId, data); },
-    removeCanvasAtom(caId)          { return this.del('/api/canvas-atoms/' + caId); },
+    addAtomToCanvas(canvasId, data) { return this.post('/bc/api/canvases/' + canvasId + '/atoms', data); },
+    updateCanvasAtom(caId, data)    { return this.put('/bc/api/canvas-atoms/' + caId, data); },
+    removeCanvasAtom(caId)          { return this.del('/bc/api/canvas-atoms/' + caId); },
 
     // Canvas Groups
-    createGroup(canvasId, data) { return this.post('/api/canvases/' + canvasId + '/groups', data); },
-    updateGroup(id, data)      { return this.put('/api/canvas-groups/' + id, data); },
-    deleteGroup(id)            { return this.del('/api/canvas-groups/' + id); },
+    createGroup(canvasId, data) { return this.post('/bc/api/canvases/' + canvasId + '/groups', data); },
+    updateGroup(id, data)      { return this.put('/bc/api/canvas-groups/' + id, data); },
+    deleteGroup(id)            { return this.del('/bc/api/canvas-groups/' + id); },
 
     // Canvas Connections
-    createConnection(data)  { return this.post('/api/canvas-connections', data); },
-    updateConnection(id, data) { return this.put('/api/canvas-connections/' + id, data); },
-    deleteConnection(id)    { return this.del('/api/canvas-connections/' + id); },
+    createConnection(data)  { return this.post('/bc/api/canvas-connections', data); },
+    updateConnection(id, data) { return this.put('/bc/api/canvas-connections/' + id, data); },
+    deleteConnection(id)    { return this.del('/bc/api/canvas-connections/' + id); },
 
     // Search
     searchSemantic(q, limit) {
         var params = new URLSearchParams({ q: q, limit: limit || 10 });
-        return this.get('/api/search/hybrid?' + params.toString());
+        return this.get('/bc/api/search/hybrid?' + params.toString());
     },
 
     // Tags
-    getTags()               { return this.get('/api/tags'); },
-    createTag(data)         { return this.post('/api/tags', data); },
-    updateTag(id, data)     { return this.put('/api/tags/' + id, data); },
-    deleteTag(id)           { return this.del('/api/tags/' + id); },
+    getTags()               { return this.get('/bc/api/tags'); },
+    createTag(data)         { return this.post('/bc/api/tags', data); },
+    updateTag(id, data)     { return this.put('/bc/api/tags/' + id, data); },
+    deleteTag(id)           { return this.del('/bc/api/tags/' + id); },
 
     // Tag Categories
-    getTagCategories()              { return this.get('/api/tag-categories'); },
-    createTagCategory(data)         { return this.post('/api/tag-categories', data); },
-    updateTagCategory(id, data)     { return this.put('/api/tag-categories/' + id, data); },
-    deleteTagCategory(id)           { return this.del('/api/tag-categories/' + id); },
+    getTagCategories()              { return this.get('/bc/api/tag-categories'); },
+    createTagCategory(data)         { return this.post('/bc/api/tag-categories', data); },
+    updateTagCategory(id, data)     { return this.put('/bc/api/tag-categories/' + id, data); },
+    deleteTagCategory(id)           { return this.del('/bc/api/tag-categories/' + id); },
 };

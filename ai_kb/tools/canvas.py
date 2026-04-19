@@ -57,9 +57,10 @@ def register(mcp):
             s.flush()
             return json.dumps({
                 'id': canvas.id,
+                'slug': canvas.slug,
                 'name': canvas.name,
                 'canvas_type': canvas.canvas_type,
-                'message': f'畫布已建立 (id={canvas.id})',
+                'message': f'畫布已建立 (id={canvas.id}, slug={canvas.slug})',
             }, ensure_ascii=False)
 
     @mcp.tool()

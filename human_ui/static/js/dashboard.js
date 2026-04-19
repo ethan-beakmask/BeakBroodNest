@@ -45,7 +45,7 @@ function dashboard() {
 
         async fetchStats() {
             try {
-                const resp = await fetch('/api/orchestrator/stats');
+                const resp = await fetch('/bc/api/orchestrator/stats');
                 this.stats = await resp.json();
             } catch (e) {
                 console.error('fetchStats error:', e);
@@ -54,7 +54,7 @@ function dashboard() {
 
         async fetchTasks() {
             try {
-                let url = '/api/orchestrator/tasks?per_page=100';
+                let url = '/bc/api/orchestrator/tasks?per_page=100';
                 if (this.filterStatus) url += '&status=' + this.filterStatus;
                 const resp = await fetch(url);
                 const data = await resp.json();
@@ -72,7 +72,7 @@ function dashboard() {
 
         async fetchDetail(taskId) {
             try {
-                const resp = await fetch('/api/orchestrator/tasks/' + taskId);
+                const resp = await fetch('/bc/api/orchestrator/tasks/' + taskId);
                 this.detail = await resp.json();
             } catch (e) {
                 console.error('fetchDetail error:', e);
