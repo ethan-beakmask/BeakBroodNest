@@ -181,6 +181,17 @@ def register(mcp):
                          f'應為 scope:identity（如 project:beakplatform）',
             }, ensure_ascii=False)
 
+        # 驗證 recipient 是否為已知身份（task: 開頭除外，允許動態建立）
+        scope = recipient.split(':')[0]
+        if scope != 'task' and recipient not in KNOWN_RECIPIENTS:
+            return json.dumps({
+                'error': f'未知的收件人: {recipient}。'
+                         f'已知收件人: {", ".join(sorted(KNOWN_RECIPIENTS))}。'
+                         f'注意: -dev 目錄與正式目錄共用同一身份，'
+                         f'例如 project:beakplatform 同時代表 '
+                         f'/opt/BeakPlatform 和 /opt/BeakPlatform-dev。',
+            }, ensure_ascii=False)
+
         with session_scope() as s:
             # 驗證 ref_atom_id
             if ref_atom_id is not None:
