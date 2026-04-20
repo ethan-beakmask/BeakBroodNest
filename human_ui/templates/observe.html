@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Observe - BeakCortex</title>
+    <link rel="stylesheet" href="/bc/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/bc/static/css/observe.css?v={{ cache_ver }}">
+    <script defer src="/bc/static/vendor/alpine.min.js"></script>
+</head>
+<body>
+
+<div x-data="observeApp()" x-init="init()">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/bc/observe">
+                BeakCortex <span class="text-secondary fw-normal">/ Observe</span>
+            </a>
+            <div class="d-flex align-items-center gap-3">
+                <span class="badge" :class="polling ? 'bg-success' : 'bg-secondary'"
+                      @click="togglePolling()" role="button"
+                      x-text="polling ? 'LIVE ' + pollInterval + 's' : 'PAUSED'"></span>
+                <a href="/bc/" class="btn btn-outline-secondary btn-sm">白板</a>
+                <a href="/bc/dashboard" class="btn btn-outline-secondary btn-sm">Orchestrator</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-3">
+
+        <!-- Stats Cards -->
+        <div class="row g-2 mb-3">
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value" x-text="stats.total_conversations || 0"></div>
+                        <div class="stat-label">對話數</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value" x-text="stats.total_turns || 0"></div>
+                        <div class="stat-label">Turns</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value text-warning" x-text="stats.total_signals || 0"></div>
+                        <div class="stat-label">訊號</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value text-info" x-text="stats.total_summarized || 0"></div>
+                        <div class="stat-label">已摘要</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value text-success" x-text="stats.total_pipeline_runs || 0"></div>
+                        <div class="stat-label">Pipeline 執行</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value" :class="stats.running_pipelines > 0 ? 'text-danger' : ''"
+                             x-text="stats.running_pipelines || 0"></div>
+                        <div class="stat-label">執行中</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <ul class="nav nav-tabs mb-3">
+            <li class="nav-item">
+                <a class="nav-link" :class="tab === 'conversations' ? 'active' : ''"
+                   href="#" @click.prevent="switchTab('conversations')">對話記錄</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="tab === 'signals' ? 'active' : ''"
+                   href="#" @click.prevent="switchTab('signals')">訊號分布</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="tab === 'pipelines' ? 'active' : ''"
+                   href="#" @click.prevent="switchTab('pipelines')">Pipeline</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="tab === 'sessions' ? 'active' : ''"
+                   href="#" @click.prevent="switchTab('sessions')">Session</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="tab === 'reviews' ? 'active' : ''"
+                   href="#" @click.prevent="switchTab('reviews')">Reviews</a>
+            </li>
+        </ul>
+
+        <!-- ============================================================ -->
+        <!-- Tab: Conversations -->
+        <!-- ============================================================ -->
+        <div x-show="tab === 'conversations'">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th @click="sortBy('last_timestamp')" role="button" class="sortable-th">
+                                時間
+                                <span x-show="sortField === 'last_timestamp'"
+                                      x-text="sortAsc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
+                            <th>專案</th>
+                            <th @click="sortBy('total_turns')" role="button" class="sortable-th">
+                                Turns
+                                <span x-show="sortField === 'total_turns'"
+                                      x-text="sortAsc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
+                            <th @click="sortBy('signal_count')" role="button" class="sortable-th">
+                                訊號
+                                <span x-show="sortField === 'signal_count'"
+                                      x-text="sortAsc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
+                            <th>Input Tokens</th>
+                            <th>Output Tokens</th>
+                            <th>P1</th>
+                            <th>P2</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="c in conversations" :key="c.id">
+                            <tr>
+                                <td class="text-nowrap small">
+                                    <span x-text="formatTime(c.last_timestamp)"></span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary" x-text="shortProject(c.project_path)"></span>
+                                </td>
+                                <td x-text="c.total_turns"></td>
+                                <td>
+                                    <span class="badge" :class="c.signal_count > 0 ? 'bg-warning text-dark' : 'bg-secondary'"
+                                          x-text="c.signal_count"></span>
+                                </td>
+                                <td class="small text-end" x-text="formatTokens(c.total_input_tokens)"></td>
+                                <td class="small text-end" x-text="formatTokens(c.total_output_tokens)"></td>
+                                <td>
+                                    <span class="badge" :class="c.p1_completed_at ? 'bg-success' : 'bg-secondary'"
+                                          x-text="c.p1_completed_at ? 'Done' : '-'"></span>
+                                </td>
+                                <td>
+                                    <span class="badge" :class="c.p2_completed_at ? 'bg-success' : 'bg-secondary'"
+                                          x-text="c.p2_completed_at ? 'Done' : '-'"></span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-outline-primary btn-sm"
+                                            @click="showSignals(c.id)">訊號</button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Tab: Signal Distribution -->
+        <!-- ============================================================ -->
+        <div x-show="tab === 'signals'">
+            <div class="row g-3">
+                <!-- 訊號類型分布 -->
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">訊號類型分布</div>
+                        <div class="card-body">
+                            <template x-for="(count, type) in stats.signal_distribution || {}" :key="type">
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between small mb-1">
+                                        <span x-text="type"></span>
+                                        <span x-text="count"></span>
+                                    </div>
+                                    <div class="progress" style="height: 18px;">
+                                        <div class="progress-bar"
+                                             :class="signalColor(type)"
+                                             :style="'width: ' + signalPct(count) + '%'">
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <!-- 每日對話數 -->
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">近 7 日對話數</div>
+                        <div class="card-body">
+                            <template x-for="d in stats.daily_conversations || []" :key="d.day">
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between small mb-1">
+                                        <span x-text="d.day"></span>
+                                        <span x-text="d.cnt"></span>
+                                    </div>
+                                    <div class="progress" style="height: 18px;">
+                                        <div class="progress-bar bg-info"
+                                             :style="'width: ' + dailyPct(d.cnt) + '%'">
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="!stats.daily_conversations || stats.daily_conversations.length === 0"
+                                 class="text-secondary small">尚無資料</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Tab: Pipeline Runs -->
+        <!-- ============================================================ -->
+        <div x-show="tab === 'pipelines'">
+            <div x-show="pipelines.length === 0" class="text-secondary text-center py-4">
+                尚無 Pipeline 執行記錄
+            </div>
+            <div class="table-responsive" x-show="pipelines.length > 0">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>Pipeline</th>
+                            <th>觸發</th>
+                            <th>狀態</th>
+                            <th>目前階段</th>
+                            <th>開始</th>
+                            <th>耗時</th>
+                            <th>Turns</th>
+                            <th>訊號</th>
+                            <th>Topics</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="p in pipelines" :key="p.id">
+                            <tr>
+                                <td x-text="p.id"></td>
+                                <td><span class="badge bg-primary" x-text="p.pipeline_name"></span></td>
+                                <td class="small" x-text="p.trigger_type"></td>
+                                <td>
+                                    <span class="badge" :class="statusBadge(p.status)"
+                                          x-text="p.status"></span>
+                                </td>
+                                <td x-text="p.current_stage || '-'"></td>
+                                <td class="text-nowrap small" x-text="formatTime(p.started_at)"></td>
+                                <td class="small" x-text="formatDuration(p.started_at, p.completed_at)"></td>
+                                <td x-text="p.total_turns_processed"></td>
+                                <td x-text="p.signals_found"></td>
+                                <td x-text="p.topics_generated"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Tab: Session Logs -->
+        <!-- ============================================================ -->
+        <div x-show="tab === 'sessions'">
+            <div x-show="sessions.length === 0" class="text-secondary text-center py-4">
+                尚無 Session 記錄
+            </div>
+            <div class="table-responsive" x-show="sessions.length > 0">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>開始時間</th>
+                            <th>專案</th>
+                            <th>觸發</th>
+                            <th>耗時</th>
+                            <th>Turns</th>
+                            <th>Input Tokens</th>
+                            <th>Output Tokens</th>
+                            <th>Agents</th>
+                            <th>異常</th>
+                            <th>摘要</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="s in sessions" :key="s.id">
+                            <tr :class="s.abnormal ? 'table-danger' : ''">
+                                <td class="text-nowrap small" x-text="formatTime(s.started_at)"></td>
+                                <td>
+                                    <span class="badge bg-secondary" x-text="shortProject(s.project_path)"></span>
+                                </td>
+                                <td class="small" x-text="s.trigger_type"></td>
+                                <td class="small" x-text="formatSeconds(s.duration_seconds)"></td>
+                                <td x-text="s.total_turns"></td>
+                                <td class="small text-end" x-text="formatTokens(s.total_input_tokens)"></td>
+                                <td class="small text-end" x-text="formatTokens(s.total_output_tokens)"></td>
+                                <td>
+                                    <span x-text="s.agent_count || 0"></span>
+                                    <template x-if="s.agent_max_duration > 600">
+                                        <span class="badge bg-warning text-dark ms-1"
+                                              x-text="formatSeconds(s.agent_max_duration)"></span>
+                                    </template>
+                                </td>
+                                <td>
+                                    <template x-if="s.abnormal">
+                                        <span class="badge bg-danger" x-text="s.abnormal_reason || 'YES'"></span>
+                                    </template>
+                                    <template x-if="!s.abnormal">
+                                        <span class="text-secondary">-</span>
+                                    </template>
+                                </td>
+                                <td class="small text-truncate" style="max-width: 300px;"
+                                    x-text="s.summary || '-'"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- Tab: Reviews (P3 復盤分析) -->
+        <!-- ============================================================ -->
+        <div x-show="tab === 'reviews'">
+
+            <!-- 全域錯誤模式統計 -->
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">錯誤模式分布</div>
+                        <div class="card-body">
+                            <template x-for="(count, pattern) in globalReviewStats.by_error_pattern || {}" :key="pattern">
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between small mb-1">
+                                        <span x-text="pattern"></span>
+                                        <span class="badge bg-danger" x-text="count"></span>
+                                    </div>
+                                    <div class="progress" style="height: 14px;">
+                                        <div class="progress-bar bg-danger"
+                                             :style="'width: ' + errorPct(count) + '%'"></div>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="!globalReviewStats.by_error_pattern || Object.keys(globalReviewStats.by_error_pattern).length === 0"
+                                 class="text-secondary small">尚無資料</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">訊號類型分布</div>
+                        <div class="card-body">
+                            <template x-for="(count, type) in globalReviewStats.by_type || {}" :key="type">
+                                <div class="mb-2">
+                                    <div class="d-flex justify-content-between small mb-1">
+                                        <span x-text="type"></span>
+                                        <span class="badge" :class="signalColor(type)" x-text="count"></span>
+                                    </div>
+                                    <div class="progress" style="height: 14px;">
+                                        <div class="progress-bar" :class="signalColor(type)"
+                                             :style="'width: ' + signalPct(count) + '%'"></div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">工具錯誤分布</div>
+                        <div class="card-body">
+                            <template x-for="(count, tool) in globalReviewStats.by_tool || {}" :key="tool">
+                                <div class="mb-2 d-flex justify-content-between small">
+                                    <span x-text="tool"></span>
+                                    <span class="badge bg-info" x-text="count"></span>
+                                </div>
+                            </template>
+                            <div x-show="!globalReviewStats.by_tool || Object.keys(globalReviewStats.by_tool).length === 0"
+                                 class="text-secondary small">尚無資料（待 P0 修正 tool_name 欄位）</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 各對話的用戶提及 -->
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between">
+                    <span>用戶提及追蹤</span>
+                    <span class="badge bg-secondary" x-text="totalMentions + ' 條'"></span>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th style="width: 100px;">類型</th>
+                                <th style="width: 120px;">時間</th>
+                                <th style="width: 60px;">Turn</th>
+                                <th>內容</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="(m, idx) in allMentions.slice(0, mentionLimit)" :key="'m-' + idx">
+                                <tr>
+                                    <td>
+                                        <span class="badge" :class="mentionBadge(m.mention_type)"
+                                              x-text="m.mention_type"></span>
+                                    </td>
+                                    <td class="small text-nowrap" x-text="formatTime(m.timestamp)"></td>
+                                    <td class="small" x-text="'T' + m.turn_seq"></td>
+                                    <td class="small" x-text="m.text"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    <div class="p-2 text-center" x-show="allMentions.length > mentionLimit">
+                        <button class="btn btn-outline-secondary btn-sm"
+                                @click="mentionLimit += 30"
+                                x-text="'更多 (' + (allMentions.length - mentionLimit) + ' 條)'"></button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div><!-- container -->
+
+    <!-- ============================================================ -->
+    <!-- Signal Detail Modal -->
+    <!-- ============================================================ -->
+    <div class="modal fade" id="signalModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        訊號詳情
+                        <span class="text-secondary small" x-text="'(' + signalDetail.length + ' signals)'"></span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <template x-for="s in signalDetail" :key="s.turn_seq">
+                        <div class="card mb-2 signal-card">
+                            <div class="card-header d-flex justify-content-between py-1">
+                                <span>
+                                    <span class="badge bg-dark">Turn <span x-text="s.turn_seq"></span></span>
+                                    <span class="badge bg-secondary" x-text="s.role"></span>
+                                    <template x-if="s.tool_name">
+                                        <span class="badge bg-info" x-text="s.tool_name"></span>
+                                    </template>
+                                </span>
+                                <span class="small text-secondary" x-text="formatTime(s.timestamp)"></span>
+                            </div>
+                            <div class="card-body py-2">
+                                <template x-for="sig in (s.p1_signals || [])" :key="sig.type + sig.turn_seq">
+                                    <div class="mb-1">
+                                        <span class="badge" :class="severityBadge(sig.severity)"
+                                              x-text="sig.severity"></span>
+                                        <span class="badge" :class="signalColor(sig.type)"
+                                              x-text="sig.type"></span>
+                                        <span class="small" x-text="sig.detail || sig.message || ''"></span>
+                                    </div>
+                                </template>
+                                <div class="signal-content mt-1 small" x-show="s.content"
+                                     x-text="(s.content || '').substring(0, 500)"></div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div><!-- Alpine root -->
+
+<script src="/bc/static/vendor/bootstrap-5.3.3-dist/js/bootstrap.bundle.min.js"></script>
+<script src="/bc/static/js/observe.js?v={{ cache_ver }}"></script>
+</body>
+</html>

@@ -8,6 +8,7 @@ from .orchestrator import bp as orchestrator_bp
 from .worker import bp as worker_bp
 from .schemas import bp as schemas_bp
 from .tags import bp as tags_bp
+from .observe import bp as observe_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -17,4 +18,5 @@ ALL_BLUEPRINTS = [
     worker_bp,
     schemas_bp,
     tags_bp,
+    observe_bp,
 ]

@@ -278,6 +278,12 @@ def dashboard_page():
     return render_template('dashboard.html')
 
 
+@app.route('/bc/observe')
+def observe_page():
+    """Pipeline 觀察儀表板"""
+    return render_template('observe.html')
+
+
 # ============================================================
 # 啟動
 # ============================================================
