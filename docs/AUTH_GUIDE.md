@@ -22,7 +22,7 @@ BeakCortex 在 Standalone 模式下使用自有帳密登入。
 瀏覽器開啟：
 
 ```
-http://<主機IP>:<PORT>/bc/login
+http://<主機IP>:<PORT>/beakcortex/login
 ```
 
 Session 有效期 365 天，期間不需重複登入。
@@ -64,7 +64,7 @@ venv/bin/python human_ui/app.py --reset-auth
 點擊右上角「Logout」，或直接開啟：
 
 ```
-http://<主機IP>:<PORT>/bc/logout
+http://<主機IP>:<PORT>/beakcortex/logout
 ```
 
 ## 安全機制
@@ -75,4 +75,4 @@ http://<主機IP>:<PORT>/bc/logout
 | Session | Flask signed cookie，HttpOnly + SameSite=Lax |
 | 有效期 | 365 天 |
 | IP 白名單 | 僅允許設定的內網 IP 存取（第一層防護） |
-| URL 前綴 | `/bc/` 避免與 Nginx 根路徑衝突 |
+| URL 前綴 | `/beakcortex/` 避免與 Nginx 根路徑衝突 |

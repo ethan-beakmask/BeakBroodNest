@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% block title %}白板 - BeakCortex{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="/bc/static/css/whiteboard.css?v={{ cache_ver }}">
-<link rel="stylesheet" href="/bc/static/css/card-editor.css?v={{ cache_ver }}">
+<link rel="stylesheet" href="/beakcortex/static/css/whiteboard.css?v={{ cache_ver }}">
+<link rel="stylesheet" href="/beakcortex/static/css/card-editor.css?v={{ cache_ver }}">
 {% endblock %}
 {% block extra_js %}
-<script src="/bc/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
-<script src="/bc/static/js/whiteboard-connections.js?v={{ cache_ver }}"></script>
-<script src="/bc/static/js/whiteboard-minimap.js?v={{ cache_ver }}"></script>
-<script src="/bc/static/js/whiteboard-card-editor.js?v={{ cache_ver }}"></script>
-<script src="/bc/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
-<script src="/bc/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
-<script src="/bc/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
-<script src="/bc/static/js/whiteboard.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-connections.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-minimap.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-card-editor.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard.js?v={{ cache_ver }}"></script>
 {% endblock %}
 
 {% block body %}
@@ -32,9 +32,10 @@
     <div class="app-header">
         <div class="logo">BeakCortex</div>
         <div class="header-right">
+{% include 'partials/nav_menu.html' %}
 <button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
-            <a href="/bc/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
-            <a href="/bc/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
+            <a href="/beakcortex/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
+            <a href="/beakcortex/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
             <span x-show="isSnapshot" style="font-size:11px;padding:2px 8px;background:#f59e0b;color:#fff;border-radius:3px;font-weight:600;">ARCHIVED</span>
         </div>

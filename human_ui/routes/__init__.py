@@ -9,6 +9,7 @@ from .worker import bp as worker_bp
 from .schemas import bp as schemas_bp
 from .tags import bp as tags_bp
 from .observe import bp as observe_bp
+from .nav import bp as nav_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -19,4 +20,5 @@ ALL_BLUEPRINTS = [
     schemas_bp,
     tags_bp,
     observe_bp,
+    nav_bp,
 ]

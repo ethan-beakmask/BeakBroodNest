@@ -774,26 +774,26 @@ function whiteboardApp(canvasId) {
             this.showToast('白板名稱已更新', 'success');
         },
 
-        async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/bc/canvas/' + c.slug; },
+        async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/beakcortex/canvas/' + c.slug; },
 
         async deleteCanvas(slug) {
             if (this.canvases.length <= 1) return;
             await API.deleteCanvas(slug);
-            if (slug === this.canvasId) window.location.href = '/bc/'; else await this.loadCanvases();
+            if (slug === this.canvasId) window.location.href = '/beakcortex/'; else await this.loadCanvases();
         },
 
         async archiveCurrentCanvas() {
             if (!confirm('歸檔此白板？白板會隱藏但保留。')) return;
             await API.updateCanvas(this.canvasId, { is_archived: true });
             this.showUISettingsModal = false;
-            window.location.href = '/bc/';
+            window.location.href = '/beakcortex/';
         },
 
         async deleteCurrentCanvas() {
             if (!confirm('永久刪除此白板？原子不受影響，但白板上的佈局將無法復原。')) return;
             await API.deleteCanvas(this.canvasId);
             this.showUISettingsModal = false;
-            window.location.href = '/bc/';
+            window.location.href = '/beakcortex/';
         },
 
         async loadCanvases() {
@@ -884,7 +884,7 @@ function whiteboardApp(canvasId) {
             if (!this.pwNew || this.pwNew.length < 8) { this.pwMsg = '新密碼至少 8 字元'; this.pwMsgOk = false; return; }
             if (this.pwNew !== this.pwConfirm) { this.pwMsg = '新密碼不一致'; this.pwMsgOk = false; return; }
             try {
-                var resp = await API.put('/bc/api/auth/change-password', { old_password: this.pwOld, new_password: this.pwNew });
+                var resp = await API.put('/beakcortex/api/auth/change-password', { old_password: this.pwOld, new_password: this.pwNew });
                 this.pwMsg = resp.message || '密碼已變更'; this.pwMsgOk = true;
                 this.pwOld = ''; this.pwNew = ''; this.pwConfirm = '';
             } catch (e) {

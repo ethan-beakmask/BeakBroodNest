@@ -11,7 +11,7 @@
                     <div class="sidebar-owner-group">
                         <div class="sidebar-owner-label" x-text="ownerDisplayName(group.owner)"></div>
                         <template x-for="c in group.items" :key="c.slug">
-                            <a :href="'/bc/canvas/' + c.slug"
+                            <a :href="'/beakcortex/canvas/' + c.slug"
                                class="sidebar-item"
                                :class="{ active: c.slug == canvasId }">
                                 <span class="icon icon-wb">W</span>

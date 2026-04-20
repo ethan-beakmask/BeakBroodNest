@@ -1,0 +1,23 @@
+<!-- 動態導覽選單 (Alpine.js) - 橫向展開 -->
+<div x-data="navMenu()" x-init="load()" style="display:inline-flex; gap:4px;">
+    <template x-for="item in items" :key="item.id">
+        <a :href="item.url" class="btn btn-sm"
+           :class="currentPath.startsWith(item.url) ? 'btn-secondary' : 'btn-outline-secondary'"
+           style="font-size:12px;" x-text="item.name"></a>
+    </template>
+</div>
+
+<script>
+function navMenu() {
+    return {
+        items: [],
+        currentPath: window.location.pathname,
+        async load() {
+            try {
+                const resp = await fetch('/beakcortex/api/nav-menu');
+                if (resp.ok) this.items = await resp.json();
+            } catch (e) { console.error('navMenu load error:', e); }
+        }
+    };
+}
+</script>

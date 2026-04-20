@@ -63,7 +63,7 @@ check_ubuntu() {
 resolve_ports() {
     NGINX_PORT="$CORTEX_PORT"
     APP_PORT=$((CORTEX_PORT + 1))
-    HEALTH_URL="http://127.0.0.1:${APP_PORT}/bc/health"
+    HEALTH_URL="http://127.0.0.1:${APP_PORT}/beakcortex/health"
 }
 
 health_check() {
@@ -563,7 +563,7 @@ server {
         proxy_send_timeout 60s;
     }
 
-    location /bc/health {
+    location /beakcortex/health {
         proxy_pass http://beakcortex;
         access_log off;
     }
@@ -586,7 +586,7 @@ echo ""
 echo "============================================"
 log_info "全新安裝完成"
 echo ""
-echo "  URL:     http://${SERVER_IP}:${NGINX_PORT}/bc/login"
+echo "  URL:     http://${SERVER_IP}:${NGINX_PORT}/beakcortex/login"
 echo "  帳號:    ${AUTH_USER}"
 echo "  原子數:  $(get_atom_count)"
 echo ""

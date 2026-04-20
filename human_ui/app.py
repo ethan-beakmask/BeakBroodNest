@@ -30,7 +30,7 @@ from core import relations as rel_service
 from human_ui.routes import ALL_BLUEPRINTS
 
 
-app = Flask(__name__, static_url_path='/bc/static')
+app = Flask(__name__, static_url_path='/beakcortex/static')
 logger = logging.getLogger('beak_cortex')
 
 # ============================================================
@@ -98,24 +98,24 @@ def _check_auth():
         _migrations_done = True
 
     exempt = (
-        request.path == '/bc/login'
-        or request.path == '/bc/health'
-        or request.path.startswith('/bc/static/')
-        or request.path.startswith('/bc/api/worker/')
+        request.path == '/beakcortex/login'
+        or request.path == '/beakcortex/health'
+        or request.path.startswith('/beakcortex/static/')
+        or request.path.startswith('/beakcortex/api/worker/')
     )
     if exempt:
         return
 
     if not session.get('authenticated'):
-        if request.is_json or request.path.startswith('/bc/api/'):
+        if request.is_json or request.path.startswith('/beakcortex/api/'):
             return jsonify({'error': '未登入'}), 401
-        return redirect('/bc/login')
+        return redirect('/beakcortex/login')
 
 
-@app.route('/bc/login', methods=['GET', 'POST'])
+@app.route('/beakcortex/login', methods=['GET', 'POST'])
 def login_page():
     if session.get('authenticated'):
-        return redirect('/bc/')
+        return redirect('/beakcortex/')
 
     error = None
     if request.method == 'POST':
@@ -143,23 +143,23 @@ def login_page():
             session.permanent = True
             session['authenticated'] = True
             session['username'] = username
-            return redirect('/bc/')
+            return redirect('/beakcortex/')
         else:
             error = '帳號或密碼錯誤'
 
     return render_template('login.html', error=error)
 
 
-@app.route('/bc/logout')
+@app.route('/beakcortex/logout')
 def logout():
     last_slug = session.get('last_canvas_slug')
     session.clear()
     if last_slug:
         session['last_canvas_slug'] = last_slug
-    return redirect('/bc/login')
+    return redirect('/beakcortex/login')
 
 
-@app.route('/bc/api/auth/change-password', methods=['PUT'])
+@app.route('/beakcortex/api/auth/change-password', methods=['PUT'])
 def change_password():
     """變更密碼"""
     data = request.get_json()
@@ -196,7 +196,7 @@ def change_password():
 # 健康檢查端點
 # ============================================================
 
-@app.route("/bc/health")
+@app.route("/beakcortex/health")
 def _health_check():
     """回傳服務狀態與知識原子數量"""
     try:
@@ -206,9 +206,9 @@ def _health_check():
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": str(e)}), 503
 
-# 註冊所有 Blueprint（統一前綴 /bc）
+# 註冊所有 Blueprint（統一前綴 /beakcortex）
 for bp in ALL_BLUEPRINTS:
-    app.register_blueprint(bp, url_prefix='/bc')
+    app.register_blueprint(bp, url_prefix='/beakcortex')
 
 
 @app.context_processor
@@ -226,8 +226,8 @@ def inject_cache_ver():
 # 頁面路由
 # ============================================================
 
-@app.route('/bc/')
-@app.route('/bc')
+@app.route('/beakcortex/')
+@app.route('/beakcortex')
 def index():
     """首頁：導向最後存取的白板，若無則導向第一個"""
     last_slug = session.get('last_canvas_slug')
@@ -237,7 +237,7 @@ def index():
                 Canvas.slug == last_slug, Canvas.is_archived == False
             ).first()
             if canvas:
-                return redirect(f'/bc/canvas/{last_slug}')
+                return redirect(f'/beakcortex/canvas/{last_slug}')
 
         canvas = s.query(Canvas).filter(Canvas.is_archived == False).order_by(Canvas.id).first()
         if not canvas:
@@ -245,10 +245,10 @@ def index():
             s.add(canvas)
             s.flush()
         slug = canvas.slug
-    return redirect(f'/bc/canvas/{slug}')
+    return redirect(f'/beakcortex/canvas/{slug}')
 
 
-@app.route('/bc/canvas/<slug>')
+@app.route('/beakcortex/canvas/<slug>')
 def canvas_page(slug):
     """白板頁面"""
     with session_scope() as s:
@@ -260,25 +260,25 @@ def canvas_page(slug):
     return render_template('whiteboard.html', canvas_slug=slug)
 
 
-@app.route('/bc/help')
+@app.route('/beakcortex/help')
 def help_page():
     """線上說明"""
     return render_template('help.html')
 
 
-@app.route('/bc/card-test')
+@app.route('/beakcortex/card-test')
 def card_test_page():
     """Card Editor 獨立測試頁"""
     return render_template('card_test.html')
 
 
-@app.route('/bc/dashboard')
+@app.route('/beakcortex/dashboard')
 def dashboard_page():
     """Orchestrator 儀錶板"""
     return render_template('dashboard.html')
 
 
-@app.route('/bc/observe')
+@app.route('/beakcortex/observe')
 def observe_page():
     """Pipeline 觀察儀表板"""
     return render_template('observe.html')

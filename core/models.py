@@ -760,6 +760,31 @@ class Message(Base):
         }
 
 
+class NavMenu(Base):
+    """動態導覽選單項目"""
+    __tablename__ = 'nav_menu'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    icon: Mapped[str] = mapped_column(String(50), default='')
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'url': self.url,
+            'icon': self.icon,
+            'sort_order': self.sort_order,
+            'is_active': self.is_active,
+        }
+
+
 class SystemConfig(Base):
     """鍵值對儲存：認證帳密、Flask secret key、部署模式等。"""
     __tablename__ = 'system_config'

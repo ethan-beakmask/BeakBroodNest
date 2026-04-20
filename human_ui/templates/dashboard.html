@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orchestrator Dashboard - BeakCortex</title>
-    <link rel="stylesheet" href="/bc/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="/bc/static/css/dashboard.css?v={{ cache_ver }}">
-    <script defer src="/bc/static/vendor/alpine.min.js"></script>
+    <link rel="stylesheet" href="/beakcortex/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/beakcortex/static/css/dashboard.css?v={{ cache_ver }}">
+    <script defer src="/beakcortex/static/vendor/alpine.min.js"></script>
 </head>
 <body>
 
@@ -15,12 +15,12 @@
     <!-- Navbar -->
     <nav class="navbar navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/bc/dashboard">BeakCortex <span class="text-secondary fw-normal">/ Orchestrator</span></a>
+            <a class="navbar-brand" href="/beakcortex/dashboard">BeakCortex <span class="text-secondary fw-normal">/ Orchestrator</span></a>
             <div class="d-flex align-items-center gap-3">
                 <span class="badge" :class="polling ? 'bg-success' : 'bg-secondary'"
                       @click="togglePolling()" role="button"
                       x-text="polling ? 'LIVE ' + pollInterval + 's' : 'PAUSED'"></span>
-                <a href="/bc/" class="btn btn-outline-secondary btn-sm">白板</a>
+                {% include 'partials/nav_menu.html' %}
             </div>
         </div>
     </nav>
@@ -195,7 +195,7 @@
     </div>
 </div>
 
-<script src="/bc/static/vendor/bootstrap-5.3.3-dist/js/bootstrap.bundle.min.js"></script>
-<script src="/bc/static/js/dashboard.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/vendor/bootstrap-5.3.3-dist/js/bootstrap.bundle.min.js"></script>
+<script src="/beakcortex/static/js/dashboard.js?v={{ cache_ver }}"></script>
 </body>
 </html>

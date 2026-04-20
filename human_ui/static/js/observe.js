@@ -42,7 +42,7 @@ function observeApp() {
 
         async fetchStats() {
             try {
-                const resp = await fetch('/bc/api/observe/stats');
+                const resp = await fetch('/beakcortex/api/observe/stats');
                 this.stats = await resp.json();
             } catch (e) {
                 console.error('fetchStats error:', e);
@@ -51,7 +51,7 @@ function observeApp() {
 
         async fetchConversations() {
             try {
-                const resp = await fetch('/bc/api/observe/conversations?limit=50');
+                const resp = await fetch('/beakcortex/api/observe/conversations?limit=50');
                 this.conversations = await resp.json();
                 this.applySorting();
             } catch (e) {
@@ -61,7 +61,7 @@ function observeApp() {
 
         async fetchPipelines() {
             try {
-                const resp = await fetch('/bc/api/observe/pipeline-runs?limit=50');
+                const resp = await fetch('/beakcortex/api/observe/pipeline-runs?limit=50');
                 this.pipelines = await resp.json();
             } catch (e) {
                 console.error('fetchPipelines error:', e);
@@ -70,7 +70,7 @@ function observeApp() {
 
         async fetchSessions() {
             try {
-                const resp = await fetch('/bc/api/observe/session-logs?limit=50');
+                const resp = await fetch('/beakcortex/api/observe/session-logs?limit=50');
                 this.sessions = await resp.json();
             } catch (e) {
                 console.error('fetchSessions error:', e);
@@ -80,8 +80,8 @@ function observeApp() {
         async fetchReviews() {
             try {
                 const [reviewsResp, globalResp] = await Promise.all([
-                    fetch('/bc/api/observe/reviews'),
-                    fetch('/bc/api/observe/reviews/global-stats'),
+                    fetch('/beakcortex/api/observe/reviews'),
+                    fetch('/beakcortex/api/observe/reviews/global-stats'),
                 ]);
                 this.reviews = await reviewsResp.json();
                 const globalData = await globalResp.json();
@@ -110,7 +110,7 @@ function observeApp() {
 
         async showSignals(convId) {
             try {
-                const resp = await fetch(`/bc/api/observe/conversations/${convId}/signals`);
+                const resp = await fetch(`/beakcortex/api/observe/conversations/${convId}/signals`);
                 this.signalDetail = await resp.json();
                 const modal = new bootstrap.Modal(document.getElementById('signalModal'));
                 modal.show();
