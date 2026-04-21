@@ -31,9 +31,9 @@
     <!-- Header -->
     <div class="app-header">
         <div class="logo">BeakCortex</div>
+        {% include 'partials/nav_menu.html' %}
         <div class="header-right">
-{% include 'partials/nav_menu.html' %}
-<button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
+            <button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
             <a href="/beakcortex/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
             <a href="/beakcortex/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>

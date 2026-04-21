@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orchestrator Dashboard - BeakCortex</title>
+    <link rel="icon" href="/beakcortex/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/beakcortex/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/beakcortex/static/css/dashboard.css?v={{ cache_ver }}">
     <script defer src="/beakcortex/static/vendor/alpine.min.js"></script>
@@ -13,14 +14,17 @@
 <div x-data="dashboard()" x-init="init()">
 
     <!-- Navbar -->
-    <nav class="navbar navbar-dark bg-dark">
+    <nav class="navbar navbar-light bg-white border-bottom">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/beakcortex/dashboard">BeakCortex <span class="text-secondary fw-normal">/ Orchestrator</span></a>
+            <div class="d-flex align-items-center gap-3">
+                <a class="navbar-brand mb-0" href="/beakcortex/"
+                   style="font-weight:700;font-size:15px;color:#3b82f6;letter-spacing:-0.3px;">BeakCortex</a>
+                {% include 'partials/nav_menu.html' %}
+            </div>
             <div class="d-flex align-items-center gap-3">
                 <span class="badge" :class="polling ? 'bg-success' : 'bg-secondary'"
                       @click="togglePolling()" role="button"
                       x-text="polling ? 'LIVE ' + pollInterval + 's' : 'PAUSED'"></span>
-                {% include 'partials/nav_menu.html' %}
             </div>
         </div>
     </nav>

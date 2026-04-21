@@ -1,21 +1,59 @@
 <!-- 動態導覽選單 (Alpine.js) - 橫向展開 -->
 <div x-data="navMenu()" x-init="load()" style="display:inline-flex; gap:4px;">
     <template x-for="item in items" :key="item.id">
-        <a :href="item.url" class="btn btn-sm"
-           :class="currentPath.startsWith(item.url) ? 'btn-secondary' : 'btn-outline-secondary'"
-           style="font-size:12px;" x-text="item.name"></a>
+        <a :href="item.url" class="bc-nav-item"
+           :class="item.url === activeUrl ? 'bc-nav-active' : ''"
+           x-text="item.name"></a>
     </template>
 </div>
+
+<style>
+.bc-nav-item {
+    display: inline-block;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 4px;
+    border: 1px solid #adb5bd;
+    color: #6c757d;
+    text-decoration: none;
+    transition: all 0.15s;
+}
+.bc-nav-item:hover {
+    background: #f8f9fa;
+    color: #495057;
+    text-decoration: none;
+}
+.bc-nav-active {
+    background: #6c757d;
+    color: #fff;
+    border-color: #6c757d;
+}
+.bc-nav-active:hover {
+    background: #5a6268;
+    color: #fff;
+}
+</style>
 
 <script>
 function navMenu() {
     return {
         items: [],
         currentPath: window.location.pathname,
+        activeUrl: '',
         async load() {
             try {
                 const resp = await fetch('/beakcortex/api/nav-menu');
-                if (resp.ok) this.items = await resp.json();
+                if (resp.ok) {
+                    this.items = await resp.json();
+                    let best = '';
+                    for (const item of this.items) {
+                        if (this.currentPath.startsWith(item.url) && item.url.length > best.length) {
+                            best = item.url;
+                        }
+                    }
+                    this.activeUrl = best;
+                }
             } catch (e) { console.error('navMenu load error:', e); }
         }
     };

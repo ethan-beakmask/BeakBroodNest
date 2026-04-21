@@ -396,7 +396,7 @@
                     <button class="btn btn-sm"
                             :style="ceStagingOpen ? 'background:#1e40af;color:#93c5fd;border:1px solid #3b82f6;' : 'background:rgba(255,255,255,0.1);color:#94a3b8;border:1px solid rgba(255,255,255,0.15);'"
                             @click="toggleStaging()"
-                            x-text="'抓重點' + (stagingItems.length > 0 ? ' (' + stagingItems.length + ')' : '')"></button>
+                            x-text="'擷取' + (stagingItems.length > 0 ? ' (' + stagingItems.length + ')' : '')"></button>
                     <button class="btn btn-sm" style="background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.3);"
                             @click="saveAllAndClose()">全部儲存並關閉</button>
                     <button class="btn btn-sm btn-secondary" @click="discardAllAndClose()">全部不儲存並關閉</button>
@@ -448,11 +448,15 @@
                         <div class="ce-pane-toolbar" x-show="!ed.readonly">
                             <button @click="ceCmd('bold', ed.id)" title="粗體"><b>B</b></button>
                             <button @click="ceCmd('italic', ed.id)" title="斜體"><i>I</i></button>
+                            <button @click="ceCmd('underline', ed.id)" title="底線"><u>U</u></button>
                             <button @click="ceCmd('strike', ed.id)" title="刪除線"><s>S</s></button>
-                            <button @click="ceCmd('code', ed.id)" title="程式碼">&lt;&gt;</button>
+                            <button @click="ceCmd('code', ed.id)" title="行內程式碼">&lt;&gt;</button>
+                            <button @click="ceCmd('highlight', ed.id)" title="螢光標記" style="background:#fef08a;color:#854d0e;border-radius:2px;">H</button>
                             <span class="tb-sep"></span>
+                            <button @click="ceCmd('h1', ed.id)" title="H1">H1</button>
                             <button @click="ceCmd('h2', ed.id)" title="H2">H2</button>
                             <button @click="ceCmd('h3', ed.id)" title="H3">H3</button>
+                            <button @click="ceCmd('h4', ed.id)" title="H4">H4</button>
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('bulletList', ed.id)" title="清單">-</button>
                             <button @click="ceCmd('orderedList', ed.id)" title="編號">1.</button>
@@ -460,6 +464,10 @@
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('blockquote', ed.id)" title="引用">"</button>
                             <button @click="ceCmd('codeBlock', ed.id)" title="程式區塊">{}</button>
+                            <button @click="ceCmd('hr', ed.id)" title="分隔線">--</button>
+                            <span class="tb-sep"></span>
+                            <button @click="ceInsertLink(ed.id)" title="連結">Lk</button>
+                            <button @click="ceCmd('table', ed.id)" title="表格">Tb</button>
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('undo', ed.id)" title="復原">&#8630;</button>
                             <button @click="ceCmd('redo', ed.id)" title="重做">&#8631;</button>

@@ -10,6 +10,7 @@ import { TaskItem } from '@tiptap/extension-task-item'
 import { Image } from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { Typography } from '@tiptap/extension-typography'
+import { Highlight } from '@tiptap/extension-highlight'
 import { Markdown } from 'tiptap-markdown'
 import { StructuredEntry } from './structured-entry.js'
 import { SlashCommand } from './slash-command.js'
@@ -39,6 +40,7 @@ class CardEditor {
                     codeBlock: {
                         HTMLAttributes: { class: 'code-block' },
                     },
+                    link: { openOnClick: false },
                 }),
                 Table.configure({ resizable: true }),
                 TableRow,
@@ -52,6 +54,7 @@ class CardEditor {
                 Placeholder.configure({
                     placeholder: '開始撰寫...',
                 }),
+                Highlight.configure({ multicolor: false }),
                 Typography,
                 Markdown.configure({
                     html: true,
@@ -130,6 +133,7 @@ class CardEditor {
             case 'underline': chain.toggleMark('underline').run(); break
             case 'strike': chain.toggleStrike().run(); break
             case 'code': chain.toggleCode().run(); break
+            case 'highlight': chain.toggleHighlight().run(); break
             case 'h1': chain.toggleHeading({ level: 1 }).run(); break
             case 'h2': chain.toggleHeading({ level: 2 }).run(); break
             case 'h3': chain.toggleHeading({ level: 3 }).run(); break
