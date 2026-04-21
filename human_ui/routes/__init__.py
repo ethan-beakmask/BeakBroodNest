@@ -14,6 +14,8 @@ from .entry_schemas import bp as entry_schemas_bp
 from .entries import bp as entries_bp
 from .unified_relations import bp as unified_relations_bp
 from .project import bp as project_bp
+from .gantt_mvp import bp as gantt_mvp_bp
+from .gantt_routes import bp as gantt_routes_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -29,4 +31,6 @@ ALL_BLUEPRINTS = [
     entries_bp,
     unified_relations_bp,
     project_bp,
+    gantt_mvp_bp,
+    gantt_routes_bp,
 ]

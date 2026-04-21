@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gantt MVP - BeakCortex</title>
+    <link rel="icon" href="/beakcortex/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/beakcortex/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/beakcortex/static/vendor/frappe-gantt/frappe-gantt.min.css">
+    <style>
+        body { background: #f8f9fa; font-family: -apple-system, 'Segoe UI', sans-serif; }
+
+        /* -- Mode Tabs -- */
+        .mode-tab { cursor: pointer; padding: 6px 16px; border-radius: 4px 4px 0 0;
+                    font-size: 13px; font-weight: 600; background: #e9ecef; color: #495057;
+                    border: 1px solid #dee2e6; border-bottom: none; }
+        .mode-tab.active { background: #fff; color: #212529; }
+
+        /* -- Frappe Gantt overrides -- */
+        .gantt-container { overflow-x: auto; background: #fff; border: 1px solid #dee2e6; border-radius: 4px; }
+        .gantt .bar { cursor: grab; }
+        .gantt .bar:active { cursor: grabbing; }
+        .gantt .bar-label { font-size: 11px; font-weight: 600; }
+        .gantt .grid-header { fill: #f1f3f5; }
+        .gantt .grid-row { fill: #fff; }
+        .gantt .grid-row:nth-child(even) { fill: #f8f9fa; }
+        .gantt .tick { stroke: #e9ecef; }
+        .gantt .today-highlight { fill: rgba(220, 53, 69, 0.06); }
+        .gantt .arrow { stroke: #dc2626; stroke-width: 1.5; }
+
+        /* -- Mermaid -- */
+        #mermaid-container { background: #fff; border: 1px solid #dee2e6; border-radius: 4px;
+                             padding: 20px; overflow-x: auto; }
+        #mermaid-container svg { max-width: none; }
+
+        /* -- View switcher pills -- */
+        .view-pill { display: inline-block; padding: 3px 10px; font-size: 11px; cursor: pointer;
+                     border: 1px solid #dee2e6; border-radius: 3px; color: #6c757d;
+                     margin-right: 4px; }
+        .view-pill.active { background: #495057; color: #fff; border-color: #495057; }
+
+        /* -- Toast -- */
+        .toast-area { position: fixed; bottom: 20px; right: 20px; z-index: 9999; }
+        .toast-msg { background: #198754; color: #fff; padding: 8px 16px; border-radius: 4px;
+                     font-size: 13px; margin-top: 4px; opacity: 0; transition: opacity 0.3s;
+                     box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .toast-msg.show { opacity: 1; }
+
+        /* -- Legend -- */
+        .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+
+        /* -- Mermaid code textarea -- */
+        #mermaid-source { font-family: Consolas, 'Courier New', monospace; font-size: 12px;
+                          background: #1e1e1e; color: #d4d4d4; border: 1px solid #444;
+                          border-radius: 4px; padding: 12px; resize: vertical; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-light bg-white border-bottom">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center gap-3">
+                <span style="font-weight:700;font-size:15px;color:#3b82f6;letter-spacing:-0.3px;">BeakCortex</span>
+                <span class="text-muted" style="font-size:13px;">Gantt MVP</span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span id="project-name" class="text-muted" style="font-size:12px;"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-3">
+
+        <!-- Mode Tabs -->
+        <div class="d-flex gap-1 mb-0">
+            <div class="mode-tab active" data-mode="frappe" onclick="switchMode('frappe')">
+                Mode B: Frappe Gantt (Human)
+            </div>
+            <div class="mode-tab" data-mode="mermaid" onclick="switchMode('mermaid')">
+                Mode A: Mermaid Gantt (AI)
+            </div>
+        </div>
+
+        <!-- ========== FRAPPE GANTT MODE ========== -->
+        <div id="frappe-panel" style="background:#fff; border:1px solid #dee2e6; border-top:none; padding:16px; border-radius:0 4px 4px 4px;">
+
+            <!-- Controls -->
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <div>
+                    <span class="view-pill active" data-view="Day" onclick="setView('Day')">Day</span>
+                    <span class="view-pill" data-view="Week" onclick="setView('Week')">Week</span>
+                    <span class="view-pill" data-view="Month" onclick="setView('Month')">Month</span>
+                </div>
+                <div class="d-flex align-items-center gap-3" style="font-size:11px; color:#6c757d;">
+                    <span><span class="legend-dot" style="background:#dc2626;"></span>High</span>
+                    <span><span class="legend-dot" style="background:#f59e0b;"></span>Medium</span>
+                    <span><span class="legend-dot" style="background:#6c757d;"></span>Low</span>
+                    <span><span class="legend-dot" style="background:#198754;"></span>Done</span>
+                </div>
+            </div>
+
+            <!-- Gantt chart container -->
+            <div id="frappe-gantt"></div>
+
+            <div class="mt-2" style="font-size:11px; color:#6c757d;">
+                拖拉色條可變更日期 | 拖拉色條右端可調整工期 | 變更會即時寫入資料庫
+            </div>
+        </div>
+
+        <!-- ========== MERMAID MODE ========== -->
+        <div id="mermaid-panel" style="display:none; background:#fff; border:1px solid #dee2e6; border-top:none; padding:16px; border-radius:0 4px 4px 4px;">
+
+            <div class="mb-3" style="font-size:12px; color:#6c757d;">
+                AI 產生的 Mermaid 語法 -- 可複製給 AI 重新生成，或手動編輯後重新渲染
+            </div>
+
+            <!-- Mermaid source (editable) -->
+            <textarea id="mermaid-source" class="w-100 mb-2" rows="12" spellcheck="false"></textarea>
+            <div class="mb-3">
+                <button class="btn btn-sm btn-outline-secondary" onclick="renderMermaid()">
+                    Re-render
+                </button>
+                <button class="btn btn-sm btn-outline-secondary ms-1" onclick="copyMermaid()">
+                    Copy to clipboard
+                </button>
+            </div>
+
+            <!-- Rendered diagram -->
+            <div id="mermaid-container"></div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Toast area -->
+<div class="toast-area" id="toast-area"></div>
+
+<!-- Libraries -->
+<script src="/beakcortex/static/vendor/frappe-gantt/frappe-gantt.min.js"></script>
+<script src="/beakcortex/static/vendor/mermaid/mermaid.min.js"></script>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+var ganttInstance = null;
+var rawTasks = [];
+var rawDeps = [];
+var currentView = 'Day';
+var currentMode = 'frappe';
+
+var URGENCY_COLORS = { H: '#dc2626', M: '#f59e0b', L: '#6c757d' };
+
+// ============================================================
+// Init
+// ============================================================
+mermaid.initialize({ startOnLoad: false, theme: 'default', gantt: { fontSize: 12 } });
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadData();
+});
+
+// ============================================================
+// Data loading
+// ============================================================
+function loadData() {
+    fetch('/beakcortex/gantt-mvp/api/tasks')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            rawTasks = data.tasks || [];
+            rawDeps = data.deps || [];
+            document.getElementById('project-name').textContent = data.canvas_name || '';
+            renderFrappeGantt();
+            generateMermaidSource();
+        })
+        .catch(function(e) {
+            console.error('load error:', e);
+            toast('Failed to load data', true);
+        });
+}
+
+// ============================================================
+// Frappe Gantt
+// ============================================================
+function renderFrappeGantt() {
+    var container = document.getElementById('frappe-gantt');
+    container.innerHTML = '';
+
+    // Build dependency map: entry_id -> comma-separated entry_ids it depends on
+    // Frappe Gantt: "dependencies" means "this task depends on (is blocked by)"
+    // Our data: from blocks to, meaning "to" depends on "from"
+    var depMap = {};
+    for (var i = 0; i < rawDeps.length; i++) {
+        var dep = rawDeps[i];
+        var toId = 'task-' + dep.to_entry_id;
+        var fromId = 'task-' + dep.from_entry_id;
+        if (!depMap[toId]) depMap[toId] = [];
+        depMap[toId].push(fromId);
+    }
+
+    var tasks = [];
+    var today = new Date();
+    var todayStr = today.toISOString().slice(0, 10);
+
+    for (var i = 0; i < rawTasks.length; i++) {
+        var t = rawTasks[i];
+        var taskId = 'task-' + t.entry_id;
+
+        // Determine start/end dates
+        var start = t.planned_start ? t.planned_start.slice(0, 10) : '';
+        var end = t.actual_end ? t.actual_end.slice(0, 10) : '';
+
+        // If no start, default to today
+        if (!start) start = todayStr;
+        // If no end, default to start + 3 days
+        if (!end) {
+            var s = new Date(start);
+            s.setDate(s.getDate() + 3);
+            end = s.toISOString().slice(0, 10);
+        }
+
+        // Ensure end >= start
+        if (end < start) {
+            var tmp = end; end = start; start = tmp;
+        }
+
+        // Progress based on status
+        var progress = 0;
+        if (t.status === 'done') progress = 100;
+        else if (t.status === 'in_progress') progress = 50;
+
+        // Custom class for urgency coloring
+        var customClass = 'bar-urgency-' + (t.urgency || 'M');
+        if (t.status === 'done') customClass = 'bar-done';
+
+        tasks.push({
+            id: taskId,
+            name: t.title,
+            start: start,
+            end: end,
+            progress: progress,
+            dependencies: (depMap[taskId] || []).join(', '),
+            custom_class: customClass,
+            _entry_id: t.entry_id,
+            _urgency: t.urgency,
+            _status: t.status,
+            _category: t.category,
+        });
+    }
+
+    if (tasks.length === 0) {
+        container.innerHTML = '<div class="text-muted text-center py-4">No tasks with date data</div>';
+        return;
+    }
+
+    ganttInstance = new Gantt('#frappe-gantt', tasks, {
+        view_mode: currentView,
+        date_format: 'YYYY-MM-DD',
+        popup_trigger: 'click',
+        custom_popup_html: function(task) {
+            var startStr = task._start ? task._start.toISOString().slice(0, 10) : '?';
+            var endStr = task._end ? task._end.toISOString().slice(0, 10) : '?';
+            return '<div class="details-container" style="padding:10px;min-width:200px;">' +
+                '<h5 style="font-size:13px;margin:0 0 6px;">' + task.name + '</h5>' +
+                '<p style="font-size:11px;color:#6c757d;margin:0;">' +
+                startStr + ' ~ ' + endStr +
+                ' | ' + (task._status || 'pending') +
+                ' | ' + (task._category || '') +
+                '</p></div>';
+        },
+        date_change: function(task, start, end) {
+            var entryId = task._entry_id;
+            var newStart = start.toISOString().slice(0, 16);
+            var newEnd = end.toISOString().slice(0, 16);
+
+            // Update local state
+            for (var i = 0; i < rawTasks.length; i++) {
+                if (rawTasks[i].entry_id === entryId) {
+                    rawTasks[i].planned_start = newStart;
+                    rawTasks[i].actual_end = newEnd;
+                    break;
+                }
+            }
+
+            // Write back to DB
+            fetch('/beakcortex/gantt-mvp/api/tasks/' + entryId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    planned_start: newStart,
+                    actual_end: newEnd,
+                }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(resp) {
+                if (resp.ok) {
+                    toast('Updated: ' + task.name);
+                    // Refresh Mermaid source to stay in sync
+                    generateMermaidSource();
+                } else {
+                    toast('Error: ' + (resp.error || 'unknown'), true);
+                }
+            })
+            .catch(function(e) {
+                toast('Network error', true);
+            });
+        },
+        progress_change: function(task, progress) {
+            // Map progress to status
+            var newStatus;
+            if (progress >= 100) newStatus = 'done';
+            else if (progress > 0) newStatus = 'in_progress';
+            else newStatus = 'pending';
+
+            var entryId = task._entry_id;
+            fetch('/beakcortex/gantt-mvp/api/tasks/' + entryId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(resp) {
+                if (resp.ok) toast('Status -> ' + newStatus);
+            });
+        },
+    });
+
+    // Inject urgency color styles
+    injectGanttStyles();
+}
+
+function injectGanttStyles() {
+    if (document.getElementById('gantt-urgency-styles')) return;
+    var style = document.createElement('style');
+    style.id = 'gantt-urgency-styles';
+    style.textContent =
+        '.bar-urgency-H .bar-progress { fill: #dc2626; }' +
+        '.bar-urgency-H .bar { fill: #fca5a5; stroke: #dc2626; }' +
+        '.bar-urgency-M .bar-progress { fill: #f59e0b; }' +
+        '.bar-urgency-M .bar { fill: #fde68a; stroke: #f59e0b; }' +
+        '.bar-urgency-L .bar-progress { fill: #6c757d; }' +
+        '.bar-urgency-L .bar { fill: #d1d5db; stroke: #6c757d; }' +
+        '.bar-done .bar-progress { fill: #198754; }' +
+        '.bar-done .bar { fill: #a3cfbb; stroke: #198754; }';
+    document.head.appendChild(style);
+}
+
+function setView(mode) {
+    currentView = mode;
+    if (ganttInstance) {
+        ganttInstance.change_view_mode(mode);
+    }
+    document.querySelectorAll('.view-pill').forEach(function(el) {
+        el.classList.toggle('active', el.dataset.view === mode);
+    });
+}
+
+// ============================================================
+// Mermaid Gantt
+// ============================================================
+function generateMermaidSource() {
+    var lines = [];
+    lines.push('gantt');
+    lines.push('    title Cortex -- Project Timeline');
+    lines.push('    dateFormat YYYY-MM-DD');
+    lines.push('    axisFormat %m/%d');
+    lines.push('');
+
+    // Group by category
+    var cats = {};
+    var catOrder = [];
+    for (var i = 0; i < rawTasks.length; i++) {
+        var t = rawTasks[i];
+        var cat = t.category || 'Other';
+        if (!cats[cat]) { cats[cat] = []; catOrder.push(cat); }
+        cats[cat].push(t);
+    }
+
+    var today = new Date().toISOString().slice(0, 10);
+
+    for (var ci = 0; ci < catOrder.length; ci++) {
+        var cat = catOrder[ci];
+        lines.push('    section ' + cat);
+
+        var items = cats[cat];
+        for (var ti = 0; ti < items.length; ti++) {
+            var t = items[ti];
+            var start = t.planned_start ? t.planned_start.slice(0, 10) : today;
+            var end = t.actual_end ? t.actual_end.slice(0, 10) : '';
+
+            // Status prefix for Mermaid
+            var statusTag = '';
+            if (t.status === 'done') statusTag = 'done, ';
+            else if (t.status === 'in_progress') statusTag = 'active, ';
+
+            // Sanitize title for Mermaid (remove colons, commas)
+            var title = t.title.replace(/[:;,]/g, ' ').trim();
+            var taskId = 't' + t.entry_id;
+
+            if (end && end >= start) {
+                lines.push('    ' + title + '  :' + statusTag + taskId + ', ' + start + ', ' + end);
+            } else {
+                lines.push('    ' + title + '  :' + statusTag + taskId + ', ' + start + ', 3d');
+            }
+        }
+        lines.push('');
+    }
+
+    var source = lines.join('\n');
+    document.getElementById('mermaid-source').value = source;
+}
+
+function renderMermaid() {
+    var source = document.getElementById('mermaid-source').value.trim();
+    var container = document.getElementById('mermaid-container');
+    container.innerHTML = '';
+
+    // Mermaid needs a fresh element with a unique id
+    var el = document.createElement('div');
+    el.id = 'mermaid-render-' + Date.now();
+    container.appendChild(el);
+
+    mermaid.render(el.id + '-svg', source)
+        .then(function(result) {
+            container.innerHTML = result.svg;
+        })
+        .catch(function(e) {
+            container.innerHTML = '<div class="text-danger p-3">Render error: ' + e.message + '</div>';
+        });
+}
+
+function copyMermaid() {
+    var source = document.getElementById('mermaid-source').value;
+    navigator.clipboard.writeText(source).then(function() {
+        toast('Copied to clipboard');
+    });
+}
+
+// ============================================================
+// Mode switching
+// ============================================================
+function switchMode(mode) {
+    currentMode = mode;
+    document.querySelectorAll('.mode-tab').forEach(function(el) {
+        el.classList.toggle('active', el.dataset.mode === mode);
+    });
+    document.getElementById('frappe-panel').style.display = mode === 'frappe' ? '' : 'none';
+    document.getElementById('mermaid-panel').style.display = mode === 'mermaid' ? '' : 'none';
+
+    if (mode === 'mermaid') {
+        renderMermaid();
+    }
+}
+
+// ============================================================
+// Toast
+// ============================================================
+function toast(msg, isError) {
+    var area = document.getElementById('toast-area');
+    var el = document.createElement('div');
+    el.className = 'toast-msg';
+    if (isError) el.style.background = '#dc3545';
+    el.textContent = msg;
+    area.appendChild(el);
+    requestAnimationFrame(function() { el.classList.add('show'); });
+    setTimeout(function() {
+        el.classList.remove('show');
+        setTimeout(function() { el.remove(); }, 300);
+    }, 2500);
+}
+</script>
+
+</body>
+</html>

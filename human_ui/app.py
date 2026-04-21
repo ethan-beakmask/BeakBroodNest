@@ -103,6 +103,7 @@ def _check_auth():
         or request.path == '/beakcortex/health'
         or request.path.startswith('/beakcortex/static/')
         or request.path.startswith('/beakcortex/api/worker/')
+        or request.path.startswith('/beakcortex/gantt-mvp')
     )
     if exempt:
         return

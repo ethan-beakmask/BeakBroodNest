@@ -876,6 +876,7 @@ class EntrySchemaField(Base):
     dimension: Mapped[str | None] = mapped_column(
         String(1), nullable=True
     )  # W=who, H=what, T=when, P=where, Y=why
+    is_frozen: Mapped[bool] = mapped_column(Boolean, default=False)
 
     schema: Mapped["EntrySchema"] = relationship(back_populates='fields')
 

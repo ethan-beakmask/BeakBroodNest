@@ -1,0 +1,207 @@
+/**
+ * Gantt 自訂樣式
+ * 覆蓋 Frappe Gantt 預設 + 依賴違反 + baseline + 狀態類別
+ */
+
+/* ========== Urgency 色條 ========== */
+
+.bar-urgency-H .bar-progress { fill: #dc2626; }
+.bar-urgency-H .bar { fill: #fca5a5; stroke: #dc2626; stroke-width: 0.5; }
+
+.bar-urgency-M .bar-progress { fill: #f59e0b; }
+.bar-urgency-M .bar { fill: #fde68a; stroke: #f59e0b; stroke-width: 0.5; }
+
+.bar-urgency-L .bar-progress { fill: #6c757d; }
+.bar-urgency-L .bar { fill: #d1d5db; stroke: #6c757d; stroke-width: 0.5; }
+
+.bar-done .bar-progress { fill: #198754; }
+.bar-done .bar { fill: #a3cfbb; stroke: #198754; stroke-width: 0.5; }
+
+/* ========== 尚未開始（baseline fallback） ========== */
+
+.bar-not-started .bar {
+    fill: #f1f3f5;
+    stroke: #adb5bd;
+    stroke-width: 1;
+    stroke-dasharray: 4 2;
+}
+.bar-not-started .bar-progress { fill: transparent; }
+.bar-not-started .bar-label { fill: #868e96; }
+
+/* ========== 依賴違反 ========== */
+
+path.dep-violated {
+    stroke: var(--bs-danger, #dc3545) !important;
+    stroke-width: 2.5px !important;
+    stroke-dasharray: none !important;
+}
+
+polygon.dep-violation-marker {
+    pointer-events: all;
+    cursor: default;
+}
+
+/* ========== 一般箭頭強化可見度 ========== */
+
+.gantt .arrow path {
+    stroke: #888;
+    stroke-width: 1.4;
+}
+
+/* ========== View pills ========== */
+
+.view-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    color: #6c757d;
+    margin-right: 4px;
+    user-select: none;
+}
+.view-pill.active {
+    background: #495057;
+    color: #fff;
+    border-color: #495057;
+}
+
+/* ========== Mode tabs ========== */
+
+.mode-tab {
+    cursor: pointer;
+    padding: 6px 16px;
+    border-radius: 4px 4px 0 0;
+    font-size: 13px;
+    font-weight: 600;
+    background: #e9ecef;
+    color: #495057;
+    border: 1px solid #dee2e6;
+    border-bottom: none;
+    user-select: none;
+}
+.mode-tab.active {
+    background: #fff;
+    color: #212529;
+}
+
+/* ========== Legend ========== */
+
+.legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 4px;
+}
+
+/* ========== Toast ========== */
+
+.toast-area {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+.toast-msg {
+    background: #198754;
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.toast-msg.show { opacity: 1; }
+.toast-msg.error { background: #dc3545; }
+
+/* ========== Mermaid 暗色文字框 ========== */
+
+#mermaid-source {
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 12px;
+    resize: vertical;
+}
+
+/* ========== Warnings panel ========== */
+
+.warnings-panel {
+    font-size: 12px;
+    max-height: 120px;
+    overflow-y: auto;
+}
+.warnings-panel .badge {
+    font-size: 10px;
+    font-weight: 500;
+}
+
+/* ========== 右鍵選單 ========== */
+
+.bg-context-menu {
+    position: fixed;
+    z-index: 10000;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    padding: 4px 0;
+    min-width: 180px;
+    font-size: 13px;
+}
+.bg-context-menu-item {
+    padding: 6px 14px;
+    cursor: pointer;
+    color: #212529;
+    white-space: nowrap;
+}
+.bg-context-menu-item:hover {
+    background: #f1f3f5;
+}
+.bg-context-menu-sep {
+    height: 1px;
+    background: #e9ecef;
+    margin: 4px 0;
+}
+
+/* ========== Confirm Modal ========== */
+
+.bg-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bg-modal-box {
+    background: #fff;
+    border-radius: 6px;
+    padding: 20px 24px;
+    min-width: 320px;
+    max-width: 480px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.bg-modal-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+.bg-modal-body {
+    font-size: 13px;
+    color: #495057;
+    margin-bottom: 16px;
+}
+.bg-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
