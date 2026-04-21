@@ -10,13 +10,20 @@ logger = logging.getLogger('beak_cortex')
 
 
 def _raw_query(sql, params=None):
-    """執行 raw SQL 並回傳 list of dict"""
+    """執行 raw SQL 並回傳 list of dict。表不存在時回傳空列表。"""
     engine = get_engine()
-    with engine.connect() as conn:
-        result = conn.execute(sql if hasattr(sql, 'text') else __import__('sqlalchemy').text(sql),
-                              params or {})
-        columns = list(result.keys())
-        return [dict(zip(columns, row)) for row in result.fetchall()]
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(sql if hasattr(sql, 'text') else __import__('sqlalchemy').text(sql),
+                                  params or {})
+            columns = list(result.keys())
+            return [dict(zip(columns, row)) for row in result.fetchall()]
+    except Exception as e:
+        err_msg = str(e)
+        if 'UndefinedTable' in err_msg or 'does not exist' in err_msg:
+            logger.debug(f'Table not found, returning empty: {err_msg[:100]}')
+            return []
+        raise
 
 
 def _serialize(rows):

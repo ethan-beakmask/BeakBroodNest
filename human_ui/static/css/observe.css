@@ -1,19 +1,19 @@
-/* BeakCortex Observe Dashboard */
+/* BeakCortex Observe Dashboard -- 淺色風格 */
 
 body {
-    background: #1a1d23;
-    color: #e0e0e0;
+    background: #f8f9fa;
+    color: #212529;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     font-size: 14px;
 }
 
 .navbar {
-    border-bottom: 1px solid #2a2d35;
+    border-bottom: 1px solid #dee2e6;
 }
 
 .stat-card {
-    background: #22252d;
-    border: 1px solid #2a2d35;
+    background: #fff;
+    border: 1px solid #dee2e6;
     transition: border-color 0.15s;
 }
 
@@ -29,52 +29,52 @@ body {
 
 .stat-label {
     font-size: 0.75rem;
-    color: #888;
+    color: #6c757d;
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
 /* Tabs */
 .nav-tabs {
-    border-bottom-color: #2a2d35;
+    border-bottom-color: #dee2e6;
 }
 
 .nav-tabs .nav-link {
-    color: #888;
+    color: #6c757d;
     border: none;
     padding: 0.5rem 1rem;
 }
 
 .nav-tabs .nav-link.active {
-    color: #e0e0e0;
+    color: #212529;
     background: transparent;
     border-bottom: 2px solid #3b82f6;
 }
 
 .nav-tabs .nav-link:hover {
-    color: #ccc;
+    color: #495057;
     border-color: transparent;
 }
 
 /* Table */
 .table {
-    color: #d0d0d0;
+    color: #212529;
     --bs-table-bg: transparent;
-    --bs-table-hover-bg: rgba(59, 130, 246, 0.08);
+    --bs-table-hover-bg: rgba(59, 130, 246, 0.06);
 }
 
 .table-dark {
-    --bs-table-bg: #22252d;
-    --bs-table-color: #aaa;
+    --bs-table-bg: #343a40;
+    --bs-table-color: #dee2e6;
 }
 
 .table > :not(caption) > * > * {
-    border-bottom-color: #2a2d35;
+    border-bottom-color: #dee2e6;
 }
 
 .table-danger {
-    --bs-table-bg: rgba(220, 53, 69, 0.15);
-    --bs-table-hover-bg: rgba(220, 53, 69, 0.2);
+    --bs-table-bg: rgba(220, 53, 69, 0.1);
+    --bs-table-hover-bg: rgba(220, 53, 69, 0.15);
 }
 
 .sortable-th {
@@ -89,41 +89,41 @@ body {
 
 /* Cards */
 .card {
-    background: #22252d;
-    border-color: #2a2d35;
-    color: #d0d0d0;
+    background: #fff;
+    border-color: #dee2e6;
+    color: #212529;
 }
 
 .card-header {
-    background: #1e2128;
-    border-bottom-color: #2a2d35;
+    background: #f8f9fa;
+    border-bottom-color: #dee2e6;
     font-weight: 600;
     font-size: 0.875rem;
 }
 
 /* Progress bars */
 .progress {
-    background: #2a2d35;
+    background: #e9ecef;
     border-radius: 3px;
 }
 
 /* Signal detail modal */
 .modal-content {
-    background: #1e2128;
-    border-color: #2a2d35;
-    color: #d0d0d0;
+    background: #fff;
+    border-color: #dee2e6;
+    color: #212529;
 }
 
 .modal-header {
-    border-bottom-color: #2a2d35;
+    border-bottom-color: #dee2e6;
 }
 
 .modal-footer {
-    border-top-color: #2a2d35;
+    border-top-color: #dee2e6;
 }
 
 .signal-card {
-    border-color: #333;
+    border-color: #dee2e6;
 }
 
 .signal-card .card-header {
@@ -132,7 +132,7 @@ body {
 }
 
 .signal-content {
-    background: #1a1d23;
+    background: #f8f9fa;
     padding: 0.5rem;
     border-radius: 4px;
     font-family: 'Fira Code', 'Consolas', monospace;
@@ -140,7 +140,7 @@ body {
     word-break: break-all;
     max-height: 200px;
     overflow-y: auto;
-    color: #999;
+    color: #495057;
 }
 
 /* Badge refinements */
@@ -155,14 +155,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-    background: #1a1d23;
+    background: #f8f9fa;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #444;
+    background: #adb5bd;
     border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    background: #6c757d;
 }
