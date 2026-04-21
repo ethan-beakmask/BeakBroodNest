@@ -1,0 +1,121 @@
+/**
+ * Gantt Renderer 樣式
+ * 前綴：bt-gantt-
+ */
+
+/* ========== Cell 容器 ========== */
+
+.bt-gantt-cell {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.bt-gantt-nodata {
+    color: #bbb;
+    font-size: 11px;
+}
+
+/* ========== 軌道（色條背景） ========== */
+
+.bt-gantt-track {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 20px;
+}
+
+/* ========== 色條 ========== */
+
+.bt-gantt-bar {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    border-radius: 2px;
+    min-width: 2px;
+    pointer-events: none;
+    transition: opacity 0.15s;
+}
+
+.bt-gantt-bar:hover {
+    opacity: 0.85;
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.3);
+}
+
+.bt-gantt-bar-planned {
+    opacity: 0.3;
+    z-index: 1;
+}
+
+.bt-gantt-bar-actual {
+    opacity: 1;
+    z-index: 2;
+}
+
+/* ========== 刻度參考線（cell 內） ========== */
+
+.bt-gantt-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid #e8e8e8;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ========== Today 標線（cell 內薄線） ========== */
+
+.bt-gantt-today-cell {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px dashed #dc2626;
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* ========== SVG Overlay ========== */
+
+.bt-gantt-wrapper {
+    position: relative;
+}
+
+.bt-gantt-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* ========== 時間刻度標頭 ========== */
+
+.bt-gantt-scale {
+    position: relative;
+    height: 22px;
+    font-size: 10px;
+    font-family: Consolas, 'Courier New', monospace;
+    color: #888;
+    border-bottom: 1px solid #ddd;
+    background: #f8f8f8;
+    overflow: hidden;
+}
+
+.bt-gantt-scale-tick {
+    position: absolute;
+    top: 3px;
+    white-space: nowrap;
+    transform: translateX(-50%);
+    border-left: 1px solid #ccc;
+    padding-left: 3px;
+    height: 16px;
+    line-height: 16px;
+}
+
+/* ========== gantt 欄位 TD 允許 overflow visible ========== */
+
+td[data-column-id] .bt-gantt-cell {
+    overflow: visible;
+}

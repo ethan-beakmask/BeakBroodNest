@@ -1,0 +1,150 @@
+/* BeakCortex Project Dashboard */
+
+body {
+    background: #f8f9fa;
+    color: #212529;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+}
+
+.stat-card {
+    background: #fff;
+    border: 1px solid #dee2e6;
+    transition: border-color 0.15s;
+}
+.stat-card:hover { border-color: #3b82f6; }
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.stat-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Table */
+.task-table {
+    font-size: 13px;
+}
+.task-table th {
+    background: #f1f3f5;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #495057;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+.task-table th:hover {
+    color: #212529;
+}
+.task-table th .sort-icon {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    color: #adb5bd;
+}
+.task-table th .sort-icon.active {
+    color: #3b82f6;
+}
+.task-table td {
+    vertical-align: middle;
+}
+.task-table tr.row-done {
+    opacity: 0.5;
+}
+.task-table tr.row-blocked td:first-child {
+    border-left: 3px solid #dc3545;
+}
+
+/* Badges */
+.badge-h { background: #dc3545; color: #fff; }
+.badge-m { background: #fd7e14; color: #fff; }
+.badge-l { background: #6c757d; color: #fff; }
+
+.badge-pending { background: #e9ecef; color: #495057; }
+.badge-in_progress { background: #0d6efd; color: #fff; }
+.badge-done { background: #198754; color: #fff; }
+.badge-blocked { background: #dc3545; color: #fff; }
+
+/* Category filter pills */
+.filter-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 12px;
+    border-radius: 12px;
+    border: 1px solid #dee2e6;
+    color: #495057;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+}
+.filter-pill:hover { border-color: #3b82f6; color: #3b82f6; }
+.filter-pill.active {
+    background: #3b82f6;
+    color: #fff;
+    border-color: #3b82f6;
+}
+
+/* Dependency graph */
+.dep-item {
+    font-size: 12px;
+    padding: 4px 0;
+    color: #495057;
+}
+.dep-arrow {
+    color: #dc3545;
+    font-weight: 600;
+    margin: 0 6px;
+}
+
+/* Inline datetime input */
+.inline-dt {
+    font-size: 11px !important;
+    padding: 2px 4px !important;
+    height: 26px !important;
+    border: 1px solid #dee2e6;
+    border-radius: 3px;
+    color: #495057;
+    background: #fff;
+    min-width: 140px;
+}
+.inline-dt:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+.inline-dt::-webkit-calendar-picker-indicator {
+    opacity: 0.5;
+    cursor: pointer;
+}
+
+/* Clickable status badge */
+.editable-status {
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.editable-status:hover {
+    transform: scale(1.1);
+    box-shadow: 0 0 4px rgba(0,0,0,0.2);
+}
+
+/* Gantt container */
+#gantt-container {
+    overflow-x: auto;
+}
+#gantt-container .bt-split-right {
+    overflow-x: auto;
+}
+
+/* Progress bar */
+.progress-thin {
+    height: 6px;
+    border-radius: 3px;
+}

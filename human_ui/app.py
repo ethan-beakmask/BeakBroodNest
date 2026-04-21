@@ -285,6 +285,17 @@ def observe_page():
     return render_template('observe.html')
 
 
+@app.route('/beakcortex/project/<slug>')
+def project_page(slug):
+    """專案 Dashboard（唯讀進度總覽）"""
+    from core.models import Canvas
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
+        if not canvas:
+            abort(404)
+    return render_template('project.html', canvas_slug=slug)
+
+
 # ============================================================
 # 啟動
 # ============================================================

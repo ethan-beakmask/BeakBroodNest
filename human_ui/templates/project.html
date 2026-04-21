@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>專案 Dashboard - BeakCortex</title>
+    <link rel="icon" href="/beakcortex/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/beakcortex/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/beakcortex/static/vendor/beaktrellis/beak-trellis.css">
+    <link rel="stylesheet" href="/beakcortex/static/vendor/beaktrellis/renderers/gantt.css">
+    <link rel="stylesheet" href="/beakcortex/static/css/project.css?v={{ cache_ver }}">
+    <script defer src="/beakcortex/static/vendor/alpine.min.js"></script>
+</head>
+<body>
+
+<div x-data="projectApp()" x-init="init()">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-light bg-white border-bottom">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center gap-3">
+                <a class="navbar-brand mb-0" href="/beakcortex/"
+                   style="font-weight:700;font-size:15px;color:#3b82f6;letter-spacing:-0.3px;">BeakCortex</a>
+                {% include 'partials/nav_menu.html' %}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted" style="font-size:12px;" x-text="lastRefresh"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-3">
+
+        <!-- Title -->
+        <div class="d-flex align-items-center justify-content-between mb-3">
+            <h5 class="mb-0" x-text="canvas.name || 'Loading...'"></h5>
+            <div class="d-flex gap-2">
+                <a :href="'/beakcortex/canvas/' + canvasSlug" class="btn btn-sm btn-outline-secondary">
+                    開啟白板
+                </a>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="row g-2 mb-3">
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value" x-text="summary.total"></div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value text-primary" x-text="summary.in_progress"></div>
+                        <div class="stat-label">進行中</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value text-success" x-text="summary.done"></div>
+                        <div class="stat-label">已完成</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value text-warning" x-text="summary.pending"></div>
+                        <div class="stat-label">待辦</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-2">
+                        <div class="stat-value text-danger" x-text="summary.blocked"></div>
+                        <div class="stat-label">阻塞</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="mb-3">
+            <div class="progress progress-thin">
+                <div class="progress-bar bg-success" :style="'width:' + pctDone + '%'"></div>
+                <div class="progress-bar bg-primary" :style="'width:' + pctProgress + '%'"></div>
+                <div class="progress-bar bg-warning" :style="'width:' + pctPending + '%'"></div>
+            </div>
+            <div class="d-flex justify-content-between mt-1" style="font-size:11px;color:#6c757d;">
+                <span x-text="pctDone + '% done'"></span>
+                <span>H:<span x-text="summary.h"></span> M:<span x-text="summary.m"></span> L:<span x-text="summary.l"></span></span>
+            </div>
+        </div>
+
+        <!-- View Tabs -->
+        <ul class="nav nav-tabs mb-3">
+            <li class="nav-item">
+                <a class="nav-link" :class="activeTab === 'table' && 'active'"
+                   href="#" @click.prevent="activeTab = 'table'">表格</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="activeTab === 'gantt' && 'active'"
+                   href="#" @click.prevent="switchToGantt()">甘特圖</a>
+            </li>
+        </ul>
+
+        <!-- TABLE VIEW -->
+        <div x-show="activeTab === 'table'">
+
+            <!-- Filters -->
+            <div class="mb-3 d-flex gap-2 flex-wrap">
+                <span class="filter-pill" :class="filterCat === '' && 'active'"
+                      @click="filterCat = ''">ALL</span>
+                <template x-for="cat in categories" :key="cat">
+                    <span class="filter-pill" :class="filterCat === cat && 'active'"
+                          @click="filterCat = filterCat === cat ? '' : cat"
+                          x-text="cat"></span>
+                </template>
+                <span class="ms-3 filter-pill" :class="filterStatus !== '' && 'active'"
+                      @click="cycleStatusFilter()">
+                    <span x-text="filterStatusLabel()"></span>
+                </span>
+            </div>
+
+            <!-- Task Table -->
+            <div class="card">
+                <div class="card-body p-0">
+                    <table class="table table-hover task-table mb-0">
+                        <thead>
+                            <tr>
+                                <th @click="toggleSort('urgency')" style="width:50px;">
+                                    緊急
+                                    <span class="sort-icon" :class="sortCol==='urgency' && 'active'"
+                                          x-text="sortIcon('urgency')"></span>
+                                </th>
+                                <th @click="toggleSort('title')">
+                                    項目
+                                    <span class="sort-icon" :class="sortCol==='title' && 'active'"
+                                          x-text="sortIcon('title')"></span>
+                                </th>
+                                <th @click="toggleSort('category')" style="width:100px;">
+                                    分類
+                                    <span class="sort-icon" :class="sortCol==='category' && 'active'"
+                                          x-text="sortIcon('category')"></span>
+                                </th>
+                                <th @click="toggleSort('status')" style="width:80px;">
+                                    狀態
+                                    <span class="sort-icon" :class="sortCol==='status' && 'active'"
+                                          x-text="sortIcon('status')"></span>
+                                </th>
+                                <th style="width:150px;">預計開始</th>
+                                <th style="width:150px;">預計結束</th>
+                                <th style="width:160px;">阻塞</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="item in filteredItems" :key="item.atom_id">
+                                <tr :class="{
+                                    'row-done': item.status === 'done',
+                                    'row-blocked': item.is_blocked
+                                }">
+                                    <td>
+                                        <span class="badge"
+                                              :class="'badge-' + item.urgency.toLowerCase()"
+                                              x-text="item.urgency"></span>
+                                    </td>
+                                    <td>
+                                        <span x-text="item.title"></span>
+                                        <div class="text-muted" style="font-size:11px;" x-text="item.description"></div>
+                                    </td>
+                                    <td><span class="text-muted" x-text="item.category"></span></td>
+                                    <td>
+                                        <span class="badge editable-status"
+                                              :class="item.is_blocked ? 'badge-blocked' : 'badge-' + item.status"
+                                              x-text="item.is_blocked ? 'BLOCKED' : statusLabel(item.status)"
+                                              @click="cycleItemStatus(item)"
+                                              :title="'click to change'"></span>
+                                    </td>
+                                    <td>
+                                        <input type="datetime-local"
+                                               class="form-control form-control-sm inline-dt"
+                                               :value="item.planned_start || ''"
+                                               @change="saveField(item, 'planned_start', $event.target.value)">
+                                    </td>
+                                    <td>
+                                        <input type="datetime-local"
+                                               class="form-control form-control-sm inline-dt"
+                                               :value="item.actual_end || ''"
+                                               @change="saveField(item, 'actual_end', $event.target.value)">
+                                    </td>
+                                    <td>
+                                        <template x-if="item.blockers.length > 0">
+                                            <div style="font-size:11px;">
+                                                <template x-for="b in item.blockers" :key="b.atom_id">
+                                                    <div class="text-danger" x-text="b.title"></div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="filteredItems.length === 0">
+                                <tr><td colspan="7" class="text-center text-muted py-4">無符合條件的項目</td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Dependencies -->
+            <template x-if="blocks.length > 0">
+                <div class="card mt-3">
+                    <div class="card-header bg-white py-2" style="font-size:13px;font-weight:600;">
+                        依賴關係 (<span x-text="blocks.length"></span>)
+                    </div>
+                    <div class="card-body py-2">
+                        <template x-for="b in blocks" :key="b.from_id + '-' + b.to_id">
+                            <div class="dep-item">
+                                <span x-text="b.from_title"></span>
+                                <span class="dep-arrow">blocks</span>
+                                <span x-text="b.to_title"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- GANTT VIEW -->
+        <div x-show="activeTab === 'gantt'">
+            <div id="gantt-scale" style="margin-bottom:0;"></div>
+            <div id="gantt-container" style="min-height:300px;"></div>
+            <div class="mt-2" style="font-size:11px;color:#6c757d;">
+                依 category 分組 | 紅色虛線 = blocks 依賴 | 紅色垂直虛線 = TODAY
+                | 欄位寬度可拖曳分隔線調整
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- BeakTrellis (loaded synchronously before Alpine) -->
+<script src="/beakcortex/static/vendor/beaktrellis/beak-tree-model.js"></script>
+<script src="/beakcortex/static/vendor/beaktrellis/beak-trellis.js"></script>
+<script src="/beakcortex/static/vendor/beaktrellis/beak-trellis-splitpane.js"></script>
+<script src="/beakcortex/static/vendor/beaktrellis/renderers/beak-tree-lines-dom.js"></script>
+<script src="/beakcortex/static/vendor/beaktrellis/renderers/cell-widgets.js"></script>
+<script src="/beakcortex/static/vendor/beaktrellis/renderers/gantt.js"></script>
+
+<script>
+function projectApp() {
+    return {
+        canvasSlug: '{{ canvas_slug }}',
+        canvas: {},
+        summary: { total: 0, pending: 0, in_progress: 0, done: 0, blocked: 0, h: 0, m: 0, l: 0 },
+        items: [],
+        blocks: [],
+        trellisData: [],
+        categories: [],
+        filterCat: '',
+        filterStatus: '',
+        sortCol: '',
+        sortAsc: true,
+        lastRefresh: '',
+        activeTab: 'table',
+        _ganttGrid: null,
+        _ganttRendered: false,
+
+        async init() {
+            await this.load();
+        },
+
+        async load() {
+            try {
+                const resp = await fetch(`/beakcortex/api/project/${this.canvasSlug}/summary`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                this.canvas = data.canvas;
+                this.summary = data.summary;
+                this.items = data.items;
+                this.blocks = data.blocks;
+                this.trellisData = data.trellis_data || [];
+
+                const cats = new Set();
+                for (const item of this.items) {
+                    if (item.category) cats.add(item.category);
+                }
+                this.categories = [...cats].sort();
+
+                const now = new Date();
+                this.lastRefresh = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+            } catch (e) {
+                console.error('load error:', e);
+            }
+        },
+
+        async saveField(item, fieldName, value) {
+            try {
+                const resp = await fetch(`/beakcortex/api/entries/${item.entry_id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ field_values: { [fieldName]: value || '' } }),
+                });
+                if (resp.ok) {
+                    item[fieldName] = value;
+                    this._ganttRendered = false;
+                    await this.load();
+                    if (this.activeTab === 'gantt') {
+                        this.$nextTick(() => this.renderGantt());
+                    }
+                }
+            } catch (e) {
+                console.error('saveField error:', e);
+            }
+        },
+
+        async cycleItemStatus(item) {
+            if (item.is_blocked) return;
+            const cycle = ['pending', 'in_progress', 'done'];
+            const idx = cycle.indexOf(item.status);
+            const next = cycle[(idx + 1) % cycle.length];
+            const fields = { status: next };
+            if (next === 'in_progress' && !item.actual_start) {
+                fields.actual_start = new Date().toISOString().slice(0, 16);
+            }
+            if (next === 'done' && !item.actual_end) {
+                fields.actual_end = new Date().toISOString().slice(0, 16);
+            }
+            try {
+                const resp = await fetch(`/beakcortex/api/entries/${item.entry_id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ field_values: fields }),
+                });
+                if (resp.ok) {
+                    item.status = next;
+                    if (fields.actual_start) item.actual_start = fields.actual_start;
+                    if (fields.actual_end) item.actual_end = fields.actual_end;
+                    this._ganttRendered = false;
+                    await this.load();
+                    if (this.activeTab === 'gantt') {
+                        this.$nextTick(() => this.renderGantt());
+                    }
+                }
+            } catch (e) {
+                console.error('cycleItemStatus error:', e);
+            }
+        },
+
+        switchToGantt() {
+            this.activeTab = 'gantt';
+            // Always reload data + re-render when switching to gantt
+            var self = this;
+            this.load().then(function() {
+                self.$nextTick(function() { self.renderGantt(); });
+            });
+        },
+
+        renderGantt() {
+            const container = document.getElementById('gantt-container');
+            if (!container || this.trellisData.length === 0) return;
+
+            // Destroy previous instance
+            if (this._ganttGrid) {
+                this._ganttGrid.destroy();
+                this._ganttGrid = null;
+            }
+            container.innerHTML = '';
+
+            var statusRenderer = CellWidgets.statusBadge({
+                field: 'status',
+                map: {
+                    done:        { label: 'Done',    color: '#fff', bg: '#198754' },
+                    in_progress: { label: 'Working', color: '#fff', bg: '#0d6efd' },
+                    pending:     { label: 'Pending', color: '#495057', bg: '#e9ecef' }
+                }
+            });
+
+            var urgencyRenderer = function(value, node) {
+                var u = node.data.urgency || 'M';
+                var colors = { H: '#dc2626', M: '#f59e0b', L: '#6c757d' };
+                var c = colors[u] || '#6c757d';
+                var span = document.createElement('span');
+                span.style.cssText = 'display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:700;color:#fff;background:' + c;
+                span.textContent = u;
+                return span;
+            };
+
+            var ganttRenderer = GanttRenderer.create({
+                barHeight: 10,
+                showToday: true,
+            });
+
+            var self = this;
+
+            this._ganttGrid = new BeakTrellis(container, {
+                data: this.trellisData,
+                treeMode: 'gantt',
+                splitPane: true,
+                checkbox: false,
+                maxExpanded: 200,
+                columns: [
+                    { id: 'urgency', label: '', width: 36, renderer: urgencyRenderer, resizable: false, sortable: false },
+                    { id: 'status', label: '狀態', width: 64, renderer: statusRenderer, resizable: false, sortable: false },
+                    { id: 'gantt', label: '甘特圖', width: 900, renderer: ganttRenderer, sortable: false },
+                ],
+                onRowClick: function(node) {
+                    console.log('clicked:', node.id, node.label);
+                },
+            });
+
+            // 欄寬拖曳結束後重繪 overlay
+            var rightPanel = container.querySelector('.bt-split-right');
+            if (rightPanel) {
+                var resizeObs = new ResizeObserver(function() {
+                    if (self._ganttGrid) {
+                        ganttRenderer.resetCache();
+                        ganttRenderer.drawOverlay(self._ganttGrid);
+                    }
+                });
+                resizeObs.observe(rightPanel);
+                this._ganttResizeObs = resizeObs;
+            }
+
+            // 時間刻度標頭
+            var scaleEl = document.getElementById('gantt-scale');
+            if (scaleEl) {
+                scaleEl.innerHTML = '';
+                var scaleHeader = ganttRenderer.createScaleHeader(this._ganttGrid);
+                if (scaleHeader) scaleEl.appendChild(scaleHeader);
+            }
+
+            this._ganttRendered = true;
+        },
+
+        get pctDone() {
+            if (!this.summary.total) return 0;
+            return Math.round(this.summary.done / this.summary.total * 100);
+        },
+        get pctProgress() {
+            if (!this.summary.total) return 0;
+            return Math.round(this.summary.in_progress / this.summary.total * 100);
+        },
+        get pctPending() {
+            if (!this.summary.total) return 0;
+            return 100 - this.pctDone - this.pctProgress;
+        },
+
+        get filteredItems() {
+            let result = this.items;
+            if (this.filterCat) {
+                result = result.filter(i => i.category === this.filterCat);
+            }
+            if (this.filterStatus) {
+                if (this.filterStatus === 'blocked') {
+                    result = result.filter(i => i.is_blocked);
+                } else {
+                    result = result.filter(i => i.status === this.filterStatus);
+                }
+            }
+            if (this.sortCol) {
+                const col = this.sortCol;
+                const asc = this.sortAsc;
+                const order = {
+                    urgency: { H: 0, M: 1, L: 2 },
+                    status: { pending: 0, in_progress: 1, done: 2 },
+                };
+                result = [...result].sort((a, b) => {
+                    let va = a[col] || '';
+                    let vb = b[col] || '';
+                    if (order[col]) {
+                        va = order[col][va] ?? 9;
+                        vb = order[col][vb] ?? 9;
+                    }
+                    if (va < vb) return asc ? -1 : 1;
+                    if (va > vb) return asc ? 1 : -1;
+                    return 0;
+                });
+            }
+            return result;
+        },
+
+        toggleSort(col) {
+            if (this.sortCol === col) {
+                this.sortAsc = !this.sortAsc;
+            } else {
+                this.sortCol = col;
+                this.sortAsc = true;
+            }
+        },
+
+        sortIcon(col) {
+            if (this.sortCol !== col) return '\u2195';
+            return this.sortAsc ? '\u2191' : '\u2193';
+        },
+
+        statusLabel(s) {
+            const m = { pending: 'Pending', in_progress: 'Working', done: 'Done' };
+            return m[s] || s;
+        },
+
+        cycleStatusFilter() {
+            const cycle = ['', 'pending', 'in_progress', 'done', 'blocked'];
+            const idx = cycle.indexOf(this.filterStatus);
+            this.filterStatus = cycle[(idx + 1) % cycle.length];
+        },
+
+        filterStatusLabel() {
+            const m = { '': 'ALL STATUS', pending: 'PENDING', in_progress: 'WORKING', done: 'DONE', blocked: 'BLOCKED' };
+            return m[this.filterStatus] || 'ALL STATUS';
+        },
+    };
+}
+</script>
+
+</body>
+</html>

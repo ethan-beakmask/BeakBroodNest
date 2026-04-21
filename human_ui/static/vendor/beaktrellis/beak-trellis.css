@@ -1,0 +1,959 @@
+/**
+ * BeakTrellis 樣式
+ * 傳統、扁平化、嚴肅不花俏
+ */
+
+/* ========== 容器 ========== */
+.bt-container {
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #222;
+    background: #fff;
+    border: 1px solid #ccc;
+    overflow: auto;
+}
+
+/* ========== 表格 ========== */
+.bt-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+/* ========== 表頭 ========== */
+.bt-th {
+    background: #f0f0f0;
+    border-bottom: 2px solid #999;
+    border-right: 1px solid #ddd;
+    padding: 6px 8px;
+    text-align: left;
+    font-weight: bold;
+    white-space: nowrap;
+    user-select: none;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    position: relative;
+}
+
+.bt-th-content {
+    display: inline-block;
+}
+
+.bt-sortable {
+    cursor: pointer;
+}
+
+.bt-sortable:hover {
+    text-decoration: underline;
+}
+
+.bt-sort-icon {
+    font-size: 11px;
+    color: #666;
+}
+
+/* 欄寬拖曳 handle */
+.bt-resizer {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+}
+
+.bt-resizer:hover {
+    background: #999;
+}
+
+.bt-th:last-child {
+    border-right: none;
+}
+
+.bt-th-checkbox {
+    width: 32px;
+    text-align: center;
+    padding: 6px 4px;
+}
+
+.bt-th-tree {
+    min-width: 200px;
+}
+
+/* ========== Expand/Collapse 按鈕 ========== */
+.bt-ec-buttons {
+    float: right;
+    display: inline-flex;
+    gap: 2px;
+    margin-left: 8px;
+}
+
+.bt-ec-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 1px solid #bbb;
+    background: #f8f8f8;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+    color: #555;
+    cursor: pointer;
+    user-select: none;
+    font-family: Consolas, 'Courier New', monospace;
+}
+
+.bt-ec-btn:hover {
+    background: #e0e0e0;
+    border-color: #888;
+    color: #222;
+}
+
+/* ========== 表身 ========== */
+.bt-row {
+    border-bottom: 1px solid #eee;
+}
+
+.bt-row:hover,
+.bt-row-hover {
+    background: #f5f8fc;
+}
+
+.bt-row-focused {
+    background: #fff3cd;
+    animation: bt-focus-fade 1.5s ease-out forwards;
+}
+
+@keyframes bt-focus-fade {
+    0%   { background: #fff3cd; }
+    100% { background: #fdf6e3; }
+}
+
+.bt-row-checked {
+    background: #eef4ff;
+}
+
+.bt-row-checked:hover,
+.bt-row-checked.bt-row-hover {
+    background: #e0ecff;
+}
+
+.bt-row-active {
+    background: #e8edf4;
+}
+
+.bt-row-active:hover,
+.bt-row-active.bt-row-hover {
+    background: #dde4f0;
+}
+
+.bt-td {
+    padding: 4px 8px;
+    border-right: 1px solid #eee;
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bt-td:last-child {
+    border-right: none;
+}
+
+.bt-td-checkbox {
+    width: 32px;
+    text-align: center;
+    padding: 4px;
+}
+
+.bt-td-tree {
+    cursor: default;
+    overflow: visible;
+    white-space: nowrap;
+}
+
+.bt-has-children {
+    cursor: pointer;
+}
+
+/* ========== 表尾 ========== */
+.bt-footer-row {
+    background: #f8f8f8;
+    border-top: 2px solid #999;
+    font-weight: bold;
+}
+
+.bt-td-footer {
+    padding: 6px 8px;
+    border-right: 1px solid #ddd;
+    font-size: 12px;
+    color: #555;
+}
+
+/* ========== Tree Lines 渲染器 ========== */
+
+.bt-tree-cell {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    white-space: nowrap;
+}
+
+/* 縮排區塊（每層一個） */
+.bt-indent {
+    display: inline-block;
+    width: 20px;
+    height: 22px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+/* 垂直連線：祖先層還有後續兄弟節點 */
+.bt-indent-vline::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid #999;
+}
+
+/* 空白：祖先層是最後一個，不需要垂直線 */
+.bt-indent-blank {
+    /* 無需額外樣式 */
+}
+
+/* 分支連線 */
+.bt-branch {
+    display: inline-block;
+    width: 20px;
+    height: 22px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+/* 中間節點分支 ├── */
+.bt-branch-mid::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid #999;
+}
+
+.bt-branch-mid::after {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    width: 10px;
+    height: 0;
+    border-top: 1px solid #999;
+}
+
+/* 最後節點分支 └── */
+.bt-branch-last::before {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 0;
+    height: 50%;
+    width: 0;
+    border-left: 1px solid #999;
+}
+
+.bt-branch-last::after {
+    content: '';
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    width: 10px;
+    height: 0;
+    border-top: 1px solid #999;
+}
+
+/* 展開/收合按鈕 */
+.bt-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 16px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #555;
+    cursor: pointer;
+    flex-shrink: 0;
+    user-select: none;
+    border: 1px solid #bbb;
+    background: #f8f8f8;
+    margin-right: 4px;
+}
+
+.bt-toggle:hover {
+    background: #e8e8e8;
+    border-color: #888;
+    color: #222;
+}
+
+.bt-toggle-expanded {
+    color: #333;
+}
+
+.bt-toggle-collapsed {
+    color: #666;
+}
+
+/* 葉節點佔位 */
+.bt-leaf-spacer {
+    display: inline-block;
+    width: 28px;
+    flex-shrink: 0;
+}
+
+/* 節點標籤 */
+.bt-label {
+    padding-left: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ========== Checkbox ========== */
+.bt-checkbox,
+.bt-checkbox-all {
+    cursor: pointer;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+
+/* ========== Scope 渲染器共用 ========== */
+
+.bt-scope-cell {
+    display: flex;
+    align-items: center;
+    height: 22px;
+    white-space: nowrap;
+}
+
+/* scope 縮排區塊（每層一個） */
+.bt-scope-indent {
+    display: inline-block;
+    width: 18px;
+    height: 22px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+/* scope 啟用的垂直線 */
+.bt-scope-indent-active::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 2px solid #bbb;
+}
+
+/* 層級色彩變化 */
+.bt-scope-indent-active[data-level="0"]::before { border-color: #888; }
+.bt-scope-indent-active[data-level="1"]::before { border-color: #59c; }
+.bt-scope-indent-active[data-level="2"]::before { border-color: #5a5; }
+.bt-scope-indent-active[data-level="3"]::before { border-color: #c80; }
+.bt-scope-indent-active[data-level="4"]::before { border-color: #c55; }
+
+/* scope 節點標籤 */
+.bt-scope-label {
+    padding-left: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ========== scope-brackets 專用 ========== */
+
+.bt-scope-bracket {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 18px;
+    font-size: 14px;
+    font-weight: bold;
+    color: #666;
+    flex-shrink: 0;
+}
+
+.bt-scope-bracket-open {
+    color: #444;
+    font-size: 15px;
+}
+
+.bt-scope-bracket-collapsed {
+    color: #888;
+    font-size: 11px;
+    border: 1px solid #bbb;
+    background: #f8f8f8;
+    padding: 0 3px;
+    min-width: 24px;
+    margin-right: 2px;
+}
+
+.bt-scope-bracket-collapsed:hover {
+    background: #e8e8e8;
+    border-color: #888;
+    color: #333;
+}
+
+.bt-scope-bracket-close {
+    color: #444;
+    font-size: 15px;
+}
+
+.bt-scope-bracket-leaf,
+.bt-scope-bracket-single {
+    min-width: 8px;
+}
+
+/* 閉括號列的樣式 */
+.bt-row-closing {
+    border-bottom: none;
+}
+
+.bt-row-closing:hover {
+    background: transparent;
+}
+
+.bt-scope-closing {
+    height: 16px;
+}
+
+/* ========== scope-lines 專用 ========== */
+
+.bt-scope-marker {
+    display: inline-flex;
+    align-items: center;
+    min-width: 18px;
+    height: 22px;
+    position: relative;
+    flex-shrink: 0;
+}
+
+/* 展開的父節點：上邊界水平線 +--- */
+.bt-scope-marker-open::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 14px;
+    height: 0;
+    border-top: 2px solid #999;
+}
+
+.bt-scope-marker-open::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    bottom: 0;
+    width: 0;
+    border-left: 2px solid #999;
+}
+
+/* 收合的父節點 */
+.bt-scope-marker-collapsed {
+    font-size: 11px;
+    font-weight: bold;
+    color: #888;
+    border: 1px solid #bbb;
+    background: #f8f8f8;
+    padding: 0 3px;
+    min-width: 24px;
+    margin-right: 2px;
+}
+
+.bt-scope-marker-collapsed:hover {
+    background: #e8e8e8;
+    border-color: #888;
+    color: #333;
+}
+
+/* 葉節點佔位 */
+.bt-scope-marker-leaf {
+    min-width: 6px;
+}
+
+/* ========== 層級色彩輔助（選用） ========== */
+.bt-level-0 .bt-label { color: #111; font-weight: bold; }
+.bt-level-1 .bt-label { color: #333; }
+.bt-level-2 .bt-label { color: #555; }
+.bt-level-3 .bt-label { color: #666; }
+.bt-level-4 .bt-label { color: #777; }
+
+/* ========== 選取狀態 ========== */
+.bt-row.bt-row-selected {
+    background: #d0e4ff;
+}
+
+/* ========== 捲動提示 ========== */
+.bt-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.bt-container::-webkit-scrollbar-track {
+    background: #f0f0f0;
+}
+
+.bt-container::-webkit-scrollbar-thumb {
+    background: #bbb;
+    border-radius: 4px;
+}
+
+.bt-container::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* ========== Timeline 渲染器 ========== */
+
+.bt-timeline-cell {
+    width: 100%;
+    height: 22px;
+    display: flex;
+    align-items: center;
+}
+
+.bt-timeline-track {
+    width: 100%;
+    height: 18px;
+    background: #f0f0f0;
+    position: relative;
+    border: 1px solid #ddd;
+}
+
+.bt-timeline-bar {
+    position: absolute;
+    top: 1px;
+    border-radius: 2px;
+    opacity: 0.85;
+    transition: opacity 0.15s;
+    cursor: default;
+}
+
+.bt-timeline-bar:hover {
+    opacity: 1;
+    box-shadow: 0 0 3px rgba(0,0,0,0.3);
+}
+
+.bt-timeline-nodata {
+    color: #bbb;
+    font-size: 11px;
+}
+
+/* Timeline 刻度 */
+.bt-timeline-scale {
+    width: 100%;
+    height: 20px;
+    position: relative;
+    font-size: 10px;
+    color: #888;
+    border-bottom: 1px solid #ddd;
+}
+
+.bt-timeline-tick {
+    position: absolute;
+    top: 2px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    border-left: 1px solid #ccc;
+    padding-left: 3px;
+    height: 16px;
+    line-height: 16px;
+}
+
+/* ========== Sparkline 圖表 ========== */
+
+.bt-sparkline-wrap {
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 0;
+}
+
+.bt-sparkline {
+    display: block;
+}
+
+/* ========== 風險指標進度條 ========== */
+
+.bt-riskbar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 20px;
+}
+
+.bt-riskbar-track {
+    flex: 1;
+    height: 10px;
+    background: #eee;
+    border: 1px solid #ddd;
+    position: relative;
+    min-width: 40px;
+}
+
+.bt-riskbar-fill {
+    height: 100%;
+    transition: width 0.2s;
+}
+
+.bt-riskbar-value {
+    font-size: 11px;
+    font-weight: bold;
+    min-width: 24px;
+    text-align: right;
+}
+
+/* ========== Mini Tree ========== */
+
+/* miniTree 所在 cell 需允許多行 */
+td:has(.bt-minitree) {
+    white-space: normal;
+    overflow: visible;
+    vertical-align: top;
+}
+
+.bt-minitree {
+    font-size: 11px;
+    line-height: 1.5;
+    font-family: Consolas, 'Courier New', monospace;
+}
+
+.bt-mini-row {
+    white-space: nowrap;
+}
+
+.bt-mini-vline,
+.bt-mini-blank,
+.bt-mini-mid,
+.bt-mini-last {
+    display: inline-block;
+    width: 14px;
+    height: 16px;
+    vertical-align: middle;
+    position: relative;
+}
+
+.bt-mini-vline::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid #aaa;
+}
+
+.bt-mini-mid::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid #aaa;
+}
+
+.bt-mini-mid::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 50%;
+    width: 8px;
+    border-top: 1px solid #aaa;
+}
+
+.bt-mini-last::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 0;
+    height: 50%;
+    border-left: 1px solid #aaa;
+}
+
+.bt-mini-last::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 50%;
+    width: 8px;
+    border-top: 1px solid #aaa;
+}
+
+.bt-mini-label {
+    font-size: 11px;
+    color: #444;
+    vertical-align: middle;
+}
+
+/* ========== Radio Group ========== */
+
+/* radio/badge 所在 cell 允許內容不裁切 */
+td:has(.bt-radio-group),
+td:has(.bt-badge) {
+    overflow: visible;
+}
+
+.bt-radio-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.bt-radio-label {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    cursor: pointer;
+    color: #444;
+}
+
+.bt-radio-input {
+    cursor: pointer;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+}
+
+/* ========== Status Badge ========== */
+
+.bt-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+/* ========== DOM Overlay Tree Lines ========== */
+
+.bt-dom-wrapper {
+    position: relative;
+}
+
+.bt-dom-cell {
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.bt-dom-cell .bt-indent-blank {
+    display: inline-block;
+    width: 20px;
+    flex-shrink: 0;
+}
+
+.bt-dom-cell .bt-branch {
+    display: inline-block;
+    width: 20px;
+    flex-shrink: 0;
+}
+
+.bt-line-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* ========== DOM MiniTree ========== */
+
+.bt-minitree-dom {
+    position: relative;
+    padding: 2px 0;
+}
+
+.bt-mini-dom-row {
+    display: flex;
+    align-items: center;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+
+.bt-mini-spacer {
+    flex-shrink: 0;
+}
+
+.bt-mini-branch-spacer {
+    flex-shrink: 0;
+}
+
+.bt-mini-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.bt-mini-label {
+    font-size: 11px;
+    color: #444;
+}
+
+/* ========== Split Pane 雙面板 ========== */
+
+.bt-split {
+    display: flex;
+    overflow: hidden;
+}
+
+.bt-pane-left {
+    flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    width: 280px;
+    min-width: 120px;
+    border-right: none;
+}
+
+.bt-pane-left .bt-table-left {
+    table-layout: auto;
+    border-collapse: collapse;
+    min-width: 100%;
+}
+
+.bt-pane-right {
+    flex: 1;
+    overflow: auto;
+    min-width: 0;
+}
+
+.bt-pane-right .bt-table-right {
+    table-layout: fixed;
+    border-collapse: collapse;
+    min-width: 100%;
+}
+
+/* 分隔線 */
+.bt-splitter {
+    width: 5px;
+    flex-shrink: 0;
+    background: #d0d0d0;
+    cursor: col-resize;
+    position: relative;
+    z-index: 15;
+}
+
+.bt-splitter:hover {
+    background: #369;
+}
+
+/* Split Pane 表頭凍結 */
+.bt-pane-left .bt-th,
+.bt-pane-right .bt-th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+/* ========== 欄位拖曳換位 ========== */
+
+.bt-col-drag-ghost {
+    position: fixed;
+    z-index: 10000;
+    pointer-events: none;
+    opacity: 0.85;
+    background: #e0e8f0;
+    border: 1px solid #369;
+    padding: 4px 10px;
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    white-space: nowrap;
+}
+
+.bt-col-drop-indicator {
+    position: fixed;
+    z-index: 9999;
+    width: 3px;
+    background: #369;
+    pointer-events: none;
+    display: none;
+}
+
+.bt-th-dragging {
+    opacity: 0.4;
+}
+
+/* ========== Virtual Scroll ========== */
+
+.bt-vs-spacer td {
+    padding: 0;
+    border: 0;
+    line-height: 0;
+    font-size: 0;
+}
+
+.bt-vs-spacer {
+    border-bottom: none;
+}
+
+.bt-vs-spacer:hover {
+    background: transparent;
+}
+
+/* VS row: td-level height enforcement (overflow on tr is ignored by browsers) */
+.bt-vs-row > td {
+    overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* ========== BeakTrellis Row Drag ========== */
+
+.bt-draggable .bt-td-tree {
+    cursor: grab;
+}
+
+.bt-draggable .bt-toggle {
+    cursor: pointer;
+}
+
+.bt-trellis-drag-source {
+    opacity: 0.4;
+}
+
+.bt-trellis-drop-highlight {
+    background: #d0e8ff !important;
+    outline: 2px solid #369;
+    outline-offset: -2px;
+}
+
+.bt-trellis-drag-indicator {
+    position: absolute;
+    height: 2px;
+    background: #369;
+    pointer-events: none;
+    z-index: 20;
+}
+
+.bt-trellis-drag-indicator::before {
+    content: '';
+    position: absolute;
+    left: -4px;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    background: #369;
+    border-radius: 50%;
+}

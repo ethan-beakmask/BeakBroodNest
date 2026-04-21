@@ -52,11 +52,16 @@ function whiteboardCardEditorMixin() {
             var typeCfg = this.atomTypeConfig[atom.atom_type] || {};
             var editorId = ++this._ceSeq;
 
+            // 從白板卡片資料取得阻塞狀態
+            var ca = (this.canvasAtoms || []).find(function(c) { return c.atom_id === atomId; });
+            var isBlocked = ca ? !!ca.is_blocked : false;
+
             this.openEditors.push({
                 id: editorId,
                 atomId: atom.id,
                 title: atom.title || '',
                 atomType: typeCfg.label || atom.atom_type,
+                isBlocked: isBlocked,
                 dirty: false,
                 readonly: this.isSnapshot || (atom.owner || 'ethan') !== 'ethan',
                 _contentJson: atom.content_json || null,

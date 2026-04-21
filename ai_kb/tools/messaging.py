@@ -44,6 +44,8 @@ _CWD_PROJECT_MAP = {
     '/opt/BeakRisk-dev': 'project:beakrisk',
     '/opt/BeakSeal': 'project:beakseal',
     '/opt/BeakSeal-dev': 'project:beakseal',
+    '/opt/BeakDiverseData': 'project:beakdiversedata',
+    '/opt/BeakDiverseData-dev': 'project:beakdiversedata',
 }
 
 
@@ -104,6 +106,7 @@ KNOWN_RECIPIENTS = {
     'project:beakmeshwall',
     'project:beakrisk',
     'project:beakseal',
+    'project:beakdiversedata',
     # 人類
     'user:ethan',
     # 任務（可動態擴充，不在此強制驗證）
@@ -130,6 +133,7 @@ def register(mcp):
           project:beakmeshwall   -- BeakMeshWall 專案的 Claude
           project:beakrisk       -- BeakRisk 專案的 Claude
           project:beakseal       -- BeakSeal 專案的 Claude
+          project:beakdiversedata -- BeakDiverseData 專案的 Claude
           task:daily-review      -- 每日復盤排程
           task:{任務名}          -- 指定任務
           user:ethan             -- 人類 Ethan

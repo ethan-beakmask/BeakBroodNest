@@ -13,6 +13,7 @@ from .nav import bp as nav_bp
 from .entry_schemas import bp as entry_schemas_bp
 from .entries import bp as entries_bp
 from .unified_relations import bp as unified_relations_bp
+from .project import bp as project_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -27,4 +28,5 @@ ALL_BLUEPRINTS = [
     entry_schemas_bp,
     entries_bp,
     unified_relations_bp,
+    project_bp,
 ]

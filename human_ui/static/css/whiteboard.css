@@ -456,14 +456,14 @@
 /* ---- 阻塞徽章 ---- */
 .wb-card-blocked {
     position: absolute;
-    top: -8px;
-    right: -8px;
+    bottom: 4px;
+    left: 4px;
     background: #dc2626;
     color: white;
     font-size: 9px;
     font-weight: 700;
-    padding: 1px 5px;
-    border-radius: 4px;
+    padding: 2px 6px;
+    border-radius: 3px;
     z-index: 16;
     letter-spacing: 0.5px;
 }

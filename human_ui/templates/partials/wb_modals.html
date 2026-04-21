@@ -416,6 +416,7 @@
                                       :style="'color:' + (atomTypeConfig[ca.atom && ca.atom.atom_type] ? atomTypeConfig[ca.atom.atom_type].color : 'var(--text-muted)')"
                                       x-text="ca.atom ? ca.atom.atom_type : '?'"></span>
                                 <span class="ce-sidebar-title" x-text="ca.atom ? ca.atom.title : '#'+ca.atom_id"></span>
+                                <span class="ce-sidebar-badge" x-show="ca.is_blocked" style="background:#dc2626;color:#fff;font-size:8px;padding:1px 4px;border-radius:2px;">BLOCKED</span>
                                 <span class="ce-sidebar-badge" x-show="openEditors.some(e => e.atomId === ca.atom_id)">已開</span>
                             </div>
                         </template>
@@ -438,6 +439,7 @@
                                 <span x-text="ed.atomType"></span>
                                 <span x-text="'#' + ed.atomId"></span>
                                 <span x-show="ed.readonly" style="color:#d97706;font-weight:700;">唯讀</span>
+                                <span x-show="ed.isBlocked" style="background:#dc2626;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;letter-spacing:0.5px;">BLOCKED</span>
                             </div>
                             <button class="card-editor-maximize" @click="toggleMaximize(ed.id)"
                                     :title="maximizedEditorId === ed.id ? '還原' : '最大化'"
