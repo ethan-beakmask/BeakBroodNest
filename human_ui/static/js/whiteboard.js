@@ -24,6 +24,7 @@ function whiteboardApp(canvasId) {
         canvases: [],
         tags: [],
         tagCategories: [],
+        entrySchemas: [],
 
         // Viewport
         panX: 0, panY: 0, zoom: 1,
@@ -64,6 +65,34 @@ function whiteboardApp(canvasId) {
         newCategoryName: '',
         settingsCanvasName: '',
         selectedCategoryIds: [],
+
+        // Entry Schema settings
+        esSelectedId: null,
+        esEditSchema: null,
+        esNewCode: '',
+        esNewName: '',
+        esNewField: { name: '', label: '', field_type: 'text', options: '', required: false, dimension: '' },
+        esFieldTypes: [
+            { value: 'text', label: '文字' },
+            { value: 'number', label: '整數' },
+            { value: 'decimal', label: '小數' },
+            { value: 'date', label: '日期' },
+            { value: 'datetime', label: '日期時間' },
+            { value: 'duration', label: '時長' },
+            { value: 'select', label: '單選' },
+            { value: 'multiselect', label: '多選' },
+            { value: 'checkbox', label: '核取' },
+            { value: 'relation', label: '關聯' },
+            { value: 'attachment', label: '附件' },
+        ],
+        esDimensions: [
+            { value: '', label: '-' },
+            { value: 'W', label: 'W (who)' },
+            { value: 'H', label: 'H (what)' },
+            { value: 'T', label: 'T (when)' },
+            { value: 'P', label: 'P (where)' },
+            { value: 'Y', label: 'Y (why)' },
+        ],
 
         // Forms
         newAtom: { title: '', content: '', atom_type: 'F' },
@@ -249,8 +278,9 @@ function whiteboardApp(canvasId) {
         },
 
         async loadData() {
-            const [canvas, allCanvases, tags, tagCategories] = await Promise.all([
+            const [canvas, allCanvases, tags, tagCategories, entrySchemas] = await Promise.all([
                 API.getCanvas(this.canvasId), API.getCanvases(true), API.getTags(), API.getTagCategories(),
+                API.getEntrySchemas(),
             ]);
             this.canvas = canvas;
             this.isSnapshot = !!canvas.is_snapshot;
@@ -261,6 +291,7 @@ function whiteboardApp(canvasId) {
             this.canvases = this.showArchivedCanvases ? allCanvases : allCanvases.filter(c => !c.is_archived);
             this.tags = tags;
             this.tagCategories = tagCategories;
+            this.entrySchemas = entrySchemas;
             this.refreshSidebarAtoms();
             if (canvas.viewport_x || canvas.viewport_y || (canvas.viewport_zoom && canvas.viewport_zoom !== 1)) {
                 this.panX = canvas.viewport_x || 0; this.panY = canvas.viewport_y || 0;
@@ -760,6 +791,110 @@ function whiteboardApp(canvasId) {
                 result.push({ id: 0, name: '未分類', tags: uncategorized });
             }
             return result;
+        },
+
+        // ============================================
+        // Entry Schemas
+        // ============================================
+        esGetSelected() {
+            if (!this.esSelectedId) return null;
+            return this.entrySchemas.find(s => s.id === this.esSelectedId) || null;
+        },
+
+        esSelectSchema(id) {
+            this.esSelectedId = id;
+            var schema = this.esGetSelected();
+            if (schema) {
+                this.esEditSchema = {
+                    name: schema.name, icon: schema.icon, color: schema.color,
+                    slash_alias: schema.slash_alias || '', code: schema.code,
+                };
+            }
+            this.esNewField = { name: '', label: '', field_type: 'text', options: '', required: false, dimension: '' };
+        },
+
+        async esCreateSchema() {
+            var code = this.esNewCode.trim();
+            var name = this.esNewName.trim();
+            if (!code || !name) return;
+            try {
+                await API.createEntrySchema({ code: code, name: name });
+                this.entrySchemas = await API.getEntrySchemas();
+                this.esNewCode = '';
+                this.esNewName = '';
+                this.showToast('記錄類型已建立', 'success');
+            } catch (e) { this.showToast(e.message, 'error'); }
+        },
+
+        async esUpdateSchema() {
+            if (!this.esSelectedId || !this.esEditSchema) return;
+            try {
+                await API.updateEntrySchema(this.esSelectedId, this.esEditSchema);
+                this.entrySchemas = await API.getEntrySchemas();
+                this.showToast('已更新', 'success');
+            } catch (e) { this.showToast(e.message, 'error'); }
+        },
+
+        async esDeleteSchema() {
+            var schema = this.esGetSelected();
+            if (!schema) return;
+            if (schema.is_system) { this.showToast('系統內建類型不可刪除', 'error'); return; }
+            if (!confirm('刪除記錄類型: ' + schema.name + '?')) return;
+            try {
+                await API.deleteEntrySchema(this.esSelectedId);
+                this.entrySchemas = await API.getEntrySchemas();
+                this.esSelectedId = null;
+                this.esEditSchema = null;
+                this.showToast('已刪除', 'success');
+            } catch (e) { this.showToast(e.message, 'error'); }
+        },
+
+        async esAddField() {
+            if (!this.esSelectedId) return;
+            var f = this.esNewField;
+            if (!f.name.trim() || !f.label.trim()) return;
+            try {
+                await API.createEntrySchemaField(this.esSelectedId, {
+                    name: f.name.trim(), label: f.label.trim(),
+                    field_type: f.field_type, options: f.options,
+                    required: f.required, dimension: f.dimension || null,
+                });
+                this.entrySchemas = await API.getEntrySchemas();
+                this.esNewField = { name: '', label: '', field_type: 'text', options: '', required: false, dimension: '' };
+                this.showToast('欄位已新增', 'success');
+            } catch (e) { this.showToast(e.message, 'error'); }
+        },
+
+        async esUpdateField(fieldId, updates) {
+            try {
+                await API.updateEntrySchemaField(fieldId, updates);
+                this.entrySchemas = await API.getEntrySchemas();
+            } catch (e) { this.showToast(e.message, 'error'); }
+        },
+
+        async esDeleteField(fieldId) {
+            if (!confirm('刪除此欄位?')) return;
+            try {
+                await API.deleteEntrySchemaField(fieldId);
+                this.entrySchemas = await API.getEntrySchemas();
+                this.showToast('欄位已刪除', 'success');
+            } catch (e) { this.showToast(e.message, 'error'); }
+        },
+
+        async esMoveField(fieldId, direction) {
+            var schema = this.esGetSelected();
+            if (!schema || !schema.fields) return;
+            var fields = schema.fields.slice().sort((a, b) => a.sort_order - b.sort_order);
+            var idx = fields.findIndex(f => f.id === fieldId);
+            if (idx < 0) return;
+            var swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+            if (swapIdx < 0 || swapIdx >= fields.length) return;
+            var ids = fields.map(f => f.id);
+            var tmp = ids[idx]; ids[idx] = ids[swapIdx]; ids[swapIdx] = tmp;
+            try {
+                await API.reorderEntrySchemaFields(this.esSelectedId, ids);
+                this.entrySchemas = await API.getEntrySchemas();
+            } catch (e) { this.showToast(e.message, 'error'); }
         },
 
         // ============================================

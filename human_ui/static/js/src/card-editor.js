@@ -11,6 +11,9 @@ import { Image } from '@tiptap/extension-image'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { Typography } from '@tiptap/extension-typography'
 import { Markdown } from 'tiptap-markdown'
+import { StructuredEntry } from './structured-entry.js'
+import { SlashCommand } from './slash-command.js'
+import { SelectionToolbar } from './selection-toolbar.js'
 
 class CardEditor {
     constructor() {
@@ -55,6 +58,9 @@ class CardEditor {
                     transformPastedText: true,
                     transformCopiedText: true,
                 }),
+                StructuredEntry,
+                SlashCommand,
+                SelectionToolbar,
             ],
             editorProps: {
                 attributes: {
@@ -151,6 +157,16 @@ class CardEditor {
             case 'table':
                 chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
                 break
+            case 'insertEntry':
+                this.editor.commands.insertEntry({
+                    schemaCode: args[0] || 'freetext',
+                    schemaId: args[1] || null,
+                    text: args[2] || '',
+                })
+                return
+            case 'convertToEntry':
+                this.editor.commands.convertToEntry(args[0] || 'freetext', args[1] || null)
+                return
             case 'deleteTable': chain.deleteTable().run(); break
             case 'addRowAfter': chain.addRowAfter().run(); break
             case 'addRowBefore': chain.addRowBefore().run(); break
@@ -189,6 +205,68 @@ class CardEditor {
         }
 
         return { from, to, markdown: text }
+    }
+
+    /**
+     * 從 ProseMirror 文件中提取所有 structuredEntry nodes。
+     * 回傳陣列供 sync API 使用。
+     */
+    extractEntries() {
+        if (!this.editor) return []
+        const entries = []
+        const doc = this.editor.state.doc
+        doc.forEach((node, offset, index) => {
+            if (node.type.name === 'structuredEntry') {
+                entries.push({
+                    id: node.attrs.entryId || null,
+                    schema_code: node.attrs.schemaCode || 'freetext',
+                    schema_id: node.attrs.schemaId || null,
+                    raw_text: node.textContent,
+                    field_values: node.attrs.fieldValues || {},
+                    sort_order: index,
+                })
+            } else {
+                // Non-entry blocks (paragraph, heading, etc.) -> freetext entry
+                const text = node.textContent
+                if (text.trim() || node.type.name !== 'paragraph') {
+                    entries.push({
+                        schema_code: 'freetext',
+                        raw_text: text,
+                        field_values: {},
+                        sort_order: index,
+                    })
+                }
+            }
+        })
+        return entries
+    }
+
+    /**
+     * 從 DB entries 載入：將 entries 陣列轉為 ProseMirror 文件。
+     * @param {Array} entries - API 回傳的 entries
+     */
+    loadEntries(entries) {
+        if (!this.editor || !entries || entries.length === 0) return
+        const content = entries.map(e => {
+            if (e.schema_code === 'freetext') {
+                return {
+                    type: 'paragraph',
+                    content: e.raw_text ? [{ type: 'text', text: e.raw_text }] : [],
+                }
+            }
+            return {
+                type: 'structuredEntry',
+                attrs: {
+                    entryId: e.id,
+                    schemaCode: e.schema_code,
+                    schemaId: e.schema_id,
+                    fieldValues: e.field_values || {},
+                    collapsed: true,
+                },
+                content: e.raw_text ? [{ type: 'text', text: e.raw_text }] : [],
+            }
+        })
+        this.editor.commands.setContent({ type: 'doc', content })
     }
 
     /** 銷毀編輯器 */

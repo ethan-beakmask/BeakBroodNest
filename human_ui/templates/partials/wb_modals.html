@@ -608,6 +608,9 @@
                                 :class="{ active: uiSettingsTab === 'tag-categories' }"
                                 @click="uiSettingsTab = 'tag-categories'">標籤分類</button>
                         <button class="settings-tab"
+                                :class="{ active: uiSettingsTab === 'entry-schemas' }"
+                                @click="uiSettingsTab = 'entry-schemas'">記錄類型</button>
+                        <button class="settings-tab"
                                 :class="{ active: uiSettingsTab === 'account' }"
                                 @click="uiSettingsTab = 'account'">帳號</button>
                     </div>
@@ -698,6 +701,136 @@
                                 <template x-if="selectedCategoryIds.length === 0">
                                     <div style="font-size:12px;color:var(--text-muted);padding:20px 0;text-align:center;">
                                         勾選左側分類後，點擊標籤可增減歸屬
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <!-- 記錄類型 -->
+                        <div x-show="uiSettingsTab === 'entry-schemas'" class="tag-cat-layout">
+                            <!-- 左欄：類型列表 -->
+                            <div class="tag-cat-left">
+                                <div style="font-size:12px;font-weight:600;margin-bottom:8px;">記錄類型</div>
+                                <div style="display:flex;gap:4px;margin-bottom:8px;">
+                                    <input class="form-control" x-model="esNewCode" placeholder="code"
+                                           style="flex:1;font-size:11px;" @keydown.enter="esCreateSchema()">
+                                    <input class="form-control" x-model="esNewName" placeholder="名稱"
+                                           style="flex:1;font-size:11px;" @keydown.enter="esCreateSchema()">
+                                    <button class="btn btn-primary btn-sm" @click="esCreateSchema()"
+                                            style="padding:2px 8px;">+</button>
+                                </div>
+                                <template x-for="es in entrySchemas" :key="'es-'+es.id">
+                                    <div class="tag-cat-item"
+                                         :class="{ active: esSelectedId === es.id }"
+                                         @click="esSelectSchema(es.id)">
+                                        <span :class="es.icon" style="font-size:12px;width:16px;text-align:center;"
+                                              :style="'color:'+es.color"></span>
+                                        <span style="flex:1;font-size:12px;" x-text="es.name"></span>
+                                        <span style="font-size:10px;color:var(--text-muted);"
+                                              x-text="es.slash_alias ? '/'+es.slash_alias : ''"></span>
+                                        <template x-if="es.is_system">
+                                            <span style="font-size:9px;color:var(--text-muted);margin-left:2px;">sys</span>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                            <!-- 右欄：Schema 編輯 + 欄位列表 -->
+                            <div class="tag-cat-right">
+                                <template x-if="!esSelectedId">
+                                    <div style="font-size:12px;color:var(--text-muted);padding:20px 0;text-align:center;">
+                                        選擇左側類型以編輯欄位
+                                    </div>
+                                </template>
+                                <template x-if="esSelectedId && esEditSchema">
+                                    <div>
+                                        <!-- Schema 基本資訊 -->
+                                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+                                            <input class="form-control" x-model="esEditSchema.name" placeholder="名稱"
+                                                   style="width:120px;font-size:12px;">
+                                            <input class="form-control" x-model="esEditSchema.icon" placeholder="icon class"
+                                                   style="width:130px;font-size:11px;">
+                                            <input type="color" x-model="esEditSchema.color"
+                                                   style="width:32px;height:28px;padding:1px;border:1px solid var(--border-light);border-radius:4px;cursor:pointer;">
+                                            <input class="form-control" x-model="esEditSchema.slash_alias" placeholder="/alias"
+                                                   style="width:80px;font-size:11px;">
+                                            <button class="btn btn-primary btn-sm" @click="esUpdateSchema()"
+                                                    style="font-size:11px;">儲存</button>
+                                            <template x-if="!esGetSelected()?.is_system">
+                                                <button class="btn btn-sm" @click="esDeleteSchema()"
+                                                        style="font-size:11px;color:var(--danger);border:1px solid var(--danger);background:transparent;">刪除</button>
+                                            </template>
+                                        </div>
+                                        <!-- 欄位列表 -->
+                                        <div style="font-size:12px;font-weight:600;margin-bottom:6px;">欄位定義</div>
+                                        <div style="overflow-y:auto;max-height:calc(80vh - 250px);">
+                                            <table style="width:100%;font-size:11px;border-collapse:collapse;">
+                                                <thead>
+                                                    <tr style="border-bottom:1px solid var(--border-light);text-align:left;">
+                                                        <th style="padding:4px;">排序</th>
+                                                        <th style="padding:4px;">名稱</th>
+                                                        <th style="padding:4px;">顯示名</th>
+                                                        <th style="padding:4px;">型別</th>
+                                                        <th style="padding:4px;">選項</th>
+                                                        <th style="padding:4px;">5W</th>
+                                                        <th style="padding:4px;">必填</th>
+                                                        <th style="padding:4px;"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <template x-for="f in (esGetSelected()?.fields || []).slice().sort((a,b)=>a.sort_order-b.sort_order)"
+                                                              :key="'esf-'+f.id">
+                                                        <tr style="border-bottom:1px solid var(--bg-tertiary);">
+                                                            <td style="padding:3px;white-space:nowrap;">
+                                                                <button class="btn-ghost" style="font-size:10px;padding:0 2px;"
+                                                                        @click="esMoveField(f.id,'up')">^</button>
+                                                                <button class="btn-ghost" style="font-size:10px;padding:0 2px;"
+                                                                        @click="esMoveField(f.id,'down')">v</button>
+                                                            </td>
+                                                            <td style="padding:3px;" x-text="f.name"></td>
+                                                            <td style="padding:3px;" x-text="f.label"></td>
+                                                            <td style="padding:3px;" x-text="f.field_type"></td>
+                                                            <td style="padding:3px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                                                                x-text="f.options" :title="f.options"></td>
+                                                            <td style="padding:3px;" x-text="f.dimension || '-'"></td>
+                                                            <td style="padding:3px;text-align:center;"
+                                                                x-text="f.required ? 'V' : ''"></td>
+                                                            <td style="padding:3px;">
+                                                                <button class="btn-ghost" style="font-size:10px;padding:0 2px;color:var(--danger);"
+                                                                        @click="esDeleteField(f.id)">x</button>
+                                                            </td>
+                                                        </tr>
+                                                    </template>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <!-- 新增欄位 -->
+                                        <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border-light);">
+                                            <div style="font-size:11px;font-weight:600;margin-bottom:4px;">新增欄位</div>
+                                            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+                                                <input class="form-control" x-model="esNewField.name" placeholder="name (英文)"
+                                                       style="width:90px;font-size:11px;">
+                                                <input class="form-control" x-model="esNewField.label" placeholder="顯示名"
+                                                       style="width:80px;font-size:11px;">
+                                                <select class="form-control" x-model="esNewField.field_type"
+                                                        style="width:80px;font-size:11px;">
+                                                    <template x-for="ft in esFieldTypes" :key="ft.value">
+                                                        <option :value="ft.value" x-text="ft.label"></option>
+                                                    </template>
+                                                </select>
+                                                <input class="form-control" x-model="esNewField.options" placeholder="選項(JSON)"
+                                                       style="width:100px;font-size:11px;">
+                                                <select class="form-control" x-model="esNewField.dimension"
+                                                        style="width:75px;font-size:11px;">
+                                                    <template x-for="d in esDimensions" :key="'d-'+d.value">
+                                                        <option :value="d.value" x-text="d.label"></option>
+                                                    </template>
+                                                </select>
+                                                <label style="font-size:11px;display:flex;align-items:center;gap:2px;">
+                                                    <input type="checkbox" x-model="esNewField.required"> 必填
+                                                </label>
+                                                <button class="btn btn-primary btn-sm" @click="esAddField()"
+                                                        style="font-size:11px;">新增</button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </template>
                             </div>

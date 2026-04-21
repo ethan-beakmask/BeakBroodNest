@@ -5,8 +5,8 @@
 import datetime
 import secrets
 from sqlalchemy import (
-    Integer, String, Text, Float, Boolean, DateTime,
-    ForeignKey, UniqueConstraint, Index
+    Integer, String, Text, Float, Boolean, DateTime, Date,
+    ForeignKey, UniqueConstraint, Index, CheckConstraint, Numeric
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -795,3 +795,308 @@ class SystemConfig(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now
     )
+
+
+# ============================================================
+# 6.0 結構化 Entry 系統（卡片內容細化）
+# ============================================================
+
+class EntrySchema(Base):
+    """記錄類型定義（Lookup 模式：用戶自訂 + 系統預設）。
+
+    每種 schema 代表一種結構化記錄格式，如待辦事項、記帳、行事曆等。
+    用戶可自建新類型，也可修改系統預設類型的欄位。
+    """
+    __tablename__ = 'entry_schemas'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(
+        String(50), unique=True, nullable=False
+    )  # 識別碼：freetext, todo, expense, calendar...
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    icon: Mapped[str] = mapped_column(String(30), default='')
+    color: Mapped[str] = mapped_column(String(10), default='#6b7280')
+    slash_alias: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, unique=True
+    )  # / 觸發詞，如 td, exp, cal
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now
+    )
+
+    fields: Mapped[list["EntrySchemaField"]] = relationship(
+        back_populates='schema', cascade='all, delete-orphan',
+        order_by='EntrySchemaField.sort_order'
+    )
+
+    def to_dict(self, include_fields=False):
+        d = {
+            'id': self.id,
+            'code': self.code,
+            'name': self.name,
+            'icon': self.icon,
+            'color': self.color,
+            'slash_alias': self.slash_alias,
+            'is_system': self.is_system,
+            'sort_order': self.sort_order,
+        }
+        if include_fields:
+            d['fields'] = [f.to_dict() for f in self.fields]
+        return d
+
+
+class EntrySchemaField(Base):
+    """記錄類型的欄位定義（Lookup 細項概念）。
+
+    field_type 支援：
+      text, number, decimal, date, datetime, duration,
+      select, multiselect, checkbox, relation, attachment
+    dimension 為 5W 語義標記，AI 分析跨類型關聯時使用：
+      W=who, H=what, T=when, P=where, Y=why
+    """
+    __tablename__ = 'entry_schema_fields'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    schema_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('entry_schemas.id', ondelete='CASCADE'), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    label: Mapped[str] = mapped_column(String(100), nullable=False)
+    field_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )
+    options: Mapped[str] = mapped_column(Text, default='')
+    default_value: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    required: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    dimension: Mapped[str | None] = mapped_column(
+        String(1), nullable=True
+    )  # W=who, H=what, T=when, P=where, Y=why
+
+    schema: Mapped["EntrySchema"] = relationship(back_populates='fields')
+
+    VALID_FIELD_TYPES = (
+        'text', 'number', 'decimal', 'date', 'datetime', 'duration',
+        'select', 'multiselect', 'checkbox', 'relation', 'attachment',
+    )
+    VALID_DIMENSIONS = ('W', 'H', 'T', 'P', 'Y')
+
+    __table_args__ = (
+        UniqueConstraint('schema_id', 'name', name='uq_entry_schema_field'),
+        Index('idx_esf_schema', 'schema_id'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'schema_id': self.schema_id,
+            'name': self.name,
+            'label': self.label,
+            'field_type': self.field_type,
+            'options': self.options,
+            'default_value': self.default_value,
+            'required': self.required,
+            'sort_order': self.sort_order,
+            'dimension': self.dimension,
+        }
+
+
+class AtomEntry(Base):
+    """卡片內的結構化記錄（每筆是獨立 DB row）。
+
+    一張卡片的內容 = 一組有序的 AtomEntry。
+    自由文字也是 entry（schema code='freetext'），統一模型。
+    """
+    __tablename__ = 'atom_entries'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    atom_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=False
+    )
+    schema_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('entry_schemas.id'), nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    raw_text: Mapped[str] = mapped_column(Text, default='')
+    summary: Mapped[str] = mapped_column(String(200), default='')
+    promoted_atom_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='SET NULL'), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now
+    )
+
+    atom: Mapped["KnowledgeAtom"] = relationship(
+        foreign_keys=[atom_id], backref='entries'
+    )
+    schema: Mapped["EntrySchema"] = relationship()
+    promoted_atom: Mapped["KnowledgeAtom | None"] = relationship(
+        foreign_keys=[promoted_atom_id]
+    )
+    field_values: Mapped[list["EntryFieldValue"]] = relationship(
+        back_populates='entry', cascade='all, delete-orphan'
+    )
+
+    __table_args__ = (
+        Index('idx_atom_entries_atom_order', 'atom_id', 'sort_order'),
+        Index('idx_atom_entries_schema', 'schema_id'),
+    )
+
+    def to_dict(self, include_values=False):
+        d = {
+            'id': self.id,
+            'atom_id': self.atom_id,
+            'schema_id': self.schema_id,
+            'sort_order': self.sort_order,
+            'raw_text': self.raw_text,
+            'summary': self.summary,
+            'promoted_atom_id': self.promoted_atom_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+        if include_values and self.field_values:
+            d['field_values'] = {
+                fv.field.name: fv.value for fv in self.field_values if fv.field
+            }
+        return d
+
+
+class EntryFieldValue(Base):
+    """Entry 的欄位值（EAV 模式，多型別欄位）。
+
+    寫入時根據 field_type 寫對應型別欄位，value 永遠存文字版。
+    沿用 BeakPlatform LookupItem 的多型別設計。
+    """
+    __tablename__ = 'entry_field_values'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entry_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('atom_entries.id', ondelete='CASCADE'), nullable=False
+    )
+    field_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('entry_schema_fields.id', ondelete='CASCADE'), nullable=False
+    )
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    value_int: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    value_decimal = mapped_column(Numeric(20, 2), nullable=True)
+    value_date: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    value_datetime: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+
+    entry: Mapped["AtomEntry"] = relationship(back_populates='field_values')
+    field: Mapped["EntrySchemaField"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint('entry_id', 'field_id', name='uq_entry_field_value'),
+        Index('idx_efv_entry', 'entry_id'),
+    )
+
+    def to_dict(self):
+        dec = self.value_decimal
+        return {
+            'entry_id': self.entry_id,
+            'field_id': self.field_id,
+            'value': self.value,
+            'value_int': self.value_int,
+            'value_decimal': float(dec) if dec is not None else None,
+            'value_date': self.value_date.isoformat() if self.value_date else None,
+            'value_datetime': self.value_datetime.isoformat() if self.value_datetime else None,
+        }
+
+
+class UnifiedRelation(Base):
+    """統一關係表：支援 atom/entry 混合端點。
+
+    四種組合：
+      atom  -> atom     （等效現有 atom_relations）
+      atom  -> entry
+      entry -> atom
+      entry -> entry    （ER-model 風格跨卡片連線）
+
+    每個端點二擇一：atom_id 或 entry_id 必填其一。
+    relation_type 複用 AtomRelation.VALID_TYPES（10 種）。
+    """
+    __tablename__ = 'unified_relations'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    # 來源端（二擇一）
+    from_atom_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=True
+    )
+    from_entry_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('atom_entries.id', ondelete='CASCADE'), nullable=True
+    )
+
+    # 目標端（二擇一）
+    to_atom_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=True
+    )
+    to_entry_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('atom_entries.id', ondelete='CASCADE'), nullable=True
+    )
+
+    relation_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    label: Mapped[str] = mapped_column(Text, default='')
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    created_by: Mapped[str] = mapped_column(String(20), default='human')
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    # Relationships
+    from_atom: Mapped["KnowledgeAtom | None"] = relationship(
+        foreign_keys=[from_atom_id]
+    )
+    from_entry: Mapped["AtomEntry | None"] = relationship(
+        foreign_keys=[from_entry_id]
+    )
+    to_atom: Mapped["KnowledgeAtom | None"] = relationship(
+        foreign_keys=[to_atom_id]
+    )
+    to_entry: Mapped["AtomEntry | None"] = relationship(
+        foreign_keys=[to_entry_id]
+    )
+
+    VALID_TYPES = AtomRelation.VALID_TYPES
+
+    __table_args__ = (
+        # 來源端：atom_id 或 entry_id 恰好填一個
+        CheckConstraint(
+            '(from_atom_id IS NOT NULL)::int + (from_entry_id IS NOT NULL)::int = 1',
+            name='ck_unified_rel_from_one'
+        ),
+        # 目標端：atom_id 或 entry_id 恰好填一個
+        CheckConstraint(
+            '(to_atom_id IS NOT NULL)::int + (to_entry_id IS NOT NULL)::int = 1',
+            name='ck_unified_rel_to_one'
+        ),
+        Index('idx_urel_from_atom', 'from_atom_id'),
+        Index('idx_urel_from_entry', 'from_entry_id'),
+        Index('idx_urel_to_atom', 'to_atom_id'),
+        Index('idx_urel_to_entry', 'to_entry_id'),
+        Index('idx_urel_type', 'relation_type'),
+    )
+
+    def to_dict(self):
+        d = {
+            'id': self.id,
+            'from_atom_id': self.from_atom_id,
+            'from_entry_id': self.from_entry_id,
+            'to_atom_id': self.to_atom_id,
+            'to_entry_id': self.to_entry_id,
+            'relation_type': self.relation_type,
+            'label': self.label,
+            'confidence': self.confidence,
+            'created_by': self.created_by,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+        return d

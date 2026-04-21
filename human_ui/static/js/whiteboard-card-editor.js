@@ -69,9 +69,13 @@ function whiteboardCardEditorMixin() {
             this.cardEditorOpen = true;
 
             var self = this;
-            this.$nextTick(() => {
+            this.$nextTick(async () => {
                 var host = document.querySelector('[data-ce-id="' + editorId + '"] .ce-pane-body');
                 if (!host) return;
+
+                // Make entry schemas available to NodeView
+                window._entrySchemas = self.entrySchemas || [];
+
                 var ce = new window.CardEditor();
                 ce.create(host, {
                     contentJson: atom.content_json || null,
@@ -79,6 +83,15 @@ function whiteboardCardEditorMixin() {
                     onChange: function() { self._markEditorDirty(editorId); },
                     editable: (atom.owner || 'ethan') === 'ethan',
                 });
+
+                // Load existing entries from DB if any
+                try {
+                    var entries = await API.getEntries(atomId);
+                    if (entries && entries.length > 0) {
+                        ce.loadEntries(entries);
+                    }
+                } catch (e) { /* no entries yet, use content as-is */ }
+
                 _ceStore[atomId] = ce;
                 self._focusEditor(editorId);
             });
@@ -108,6 +121,28 @@ function whiteboardCardEditorMixin() {
             var md = ce.getMarkdown();
             var json = ce.getJSON();
             var title = ed.title;
+
+            // Sync structured entries to DB
+            var entries = ce.extractEntries();
+            var hasStructuredEntries = entries.some(e => e.schema_code !== 'freetext');
+
+            if (hasStructuredEntries || entries.length > 0) {
+                try {
+                    var syncResult = await API.syncEntries(ed.atomId, entries);
+                    // Use the content snapshot from sync as the canonical content
+                    md = syncResult.content_snapshot || md;
+
+                    // Update entryId attributes in the editor from sync result
+                    if (syncResult.entries) {
+                        var syncEntries = syncResult.entries;
+                        // Reload entries to get IDs assigned by DB
+                        ce.loadEntries(syncEntries);
+                    }
+                } catch (e) {
+                    console.warn('Entry sync failed, falling back to content save:', e);
+                }
+            }
+
             await API.updateAtom(ed.atomId, { title: title, content: md, content_json: json });
 
             var ca = this.atoms.find(a => a.atom_id === ed.atomId);

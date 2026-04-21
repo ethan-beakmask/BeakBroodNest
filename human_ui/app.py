@@ -24,6 +24,7 @@ from core.db import init_engine, get_engine, get_session, session_scope, create_
 from core.models import (
     KnowledgeAtom, Canvas, CanvasAtom, Tag,
     SystemConfig, _gen_canvas_slug,
+    EntrySchema, EntrySchemaField,
 )
 from core import relations as rel_service
 
@@ -457,6 +458,134 @@ def ensure_canvas_slugs():
             logger.info(f'Migration: 已為 {len(nulls)} 個 canvas 產生 slug')
 
 
+def ensure_entry_schemas():
+    """確保系統預設 Entry Schema 存在（冪等，不重複建立）。"""
+    from core.db import session_scope as ss
+
+    SYSTEM_SCHEMAS = [
+        {
+            'code': 'freetext', 'name': '自由文字', 'icon': 'bi-text-left',
+            'color': '#6b7280', 'slash_alias': None, 'sort_order': 0,
+            'fields': [],
+        },
+        {
+            'code': 'todo', 'name': '待辦事項', 'icon': 'bi-check2-square',
+            'color': '#3b82f6', 'slash_alias': 'td', 'sort_order': 1,
+            'fields': [
+                {'name': 'urgency', 'label': '緊急度', 'field_type': 'select',
+                 'options': '["H","M","L"]', 'required': False, 'sort_order': 0, 'dimension': 'Y'},
+                {'name': 'category', 'label': '類別', 'field_type': 'select',
+                 'options': '[]', 'required': False, 'sort_order': 1, 'dimension': 'H'},
+                {'name': 'planned_start', 'label': '預計開始', 'field_type': 'datetime',
+                 'options': '', 'required': False, 'sort_order': 2, 'dimension': 'T'},
+                {'name': 'planned_duration', 'label': '耗用/截止', 'field_type': 'duration',
+                 'options': '', 'required': False, 'sort_order': 3, 'dimension': 'T'},
+                {'name': 'actual_start', 'label': '實際開始', 'field_type': 'datetime',
+                 'options': '', 'required': False, 'sort_order': 4, 'dimension': 'T'},
+                {'name': 'actual_end', 'label': '實際結束', 'field_type': 'datetime',
+                 'options': '', 'required': False, 'sort_order': 5, 'dimension': 'T'},
+                {'name': 'status', 'label': '狀態', 'field_type': 'select',
+                 'options': '["pending","in_progress","done"]', 'required': False,
+                 'sort_order': 6, 'dimension': None},
+            ],
+        },
+        {
+            'code': 'expense', 'name': '記帳', 'icon': 'bi-wallet2',
+            'color': '#10b981', 'slash_alias': 'exp', 'sort_order': 2,
+            'fields': [
+                {'name': 'date', 'label': '日期', 'field_type': 'date',
+                 'options': '', 'required': True, 'sort_order': 0, 'dimension': 'T'},
+                {'name': 'cat_major', 'label': '大類', 'field_type': 'select',
+                 'options': '[]', 'required': False, 'sort_order': 1, 'dimension': 'H'},
+                {'name': 'cat_mid', 'label': '中類', 'field_type': 'select',
+                 'options': '[]', 'required': False, 'sort_order': 2, 'dimension': 'H'},
+                {'name': 'cat_minor', 'label': '小類', 'field_type': 'select',
+                 'options': '[]', 'required': False, 'sort_order': 3, 'dimension': 'H'},
+                {'name': 'amount', 'label': '金額', 'field_type': 'decimal',
+                 'options': '', 'required': True, 'sort_order': 4, 'dimension': 'H'},
+                {'name': 'payment', 'label': '付款方式', 'field_type': 'select',
+                 'options': '[]', 'required': False, 'sort_order': 5, 'dimension': None},
+                {'name': 'note', 'label': '備註', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 6, 'dimension': None},
+            ],
+        },
+        {
+            'code': 'calendar', 'name': '行事曆', 'icon': 'bi-calendar-event',
+            'color': '#f97316', 'slash_alias': 'cal', 'sort_order': 3,
+            'fields': [
+                {'name': 'date', 'label': '日期', 'field_type': 'date',
+                 'options': '', 'required': True, 'sort_order': 0, 'dimension': 'T'},
+                {'name': 'start_time', 'label': '開始', 'field_type': 'datetime',
+                 'options': '', 'required': False, 'sort_order': 1, 'dimension': 'T'},
+                {'name': 'end_time', 'label': '結束', 'field_type': 'datetime',
+                 'options': '', 'required': False, 'sort_order': 2, 'dimension': 'T'},
+                {'name': 'location', 'label': '地點', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 3, 'dimension': 'P'},
+                {'name': 'attendees', 'label': '出席者', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 4, 'dimension': 'W'},
+                {'name': 'note', 'label': '備註', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 5, 'dimension': None},
+            ],
+        },
+        {
+            'code': 'diary', 'name': '日記', 'icon': 'bi-journal-text',
+            'color': '#a855f7', 'slash_alias': 'diary', 'sort_order': 4,
+            'fields': [
+                {'name': 'date', 'label': '日期', 'field_type': 'date',
+                 'options': '', 'required': True, 'sort_order': 0, 'dimension': 'T'},
+                {'name': 'weather', 'label': '天氣', 'field_type': 'select',
+                 'options': '["sunny","cloudy","rainy","snowy","windy","foggy"]',
+                 'required': False, 'sort_order': 1, 'dimension': None},
+                {'name': 'mood', 'label': '心情', 'field_type': 'select',
+                 'options': '["1","2","3","4","5"]',
+                 'required': False, 'sort_order': 2, 'dimension': None},
+                {'name': 'body', 'label': '內容', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 3, 'dimension': None},
+            ],
+        },
+        {
+            'code': 'health', 'name': '健康記錄', 'icon': 'bi-heart-pulse',
+            'color': '#ef4444', 'slash_alias': 'hp', 'sort_order': 5,
+            'fields': [
+                {'name': 'date', 'label': '日期', 'field_type': 'date',
+                 'options': '', 'required': True, 'sort_order': 0, 'dimension': 'T'},
+                {'name': 'measure_type', 'label': '量測類型', 'field_type': 'select',
+                 'options': '["blood_pressure","blood_sugar","weight","heart_rate","temperature","other"]',
+                 'required': True, 'sort_order': 1, 'dimension': 'H'},
+                {'name': 'value_num', 'label': '數值', 'field_type': 'decimal',
+                 'options': '', 'required': True, 'sort_order': 2, 'dimension': 'H'},
+                {'name': 'unit', 'label': '單位', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 3, 'dimension': None},
+                {'name': 'note', 'label': '備註', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 4, 'dimension': None},
+            ],
+        },
+    ]
+
+    with ss() as s:
+        created = 0
+        for schema_def in SYSTEM_SCHEMAS:
+            existing = s.query(EntrySchema).filter_by(code=schema_def['code']).first()
+            if existing:
+                continue
+
+            fields_data = schema_def.pop('fields')
+            es = EntrySchema(is_system=True, **schema_def)
+            s.add(es)
+            s.flush()
+
+            for fd in fields_data:
+                esf = EntrySchemaField(schema_id=es.id, **fd)
+                s.add(esf)
+
+            created += 1
+
+        if created:
+            logger.info(f'Entry Schema: 建立 {created} 個系統預設類型')
+        else:
+            logger.info('Entry Schema: 系統預設類型已存在，跳過')
+
+
 def seed_test_data():
     """載入測試用的 seed 資料"""
     from core.db import session_scope as ss
@@ -591,6 +720,9 @@ def main():
         create_all_tables()
         logger.info('資料表建立完成')
 
+        # 確保 Entry Schema 系統預設類型存在
+        ensure_entry_schemas()
+
         # Migration: 既有 canvas 補 slug
         ensure_canvas_slugs()
 
@@ -615,8 +747,9 @@ def main():
             sys.exit(0)
 
     if args.serve:
-        # Migration: 確保 canvas slug 已填充
+        # Migration: 確保 canvas slug 已填充 + Entry Schema 預設類型
         ensure_canvas_slugs()
+        ensure_entry_schemas()
 
         host = args.host or cfg.get('flask', 'host', fallback='192.168.0.16')
         port = args.port or cfg.getint('flask', 'port', fallback=5170)

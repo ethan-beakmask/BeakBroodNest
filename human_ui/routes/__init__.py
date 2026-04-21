@@ -10,6 +10,9 @@ from .schemas import bp as schemas_bp
 from .tags import bp as tags_bp
 from .observe import bp as observe_bp
 from .nav import bp as nav_bp
+from .entry_schemas import bp as entry_schemas_bp
+from .entries import bp as entries_bp
+from .unified_relations import bp as unified_relations_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -21,4 +24,7 @@ ALL_BLUEPRINTS = [
     tags_bp,
     observe_bp,
     nav_bp,
+    entry_schemas_bp,
+    entries_bp,
+    unified_relations_bp,
 ]

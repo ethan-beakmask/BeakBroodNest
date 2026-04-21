@@ -71,4 +71,34 @@ const API = {
     createTagCategory(data)         { return this.post('/beakcortex/api/tag-categories', data); },
     updateTagCategory(id, data)     { return this.put('/beakcortex/api/tag-categories/' + id, data); },
     deleteTagCategory(id)           { return this.del('/beakcortex/api/tag-categories/' + id); },
+
+    // Entry Schemas
+    getEntrySchemas()               { return this.get('/beakcortex/api/entry-schemas'); },
+    createEntrySchema(data)         { return this.post('/beakcortex/api/entry-schemas', data); },
+    updateEntrySchema(id, data)     { return this.put('/beakcortex/api/entry-schemas/' + id, data); },
+    deleteEntrySchema(id)           { return this.del('/beakcortex/api/entry-schemas/' + id); },
+
+    // Atom Entries
+    getEntries(atomId)              { return this.get('/beakcortex/api/atoms/' + atomId + '/entries'); },
+    createEntry(atomId, data)       { return this.post('/beakcortex/api/atoms/' + atomId + '/entries', data); },
+    getEntry(id)                    { return this.get('/beakcortex/api/entries/' + id); },
+    updateEntry(id, data)           { return this.put('/beakcortex/api/entries/' + id, data); },
+    deleteEntry(id)                 { return this.del('/beakcortex/api/entries/' + id); },
+    syncEntries(atomId, entries)    { return this.post('/beakcortex/api/atoms/' + atomId + '/entries/sync', { entries: entries }); },
+
+    // Entry Schema Fields
+    getEntrySchemaFields(schemaId)  { return this.get('/beakcortex/api/entry-schemas/' + schemaId + '/fields'); },
+    createEntrySchemaField(schemaId, data) { return this.post('/beakcortex/api/entry-schemas/' + schemaId + '/fields', data); },
+    updateEntrySchemaField(id, data) { return this.put('/beakcortex/api/entry-schema-fields/' + id, data); },
+    deleteEntrySchemaField(id)      { return this.del('/beakcortex/api/entry-schema-fields/' + id); },
+    reorderEntrySchemaFields(schemaId, fieldIds) { return this.put('/beakcortex/api/entry-schemas/' + schemaId + '/fields/reorder', { field_ids: fieldIds }); },
+
+    // Unified Relations
+    getUnifiedRelations(params)     { var q = new URLSearchParams(params || {}).toString(); return this.get('/beakcortex/api/unified-relations' + (q ? '?' + q : '')); },
+    createUnifiedRelation(data)     { return this.post('/beakcortex/api/unified-relations', data); },
+    updateUnifiedRelation(id, data) { return this.put('/beakcortex/api/unified-relations/' + id, data); },
+    deleteUnifiedRelation(id)       { return this.del('/beakcortex/api/unified-relations/' + id); },
+
+    // Promote entry to atom
+    promoteEntry(entryId)           { return this.post('/beakcortex/api/entries/' + entryId + '/promote', {}); },
 };
