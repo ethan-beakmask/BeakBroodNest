@@ -1,0 +1,665 @@
+=== 瞏贝代 'MobaXterm' 跌怠 ===
+
+т 9 才郴糷跌怠
+疭夹癘闽龄[X390]
+
+============================================================
+[郴糷跌怠 1/9]
+============================================================
+
+HWND    : 0x00520910
+Class   : TFormSelectPresets
+Title   : 'MobaXterm'
+Rect    : (453, -1026)  936 x 612
+Visible : False   Enabled : True
+
+  [北ン计: 3]
+
+  HWND    : 0x006F0D76
+  Class   : TsTreeView
+  Title   : ''
+  Rect    : (613, -944)  486 x 433
+  Visible : False   Enabled : True
+
+  HWND    : 0x005B0F40
+  Class   : TsBitBtn
+  Title   : 'Cancel'
+  Rect    : (879, -481)  90 x 31
+  Visible : False   Enabled : True
+
+  HWND    : 0x0041090C
+  Class   : TsBitBtn
+  Title   : 'OK'
+  Rect    : (743, -481)  82 x 31
+  Visible : False   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 2/9]
+============================================================
+
+HWND    : 0x000D0BF4
+Class   : CASCADIA_HOSTING_WINDOW_CLASS
+Title   : 'RD - python  window_inspector.py --deep "MobaXterm" '
+Rect    : (70, 0)  1129 x 1039
+Visible : True   Enabled : True
+
+  [北ン计: 2]
+
+  HWND    : 0x001008A4
+  Class   : DRAG_BAR_WINDOW_CLASS
+  Title   : ''
+  Rect    : (635, 1)  556 x 40
+  Visible : True   Enabled : True
+
+  HWND    : 0x002B07FA
+  Class   : Windows.UI.Composition.DesktopWindowContentBridge
+  Title   : 'DesktopWindowXamlSource'
+  Rect    : (78, 1)  1113 x 1030
+  Visible : True   Enabled : True
+
+    [北ン计: 1]
+
+    HWND    : 0x00540E0A
+    Class   : Windows.UI.Input.InputSite.WindowClass
+    Title   : ''
+    Rect    : (78, 1)  0 x 0
+    Visible : True   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 3/9]
+============================================================
+
+HWND    : 0x00030778
+Class   : TFormTermConfirmClose
+Title   : 'MobaXterm'
+Rect    : (659, -772)  467 x 204
+Visible : False   Enabled : True
+
+  [北ン计: 3]
+
+  HWND    : 0x0039020E
+  Class   : TsBitBtn
+  Title   : 'No'
+  Rect    : (957, -644)  74 x 31
+  Visible : False   Enabled : True
+
+  HWND    : 0x000E08CE
+  Class   : TsBitBtn
+  Title   : 'Yes'
+  Rect    : (825, -644)  66 x 31
+  Visible : False   Enabled : True
+
+  HWND    : 0x00550D86
+  Class   : TsCheckBox
+  Title   : 'Do not ask me again'
+  Rect    : (670, -603)  445 x 24
+  Visible : False   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 4/9]
+============================================================
+
+HWND    : 0x001A0B50
+Class   : TFormDownloadBloquant
+Title   : 'MobaXterm'
+Rect    : (337, 309)  304 x 164
+Visible : False   Enabled : True
+
+  [北ン计: 2]
+
+  HWND    : 0x001D0DA8
+  Class   : TListBox
+  Title   : ''
+  Rect    : (612, 463)  121 x 97
+  Visible : False   Enabled : True
+
+  HWND    : 0x001707B2
+  Class   : TListBox
+  Title   : ''
+  Rect    : (612, 455)  121 x 97
+  Visible : False   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 5/9]
+============================================================
+
+HWND    : 0x00020394
+Class   : TMobaXtermForm
+Title   : '192.168.0.16 ([X390])'  <<<< HIGHLIGHT: [X390] >>>>
+Rect    : (33, -1298)  1719 x 1257
+Visible : True   Enabled : True
+
+  [北ン计: 9]
+
+  HWND    : 0x004C0056
+  Class   : TsBitBtn
+  Title   : 'window_inspector.py            7.51 kB    2026-04-11 20:44    ethan    ethan    -rw-rw-r--'
+  Rect    : (202, -1038)  643 x 24
+  Visible : False   Enabled : True
+
+  HWND    : 0x00020784
+  Class   : TsPanel
+  Title   : ''
+  Rect    : (1308, -1221)  406 x 216
+  Visible : False   Enabled : True
+
+  HWND    : 0x00030134
+  Class   : TsPanel
+  Title   : ''
+  Rect    : (273, -1219)  36 x 1293
+  Visible : False   Enabled : True
+
+    [北ン计: 1]
+
+    HWND    : 0x000300FA
+    Class   : TsPageControl
+    Title   : ''
+    Rect    : (273, -1219)  42 x 1293
+    Visible : False   Enabled : True
+
+  HWND    : 0x0001076E
+  Class   : TPanel
+  Title   : ''
+  Rect    : (41, -1247)  1703 x 28
+  Visible : True   Enabled : True
+
+    [北ン计: 2]
+
+    HWND    : 0x00010770
+    Class   : TsPanel
+    Title   : ''
+    Rect    : (41, -1247)  283 x 28
+    Visible : True   Enabled : True
+
+      [北ン计: 1]
+
+      HWND    : 0x00010772
+      Class   : TsEdit
+      Title   : '  Quick connect...'
+      Rect    : (43, -1242)  279 x 21
+      Visible : True   Enabled : True
+
+    HWND    : 0x00010776
+    Class   : TChromeTabs
+    Title   : ''
+    Rect    : (326, -1247)  1380 x 28
+    Visible : True   Enabled : True
+
+  HWND    : 0x0004003C
+  Class   : TsPageControl
+  Title   : ''
+  Rect    : (-427, -543)  466 x 209
+  Visible : False   Enabled : True
+
+    [北ン计: 3]
+
+    HWND    : 0x0001074C
+    Class   : TsTabSheet
+    Title   : 'SheetView'
+    Rect    : (-423, -537)  458 x 199
+    Visible : False   Enabled : True
+
+    HWND    : 0x00010748
+    Class   : TsTabSheet
+    Title   : 'SheetGames'
+    Rect    : (-423, -537)  458 x 199
+    Visible : False   Enabled : True
+
+    HWND    : 0x0001074A
+    Class   : TsTabSheet
+    Title   : 'SheetTools'
+    Rect    : (-423, -537)  458 x 199
+    Visible : False   Enabled : True
+
+  HWND    : 0x0001076C
+  Class   : TsPanel
+  Title   : ''
+  Rect    : (41, -68)  1703 x 19
+  Visible : True   Enabled : True
+
+  HWND    : 0x000307A4
+  Class   : TsPanel
+  Title   : ''
+  Rect    : (41, -1247)  1703 x 28
+  Visible : False   Enabled : True
+
+  HWND    : 0x00030414
+  Class   : TsPanel
+  Title   : ''
+  Rect    : (41, -1219)  283 x 1151
+  Visible : True   Enabled : True
+
+    [北ン计: 2]
+
+    HWND    : 0x0003043A
+    Class   : TsPanel
+    Title   : ''
+    Rect    : (41, -1219)  283 x 1151
+    Visible : True   Enabled : True
+
+      [北ン计: 1]
+
+      HWND    : 0x0004045A
+      Class   : TsPageControl
+      Title   : ''
+      Rect    : (41, -1219)  283 x 1151
+      Visible : True   Enabled : True
+
+        [北ン计: 4]
+
+        HWND    : 0x00020786
+        Class   : TsTabSheet
+        Title   : ''
+        Rect    : (77, -1215)  243 x 1143
+        Visible : True   Enabled : True
+
+          [北ン计: 4]
+
+          HWND    : 0x00010796
+          Class   : TsPanel
+          Title   : ''
+          Rect    : (77, -105)  243 x 33
+          Visible : True   Enabled : True
+
+            [北ン计: 1]
+
+            HWND    : 0x00010798
+            Class   : TsCheckBox
+            Title   : ' Follow terminal folder'
+            Rect    : (114, -105)  206 x 33
+            Visible : True   Enabled : True
+
+          HWND    : 0x00010794
+          Class   : TsPanel
+          Title   : ''
+          Rect    : (77, -1215)  243 x 26
+          Visible : True   Enabled : True
+
+          HWND    : 0x00020788
+          Class   : TsListView
+          Title   : ''
+          Rect    : (77, -1167)  243 x 1030
+          Visible : True   Enabled : True
+
+            [北ン计: 2]
+
+            HWND    : 0x0001079E
+            Class   : TWinControlProxy
+            Title   : ''
+            Rect    : (77, -1167)  0 x 0
+            Visible : False   Enabled : True
+
+            HWND    : 0x0001078A
+            Class   : SysHeader32
+            Title   : ''
+            Rect    : (77, -1167)  243 x 24
+            Visible : True   Enabled : True
+
+          HWND    : 0x0004078E
+          Class   : TsComboBox
+          Title   : ''
+          Rect    : (77, -1189)  243 x 22
+          Visible : True   Enabled : True
+
+            [北ン计: 1]
+
+            HWND    : 0x00010792
+            Class   : Edit
+            Title   : ''
+            Rect    : (80, -1186)  220 x 16
+            Visible : True   Enabled : True
+
+        HWND    : 0x00010768
+        Class   : TsTabSheet
+        Title   : ''
+        Rect    : (77, -1215)  243 x 1143
+        Visible : False   Enabled : True
+
+          [北ン计: 1]
+
+          HWND    : 0x0001076A
+          Class   : TsScrollBox
+          Title   : ''
+          Rect    : (77, -1215)  243 x 1079
+          Visible : False   Enabled : True
+
+        HWND    : 0x000406C6
+        Class   : TsTabSheet
+        Title   : ''
+        Rect    : (77, -1215)  243 x 1143
+        Visible : False   Enabled : True
+
+          [北ン计: 1]
+
+          HWND    : 0x00030416
+          Class   : TsPanel
+          Title   : ''
+          Rect    : (77, -1215)  243 x 1143
+          Visible : False   Enabled : True
+
+            [北ン计: 1]
+
+            HWND    : 0x00030044
+            Class   : TsTreeView
+            Title   : ''
+            Rect    : (77, -1215)  243 x 1143
+            Visible : False   Enabled : True
+
+        HWND    : 0x000303D0
+        Class   : TsTabSheet
+        Title   : ''
+        Rect    : (77, -1215)  243 x 1143
+        Visible : False   Enabled : True
+
+          [北ン计: 1]
+
+          HWND    : 0x00030150
+          Class   : TsPanel
+          Title   : ''
+          Rect    : (77, -1178)  243 x 1106
+          Visible : False   Enabled : True
+
+            [北ン计: 1]
+
+            HWND    : 0x000303D8
+            Class   : TsTreeView
+            Title   : ''
+            Rect    : (77, -1178)  243 x 1106
+            Visible : False   Enabled : True
+
+    HWND    : 0x00080E06
+    Class   : TsPanel
+    Title   : ''
+    Rect    : (41, -129)  283 x 61
+    Visible : False   Enabled : True
+
+      [北ン计: 1]
+
+      HWND    : 0x00040912
+      Class   : TsBitBtn
+      Title   : 'Cancel'
+      Rect    : (238, -105)  82 x 27
+      Visible : False   Enabled : True
+
+  HWND    : 0x00010762
+  Class   : TsPanel
+  Title   : ''
+  Rect    : (328, -1219)  1416 x 1151
+  Visible : True   Enabled : True
+
+    [北ン计: 2]
+
+    HWND    : 0x00010766
+    Class   : TListBox
+    Title   : ''
+    Rect    : (268, -1279)  1 x 1
+    Visible : True   Enabled : True
+
+    HWND    : 0x00010764
+    Class   : TPanel
+    Title   : ''
+    Rect    : (328, -1219)  1416 x 1151
+    Visible : True   Enabled : True
+
+      [北ン计: 3]
+
+      HWND    : 0x00050AA6
+      Class   : CMoTTY
+      Title   : 'MoTTY'
+      Rect    : (328, -1219)  1416 x 1151
+      Visible : False   Enabled : True
+
+      HWND    : 0x000207C4
+      Class   : CMoTTY
+      Title   : 'MoTTY'
+      Rect    : (328, -1219)  1416 x 1151
+      Visible : True   Enabled : True
+
+      HWND    : 0x00030946
+      Class   : TPanel
+      Title   : ''
+      Rect    : (328, -1219)  1467 x 1293
+      Visible : False   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 6/9]
+============================================================
+
+HWND    : 0x000106CC
+Class   : TFormParams
+Title   : 'MobaXterm Configuration'
+Rect    : (422, 320)  810 x 559
+Visible : False   Enabled : True
+
+  [北ン计: 1]
+
+  HWND    : 0x000106CE
+  Class   : TsPageControl
+  Title   : ''
+  Rect    : (442, 363)  656 x 432
+  Visible : False   Enabled : True
+
+    [北ン计: 6]
+
+    HWND    : 0x000206DE
+    Class   : TsTabSheet
+    Title   : 'Security'
+    Rect    : (446, 397)  648 x 394
+    Visible : False   Enabled : True
+
+      [北ン计: 3]
+
+      HWND    : 0x000106E8
+      Class   : TsGroupBox
+      Title   : ' Disable embedded tools '
+      Rect    : (862, 677)  217 x 98
+      Visible : False   Enabled : True
+
+        [北ン计: 1]
+
+        HWND    : 0x000106EA
+        Class   : TsCheckListBox
+        Title   : ''
+        Rect    : (878, 697)  177 x 69
+        Visible : False   Enabled : True
+
+      HWND    : 0x000106E4
+      Class   : TsGroupBox
+      Title   : ' Disable embedded servers '
+      Rect    : (650, 677)  185 x 98
+      Visible : False   Enabled : True
+
+        [北ン计: 1]
+
+        HWND    : 0x000106E6
+        Class   : TsCheckListBox
+        Title   : ''
+        Rect    : (674, 697)  137 x 69
+        Visible : False   Enabled : True
+
+      HWND    : 0x000206E2
+      Class   : TsGroupBox
+      Title   : ' Disable sessions '
+      Rect    : (462, 677)  161 x 98
+      Visible : False   Enabled : True
+
+        [北ン计: 1]
+
+        HWND    : 0x000206E0
+        Class   : TsCheckListBox
+        Title   : ''
+        Rect    : (478, 697)  129 x 69
+        Visible : False   Enabled : True
+
+    HWND    : 0x000206DC
+    Class   : TsTabSheet
+    Title   : 'Toolbar'
+    Rect    : (446, 397)  648 x 394
+    Visible : False   Enabled : True
+
+    HWND    : 0x000106D8
+    Class   : TsTabSheet
+    Title   : 'SSH'
+    Rect    : (446, 397)  648 x 394
+    Visible : False   Enabled : True
+
+      [北ン计: 2]
+
+      HWND    : 0x0001074E
+      Class   : TsGroupBox
+      Title   : ' SSH agents '
+      Rect    : (462, 633)  609 x 146
+      Visible : False   Enabled : True
+
+        [北ン计: 1]
+
+        HWND    : 0x00010750
+        Class   : TsListBox
+        Title   : ''
+        Rect    : (486, 691)  509 x 52
+        Visible : False   Enabled : False
+
+      HWND    : 0x000106DA
+      Class   : TsGroupBox
+      Title   : ' SSH settings '
+      Rect    : (462, 499)  609 x 107
+      Visible : False   Enabled : True
+
+        [北ン计: 1]
+
+        HWND    : 0x000106F6
+        Class   : TsComboEdit
+        Title   : '<Same as Windows login>'
+        Rect    : (587, 517)  212 x 22
+        Visible : False   Enabled : True
+
+    HWND    : 0x000406D2
+    Class   : TsTabSheet
+    Title   : 'Terminal'
+    Rect    : (446, 397)  648 x 394
+    Visible : False   Enabled : True
+
+      [北ン计: 2]
+
+      HWND    : 0x000106D4
+      Class   : TsGroupBox
+      Title   : ' Terminal features '
+      Rect    : (462, 542)  609 x 117
+      Visible : False   Enabled : True
+
+        [北ン计: 2]
+
+        HWND    : 0x000306D6
+        Class   : TsComboEdit
+        Title   : ''
+        Rect    : (569, 623)  150 x 24
+        Visible : False   Enabled : True
+
+        HWND    : 0x000106F4
+        Class   : TsDirectoryEdit
+        Title   : ''
+        Rect    : (790, 597)  263 x 22
+        Visible : False   Enabled : False
+
+      HWND    : 0x000106F8
+      Class   : TsGroupBox
+      Title   : ' Local shell settings '
+      Rect    : (462, 685)  609 x 87
+      Visible : False   Enabled : True
+
+        [北ン计: 1]
+
+        HWND    : 0x000106FA
+        Class   : TsComboBoxEx
+        Title   : ''
+        Rect    : (714, 709)  253 x 25
+        Visible : False   Enabled : True
+
+          [北ン计: 1]
+
+          HWND    : 0x000106FC
+          Class   : ComboBox
+          Title   : ''
+          Rect    : (714, 709)  253 x 25
+          Visible : False   Enabled : True
+
+    HWND    : 0x000106D0
+    Class   : TsTabSheet
+    Title   : 'General'
+    Rect    : (446, 397)  648 x 394
+    Visible : False   Enabled : True
+
+      [北ン计: 3]
+
+      HWND    : 0x000106F2
+      Class   : TsDirectoryEdit
+      Title   : '<Temp directory>'
+      Rect    : (694, 477)  289 x 23
+      Visible : False   Enabled : True
+
+      HWND    : 0x000106F0
+      Class   : TsFilenameEdit
+      Title   : '<MobaTextEditor>'
+      Rect    : (694, 526)  313 x 22
+      Visible : False   Enabled : True
+
+      HWND    : 0x000106EE
+      Class   : TsDirectoryEdit
+      Title   : '<Temp directory>'
+      Rect    : (694, 429)  289 x 23
+      Visible : False   Enabled : True
+
+    HWND    : 0x000106EC
+    Class   : msctls_updown32
+    Title   : ''
+    Rect    : (1058, 371)  40 x 20
+    Visible : False   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 7/9]
+============================================================
+
+HWND    : 0x00030108
+Class   : TApplication
+Title   : 'MobaXterm'
+Rect    : (960, 540)  0 x 0
+Visible : True   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 8/9]
+============================================================
+
+HWND    : 0x00010754
+Class   : moba/x
+Title   : 'MobaXterm X server:0.0'
+Rect    : (0, 0)  2560 x 2520
+Visible : False   Enabled : True
+
+============================================================
+
+============================================================
+[郴糷跌怠 9/9]
+============================================================
+
+HWND    : 0x0002043C
+Class   : GDI+ Hook Window Class
+Title   : 'GDI+ Window (MobaXterm_Personal_25.3.exe)'
+Rect    : (0, 0)  1 x 1
+Visible : False   Enabled : True
+
+============================================================
+
