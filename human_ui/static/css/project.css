@@ -148,3 +148,50 @@ body {
     height: 6px;
     border-radius: 3px;
 }
+
+/* ========== Gantt v3 WBS ========== */
+
+#gantt-v3-container {
+    overflow-x: auto;
+}
+#gantt-v3-container .bt-split-right {
+    overflow-x: auto;
+}
+
+/* Urgency badge */
+.wbs-urgency {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.4;
+}
+
+/* Status badge */
+.wbs-status {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+.wbs-st-done     { background: #198754; color: #fff; }
+.wbs-st-progress { background: #0d6efd; color: #fff; }
+.wbs-st-pending  { background: #e9ecef; color: #495057; }
+.wbs-st-blocked  { background: #dc3545; color: #fff; }
+
+/* Date display */
+.wbs-date {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: #495057;
+    white-space: nowrap;
+}
+.wbs-date-empty {
+    font-size: 11px;
+    color: #ccc;
+}
