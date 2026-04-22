@@ -105,6 +105,10 @@
                    href="#" @click.prevent="activeTab = 'table'">表格</a>
             </li>
             <li class="nav-item">
+                <a class="nav-link" :class="activeTab === 'wbs' && 'active'"
+                   href="#" @click.prevent="switchToWbs()">WBS</a>
+            </li>
+            <li class="nav-item">
                 <a class="nav-link" :class="activeTab === 'gantt_mvp' && 'active'"
                    href="#" @click.prevent="switchToGanttMvp()">甘特圖</a>
             </li>
@@ -232,6 +236,109 @@
             </template>
         </div>
 
+        <!-- WBS VIEW -->
+        <div x-show="activeTab === 'wbs'" style="display:none;">
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                    <table class="table task-table wbs-table mb-0">
+                        <thead>
+                            <tr>
+                                <th class="wbs-th-num">WBS</th>
+                                <th class="wbs-th-title">項目</th>
+                                <th class="wbs-th-status">狀態</th>
+                                <th class="wbs-th-urgency">緊急</th>
+                                <th class="wbs-th-progress">進度</th>
+                                <th class="wbs-th-date">開始</th>
+                                <th class="wbs-th-date">結束</th>
+                                <th class="wbs-th-pred">前置項</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <template x-for="row in visibleWbs" :key="row.wbsNum">
+                                <tr :class="{
+                                    'row-done': row.status === 'done',
+                                }">
+                                    <td class="wbs-num" x-text="row.wbsNum"></td>
+                                    <td class="wbs-title-cell">
+                                        <div class="wbs-title-wrap">
+                                            <template x-for="(c, ci) in row.connectors" :key="ci">
+                                                <span class="tc" :class="'tc-' + c"></span>
+                                            </template>
+                                            <span class="wbs-toggle"
+                                                  :class="row.hasChildren ? '' : 'wbs-toggle-leaf'"
+                                                  @click="row.hasChildren && toggleWbs(row.wbsNum)"
+                                                  x-text="row.hasChildren ? (wbsExpanded[row.wbsNum] ? '\u25BC' : '\u25B6') : '\u2022'"></span>
+                                            <div class="wbs-title-content">
+                                                <div class="wbs-title-text" x-text="row.title"></div>
+                                                <div class="wbs-title-desc" x-show="row.content" x-text="row.content"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge"
+                                              :class="row.status ? 'badge-' + row.status : 'badge-pending'"
+                                              x-text="wbsStatusLabel(row.status)"></span>
+                                    </td>
+                                    <td>
+                                        <span class="badge"
+                                              :class="row.urgency ? 'badge-' + row.urgency.toLowerCase() : ''"
+                                              x-text="row.urgency"></span>
+                                    </td>
+                                    <td class="wbs-progress-cell">
+                                        <div class="wbs-progress-bar">
+                                            <div class="wbs-progress-fill"
+                                                 :class="row.progressPct >= 100 ? 'bg-success' : 'bg-primary'"
+                                                 :style="'width:' + row.progressPct + '%'"></div>
+                                        </div>
+                                        <span class="wbs-progress-text" x-text="row.progressPct + '%'"></span>
+                                    </td>
+                                    <td class="wbs-date-cell">
+                                        <span x-text="wbsFormatDate(row.actual_start || row.planned_start)"></span>
+                                    </td>
+                                    <td class="wbs-date-cell">
+                                        <span x-text="wbsFormatDate(row.actual_end)"></span>
+                                    </td>
+                                    <td class="wbs-pred-cell">
+                                        <template x-for="p in row.predecessors" :key="p.atom_id">
+                                            <div class="wbs-pred">
+                                                <span class="wbs-pred-num"
+                                                      x-text="wbsNumByAtom[p.atom_id] || ''"></span>
+                                                <span class="wbs-pred-title" x-text="p.title"></span>
+                                            </div>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="visibleWbs.length === 0">
+                                <tr><td colspan="8" class="text-center text-muted py-4">無 WBS 資料</td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edge Summary -->
+            <template x-if="wbsEdges.length > 0">
+                <div class="card mt-3">
+                    <div class="card-header bg-white py-2" style="font-size:13px;font-weight:600;">
+                        關係一覽 (<span x-text="wbsEdges.length"></span>)
+                    </div>
+                    <div class="card-body py-2">
+                        <template x-for="e in wbsEdges" :key="e.from_id + '-' + e.to_id + '-' + e.type">
+                            <div class="dep-item">
+                                <span x-text="e.from_title"></span>
+                                <span class="dep-arrow" :class="e.type === 'contains' ? 'dep-contains' : ''"
+                                      x-text="e.type"></span>
+                                <span x-text="e.to_title"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+
         <!-- GANTT MVP VIEW (Frappe Gantt) -->
         <div x-show="activeTab === 'gantt_mvp'" style="display:none;">
 
@@ -332,6 +439,11 @@ function projectApp() {
         lastRefresh: '',
         activeTab: 'table',
         _ganttMvpLoaded: false,
+        _wbsLoaded: false,
+        wbsFlat: [],
+        wbsExpanded: {},
+        wbsEdges: [],
+        wbsNumByAtom: {},
 
         async init() {
             await this.load();
@@ -402,6 +514,117 @@ function projectApp() {
             } catch (e) {
                 console.error('cycleItemStatus error:', e);
             }
+        },
+
+        switchToWbs() {
+            this.activeTab = 'wbs';
+            if (!this._wbsLoaded) {
+                this._wbsLoaded = true;
+                this.loadWbs();
+            }
+        },
+
+        async loadWbs() {
+            try {
+                var resp = await fetch('/beakcortex/api/project/' + this.canvasSlug + '/wbs');
+                if (!resp.ok) return;
+                var data = await resp.json();
+                this.wbsEdges = data.edges || [];
+                this._flattenWbs(data.tree || []);
+            } catch (e) {
+                console.error('loadWbs error:', e);
+            }
+        },
+
+        _flattenWbs(tree) {
+            var flat = [];
+            var expanded = {};
+            var numByAtom = {};
+            var _walk = function(nodes, depth, parentWbs, ancestorConn) {
+                for (var i = 0; i < nodes.length; i++) {
+                    var node = nodes[i];
+                    var wbs = parentWbs ? parentWbs + '.' + (i + 1) : String(i + 1);
+                    var hasChildren = node.children && node.children.length > 0;
+                    var isLast = (i === nodes.length - 1);
+                    expanded[wbs] = true;
+                    numByAtom[node.atom_id] = wbs;
+
+                    var connectors = ancestorConn.slice();
+                    if (depth > 0) {
+                        connectors.push(isLast ? 'elbow' : 'tee');
+                    }
+
+                    var pct = 0;
+                    if (node.progress) {
+                        pct = parseInt(node.progress, 10) || 0;
+                    } else if (node.status === 'done') {
+                        pct = 100;
+                    } else if (node.status === 'in_progress') {
+                        pct = 50;
+                    }
+
+                    flat.push({
+                        atom_id: node.atom_id,
+                        title: node.title,
+                        content: node.content,
+                        status: node.status,
+                        urgency: node.urgency,
+                        category: node.category,
+                        entry_id: node.entry_id,
+                        predecessors: node.predecessors || [],
+                        planned_start: node.planned_start || '',
+                        actual_start: node.actual_start || '',
+                        actual_end: node.actual_end || '',
+                        progressPct: pct,
+                        depth: depth,
+                        wbsNum: wbs,
+                        parentWbs: parentWbs,
+                        hasChildren: hasChildren,
+                        connectors: connectors,
+                    });
+                    if (hasChildren) {
+                        var childConn = ancestorConn.slice();
+                        if (depth > 0) {
+                            childConn.push(isLast ? 'space' : 'pipe');
+                        }
+                        _walk(node.children, depth + 1, wbs, childConn);
+                    }
+                }
+            };
+            _walk(tree, 0, '', []);
+            this.wbsFlat = flat;
+            this.wbsExpanded = expanded;
+            this.wbsNumByAtom = numByAtom;
+        },
+
+        toggleWbs(wbsNum) {
+            this.wbsExpanded[wbsNum] = !this.wbsExpanded[wbsNum];
+        },
+
+        _isWbsVisible(item) {
+            if (!item.parentWbs) return true;
+            var parts = item.parentWbs.split('.');
+            var prefix = '';
+            for (var i = 0; i < parts.length; i++) {
+                prefix = prefix ? prefix + '.' + parts[i] : parts[i];
+                if (!this.wbsExpanded[prefix]) return false;
+            }
+            return true;
+        },
+
+        get visibleWbs() {
+            var self = this;
+            return this.wbsFlat.filter(function(i) { return self._isWbsVisible(i); });
+        },
+
+        wbsStatusLabel(s) {
+            var m = { pending: 'Pending', in_progress: 'Working', done: 'Done' };
+            return m[s] || s || '-';
+        },
+
+        wbsFormatDate(dt) {
+            if (!dt) return '';
+            return dt.replace('T', ' ').slice(0, 16);
         },
 
         switchToGanttMvp() {

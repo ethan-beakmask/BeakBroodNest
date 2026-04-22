@@ -248,3 +248,192 @@ def project_summary(slug):
             'blocks': blocks_list,
             'trellis_data': trellis_data,
         })
+
+
+# ------------------------------------------------------------------
+# WBS (Work Breakdown Structure) API
+# ------------------------------------------------------------------
+
+def _topo_sort_siblings(nodes, predecessor_map):
+    """在同層 siblings 中依前置關係做拓撲排序，無關係的按 title 排"""
+    if len(nodes) <= 1:
+        return nodes
+
+    sibling_ids = {n['atom_id'] for n in nodes}
+    node_map = {n['atom_id']: n for n in nodes}
+
+    in_degree = {n['atom_id']: 0 for n in nodes}
+    adj = {n['atom_id']: [] for n in nodes}
+
+    for node in nodes:
+        for pred_id in predecessor_map.get(node['atom_id'], []):
+            if pred_id in sibling_ids:
+                adj[pred_id].append(node['atom_id'])
+                in_degree[node['atom_id']] += 1
+
+    queue = sorted(
+        [nid for nid, deg in in_degree.items() if deg == 0],
+        key=lambda x: node_map[x]['title'],
+    )
+    result = []
+    while queue:
+        nid = queue.pop(0)
+        result.append(node_map[nid])
+        for next_id in adj.get(nid, []):
+            in_degree[next_id] -= 1
+            if in_degree[next_id] == 0:
+                queue.append(next_id)
+        queue.sort(key=lambda x: node_map[x]['title'])
+
+    seen = {r['atom_id'] for r in result}
+    result.extend(n for n in nodes if n['atom_id'] not in seen)
+    return result
+
+
+@bp.route('/api/project/<slug>/wbs')
+def project_wbs(slug):
+    """WBS 樹狀結構：contains 為階層，follows/blocks 為先後"""
+
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        atom_ids = [
+            row[0] for row in
+            s.query(CanvasAtom.atom_id)
+            .filter(CanvasAtom.canvas_id == canvas.id)
+            .all()
+        ]
+        if not atom_ids:
+            return jsonify({
+                'canvas': {'id': canvas.id, 'name': canvas.name, 'slug': canvas.slug},
+                'tree': [], 'edges': [],
+            })
+
+        atoms = {
+            a.id: a for a in
+            s.query(KnowledgeAtom).filter(KnowledgeAtom.id.in_(atom_ids)).all()
+        }
+
+        # todo entries + field values
+        todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+        entries_by_atom = {}
+        if todo_schema:
+            entries = (
+                s.query(AtomEntry)
+                .filter(
+                    AtomEntry.atom_id.in_(atom_ids),
+                    AtomEntry.schema_id == todo_schema.id,
+                )
+                .all()
+            )
+            all_fv = _get_entry_field_values(s, [e.id for e in entries])
+            for entry in entries:
+                fv = all_fv.get(entry.id, {})
+                entries_by_atom[entry.atom_id] = {
+                    'entry_id': entry.id,
+                    'status': fv.get('status', 'pending'),
+                    'urgency': fv.get('urgency', 'M'),
+                    'category': fv.get('category', ''),
+                    'planned_start': fv.get('planned_start', ''),
+                    'actual_start': fv.get('actual_start', ''),
+                    'actual_end': fv.get('actual_end', ''),
+                    'planned_duration': fv.get('planned_duration', ''),
+                    'progress': fv.get('progress', ''),
+                }
+
+        # 取出白板原子間的三種關係
+        relations = (
+            s.query(AtomRelation)
+            .filter(
+                AtomRelation.from_atom_id.in_(atom_ids),
+                AtomRelation.to_atom_id.in_(atom_ids),
+                AtomRelation.relation_type.in_(['contains', 'follows', 'blocks']),
+            )
+            .all()
+        )
+
+        contains_children = {}   # parent -> [child, ...]
+        contained_set = set()
+        follows_map = {}         # atom -> [predecessors via follows]
+        blocked_by_map = {}      # atom -> [predecessors via blocks]
+        edges = []
+
+        for rel in relations:
+            edges.append({
+                'from_id': rel.from_atom_id,
+                'to_id': rel.to_atom_id,
+                'type': rel.relation_type,
+                'from_title': atoms[rel.from_atom_id].title if rel.from_atom_id in atoms else '',
+                'to_title': atoms[rel.to_atom_id].title if rel.to_atom_id in atoms else '',
+            })
+            if rel.relation_type == 'contains':
+                contains_children.setdefault(rel.from_atom_id, []).append(rel.to_atom_id)
+                contained_set.add(rel.to_atom_id)
+            elif rel.relation_type == 'follows':
+                # from follows to = to 是 from 的前置
+                follows_map.setdefault(rel.from_atom_id, []).append(rel.to_atom_id)
+            elif rel.relation_type == 'blocks':
+                # from blocks to = from 是 to 的前置
+                blocked_by_map.setdefault(rel.to_atom_id, []).append(rel.from_atom_id)
+
+        # 合併前置關係
+        predecessor_map = {}
+        all_ids = set(atom_ids)
+        for aid in all_ids:
+            preds = list(set(
+                follows_map.get(aid, []) + blocked_by_map.get(aid, [])
+            ))
+            if preds:
+                predecessor_map[aid] = preds
+
+        def build_node(atom_id):
+            atom = atoms.get(atom_id)
+            if not atom:
+                return None
+            ed = entries_by_atom.get(atom_id, {})
+
+            children = []
+            for cid in contains_children.get(atom_id, []):
+                child = build_node(cid)
+                if child:
+                    children.append(child)
+            children = _topo_sort_siblings(children, predecessor_map)
+
+            preds = []
+            for pid in predecessor_map.get(atom_id, []):
+                if pid in atoms:
+                    rel_type = 'follows' if pid in follows_map.get(atom_id, []) else 'blocks'
+                    preds.append({
+                        'atom_id': pid,
+                        'title': atoms[pid].title,
+                        'rel': rel_type,
+                    })
+
+            return {
+                'atom_id': atom_id,
+                'title': atom.title,
+                'content': atom.content or '',
+                'status': ed.get('status', ''),
+                'urgency': ed.get('urgency', ''),
+                'category': ed.get('category', ''),
+                'entry_id': ed.get('entry_id'),
+                'planned_start': ed.get('planned_start', ''),
+                'actual_start': ed.get('actual_start', ''),
+                'actual_end': ed.get('actual_end', ''),
+                'planned_duration': ed.get('planned_duration', ''),
+                'progress': ed.get('progress', ''),
+                'predecessors': preds,
+                'children': children,
+            }
+
+        root_ids = [aid for aid in atom_ids if aid not in contained_set]
+        tree = [n for n in (build_node(rid) for rid in root_ids) if n]
+        tree = _topo_sort_siblings(tree, predecessor_map)
+
+        return jsonify({
+            'canvas': {'id': canvas.id, 'name': canvas.name, 'slug': canvas.slug},
+            'tree': tree,
+            'edges': edges,
+        })
