@@ -16,6 +16,7 @@ from .unified_relations import bp as unified_relations_bp
 from .project import bp as project_bp
 from .gantt_mvp import bp as gantt_mvp_bp
 from .gantt_routes import bp as gantt_routes_bp
+from .beak_gantt import bp as beak_gantt_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -33,4 +34,5 @@ ALL_BLUEPRINTS = [
     project_bp,
     gantt_mvp_bp,
     gantt_routes_bp,
+    beak_gantt_bp,
 ]

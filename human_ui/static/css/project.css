@@ -327,3 +327,22 @@ body {
 .dep-contains {
     color: #6c757d;
 }
+
+/* BeakGantt view pills */
+.bk-view-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    font-size: 12px;
+    border-radius: 12px;
+    border: 1px solid #dee2e6;
+    color: #495057;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+}
+.bk-view-pill:hover { border-color: #3b82f6; color: #3b82f6; }
+.bk-view-pill.active {
+    background: #3b82f6;
+    color: #fff;
+    border-color: #3b82f6;
+}

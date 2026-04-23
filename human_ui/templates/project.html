@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/beakcortex/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/beakcortex/static/vendor/frappe-gantt/frappe-gantt.min.css">
     <link rel="stylesheet" href="/beakcortex/static/css/gantt-custom.css">
+    <link rel="stylesheet" href="/beakcortex/static/vendor/beak-gantt.css">
     <link rel="stylesheet" href="/beakcortex/static/css/project.css?v={{ cache_ver }}">
     <script defer src="/beakcortex/static/vendor/alpine.min.js"></script>
 </head>
@@ -112,6 +113,10 @@
                 <a class="nav-link" :class="activeTab === 'gantt_mvp' && 'active'"
                    href="#" @click.prevent="switchToGanttMvp()">甘特圖</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="activeTab === 'beak_gantt' && 'active'"
+                   href="#" @click.prevent="switchToBeakGantt()">專案管理</a>
+            </li>
         </ul>
 
         <!-- TABLE VIEW -->
@@ -164,7 +169,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <template x-for="item in filteredItems" :key="item.atom_id">
+                            <template x-for="item in filteredItems" :key="item.entry_id">
                                 <tr :class="{
                                     'row-done': item.status === 'done',
                                     'row-blocked': item.is_blocked
@@ -389,6 +394,38 @@
             </div>
         </div>
 
+        <!-- BEAK GANTT VIEW (專案管理) -->
+        <div x-show="activeTab === 'beak_gantt'" style="display:none;">
+            <div id="bk-gantt-panel" style="background:#fff; border:1px solid #ccc; padding:12px 16px; border-radius:4px;">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="d-flex gap-1 align-items-center">
+                        <span class="bk-view-pill active" data-view="day" onclick="setBeakGanttView('day')">Day</span>
+                        <span class="bk-view-pill" data-view="week" onclick="setBeakGanttView('week')">Week</span>
+                        <span class="bk-view-pill" data-view="month" onclick="setBeakGanttView('month')">Month</span>
+                        <span style="width:1px;height:18px;background:#ddd;margin:0 4px;"></span>
+                        <span class="bk-view-pill" onclick="beakGanttExpand(true)">Expand</span>
+                        <span class="bk-view-pill" onclick="beakGanttExpand(false)">Collapse</span>
+                        <span style="width:1px;height:18px;background:#ddd;margin:0 4px;"></span>
+                        <span class="bk-view-pill active" data-lay="both" onclick="setBeakGanttLayout('both')">Both</span>
+                        <span class="bk-view-pill" data-lay="wbs" onclick="setBeakGanttLayout('wbs')">WBS</span>
+                        <span class="bk-view-pill" data-lay="gantt" onclick="setBeakGanttLayout('gantt')">Gantt</span>
+                        <span style="width:1px;height:18px;background:#ddd;margin:0 4px;"></span>
+                        <button id="bk-undo-btn" class="btn btn-sm btn-outline-secondary" onclick="beakGanttUndo()" disabled style="font-size:11px;padding:2px 8px;opacity:0.4;">Undo</button>
+                    </div>
+                    <div style="font-size:11px; color:#6c757d;">
+                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:2px;"></span>High
+                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin:0 2px 0 8px;"></span>Medium
+                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6c757d;margin:0 2px 0 8px;"></span>Low
+                        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#198754;margin:0 2px 0 8px;"></span>Done
+                    </div>
+                </div>
+                <div id="beak-gantt-container" style="width:100%; height:560px;"></div>
+                <div class="mt-2" style="font-size:11px; color:#6c757d;">
+                    拖拉 bar=改日期 | 拖拉右端=改工期 | 拖拉進度條=改進度 | "+"=新增子項 | 右側藍點拖拉=建立依賴 | 左側三橫線拖拉=排序 | 底部虛線區=脫離成根項目
+                </div>
+            </div>
+        </div>
+
         <!-- Context menu -->
         <div id="ctx-menu" class="bg-context-menu" style="display:none;">
             <div class="bg-context-menu-item" data-action="reset-baseline">重設基線為當前實際</div>
@@ -421,6 +458,9 @@
 <script src="/beakcortex/static/js/gantt-core.js"></script>
 <script src="/beakcortex/static/js/gantt-dependency.js"></script>
 <script src="/beakcortex/static/js/gantt-baseline.js"></script>
+<!-- BeakGantt -->
+<script src="/beakcortex/static/vendor/beak-gantt.js"></script>
+<script src="/beakcortex/static/js/beak-gantt-app.js?v={{ cache_ver }}"></script>
 
 
 <script>
@@ -632,6 +672,14 @@ function projectApp() {
             var self = this;
             this.$nextTick(function() {
                 loadGanttMvp(self.canvasSlug);
+            });
+        },
+
+        switchToBeakGantt() {
+            this.activeTab = 'beak_gantt';
+            var self = this;
+            this.$nextTick(function() {
+                initBeakGantt(self.canvasSlug);
             });
         },
 
