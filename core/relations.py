@@ -1,10 +1,11 @@
 """
 因果鍊操作 -- CRUD 與圖查詢
+Phase 1: 所有查詢加入 is_deleted = FALSE 過濾
 """
-from sqlalchemy import and_
+from sqlalchemy import and_, text
 from sqlalchemy.orm import Session, joinedload
 
-from core.models import AtomRelation, KnowledgeAtom
+from core.models import AtomRelation, KnowledgeAtom, RelationTypeRegistry
 
 
 def create_relation(
@@ -16,12 +17,23 @@ def create_relation(
     confidence: float = 1.0,
     created_by: str = 'human',
 ) -> AtomRelation:
-    """建立一條因果關係"""
+    """建立一條關係。
+
+    graph_family / semantic_layer / affects_scheduling
+    由 DB trigger 從 relation_type_registry 自動填入。
+    ORM 物件在 flush 後需要 refresh 才能讀到 trigger 填入的值。
+    """
     if relation_type not in AtomRelation.VALID_TYPES:
         raise ValueError(
             f"無效的關係類型: {relation_type}，"
             f"允許值: {', '.join(AtomRelation.VALID_TYPES)}"
         )
+
+    # 查 registry 取得 trigger 會填入的值（ORM 層需要，因為 NOT NULL 無 DEFAULT）
+    reg = session.get(RelationTypeRegistry, relation_type)
+    if not reg:
+        raise ValueError(f"relation_type_registry 中找不到: {relation_type}")
+
     rel = AtomRelation(
         from_atom_id=from_atom_id,
         to_atom_id=to_atom_id,
@@ -29,6 +41,9 @@ def create_relation(
         label=label,
         confidence=confidence,
         created_by=created_by,
+        graph_family=reg.graph_family,
+        semantic_layer=reg.semantic_layer,
+        affects_scheduling=reg.affects_scheduling,
     )
     session.add(rel)
     session.flush()
@@ -36,21 +51,27 @@ def create_relation(
 
 
 def get_relations_from(session: Session, atom_id: int) -> list[AtomRelation]:
-    """取得從某原子出發的所有關係"""
+    """取得從某原子出發的所有關係（排除已軟刪除）"""
     return (
         session.query(AtomRelation)
         .options(joinedload(AtomRelation.to_atom))
-        .filter(AtomRelation.from_atom_id == atom_id)
+        .filter(
+            AtomRelation.from_atom_id == atom_id,
+            AtomRelation.is_deleted == False,
+        )
         .all()
     )
 
 
 def get_relations_to(session: Session, atom_id: int) -> list[AtomRelation]:
-    """取得指向某原子的所有關係"""
+    """取得指向某原子的所有關係（排除已軟刪除）"""
     return (
         session.query(AtomRelation)
         .options(joinedload(AtomRelation.from_atom))
-        .filter(AtomRelation.to_atom_id == atom_id)
+        .filter(
+            AtomRelation.to_atom_id == atom_id,
+            AtomRelation.is_deleted == False,
+        )
         .all()
     )
 
@@ -65,6 +86,7 @@ def get_blockers(session: Session, atom_id: int) -> list[KnowledgeAtom]:
         .filter(
             AtomRelation.to_atom_id == atom_id,
             AtomRelation.relation_type == 'blocks',
+            AtomRelation.is_deleted == False,
         )
         .all()
     )
@@ -114,13 +136,46 @@ def trace_block_chain(session: Session, atom_id: int, max_depth: int = 10) -> li
     return chain
 
 
+def soft_delete_relation(session: Session, relation_id: int) -> bool:
+    """軟刪除一條關係（設 is_deleted = TRUE，觸發 canvas_connections 同步）"""
+    rel = session.get(AtomRelation, relation_id)
+    if rel and not rel.is_deleted:
+        rel.is_deleted = True
+        session.flush()
+        return True
+    return False
+
+
+def restore_relation(session: Session, relation_id: int) -> bool:
+    """還原一條軟刪除的關係"""
+    rel = session.get(AtomRelation, relation_id)
+    if rel and rel.is_deleted:
+        rel.is_deleted = False
+        session.flush()
+        return True
+    return False
+
+
 def delete_relation(session: Session, relation_id: int) -> bool:
-    """刪除一條關係"""
+    """硬刪除一條關係（向後相容，建議改用 soft_delete_relation）"""
     rel = session.get(AtomRelation, relation_id)
     if rel:
         session.delete(rel)
         return True
     return False
+
+
+def check_cycle(session: Session, from_id: int, to_id: int, graph_family: str) -> bool:
+    """檢查新增邊 (from->to) 是否會在指定 graph_family 中產生環。
+
+    呼叫 DB 層的 check_would_create_cycle 函式。
+    回傳 True 表示會產生環。
+    """
+    result = session.execute(
+        text("SELECT check_would_create_cycle(:from_id, :to_id, :gf)"),
+        {'from_id': from_id, 'to_id': to_id, 'gf': graph_family}
+    )
+    return result.scalar()
 
 
 def trace_subgraph(
@@ -168,7 +223,8 @@ def trace_subgraph(
 
         if direction in ('outgoing', 'both'):
             q_out = session.query(AtomRelation).filter(
-                AtomRelation.from_atom_id == current_id
+                AtomRelation.from_atom_id == current_id,
+                AtomRelation.is_deleted == False,
             )
             if relation_types:
                 q_out = q_out.filter(AtomRelation.relation_type.in_(relation_types))
@@ -176,7 +232,8 @@ def trace_subgraph(
 
         if direction in ('incoming', 'both'):
             q_in = session.query(AtomRelation).filter(
-                AtomRelation.to_atom_id == current_id
+                AtomRelation.to_atom_id == current_id,
+                AtomRelation.is_deleted == False,
             )
             if relation_types:
                 q_in = q_in.filter(AtomRelation.relation_type.in_(relation_types))

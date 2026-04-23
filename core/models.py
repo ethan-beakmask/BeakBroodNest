@@ -194,6 +194,36 @@ class KnowledgeAtom(Base):
 # 5.2 因果鍊
 # ============================================================
 
+class RelationTypeRegistry(Base):
+    """關係類型參照表：graph_family 決定寫入驗證，semantic_layer 決定下游視圖過濾。"""
+    __tablename__ = 'relation_type_registry'
+
+    relation_type: Mapped[str] = mapped_column(String(30), primary_key=True)
+    graph_family: Mapped[str] = mapped_column(String(20), nullable=False)
+    semantic_layer: Mapped[str] = mapped_column(String(20), nullable=False)
+    affects_scheduling: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    display_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    is_directed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    description: Mapped[str] = mapped_column(Text, default='')
+    default_color: Mapped[str] = mapped_column(String(20), default='#6b7280')
+    default_style: Mapped[str] = mapped_column(String(30), default='solid')
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    def to_dict(self):
+        return {
+            'relation_type': self.relation_type,
+            'graph_family': self.graph_family,
+            'semantic_layer': self.semantic_layer,
+            'affects_scheduling': self.affects_scheduling,
+            'display_name': self.display_name,
+            'is_directed': self.is_directed,
+            'description': self.description,
+            'default_color': self.default_color,
+            'default_style': self.default_style,
+            'sort_order': self.sort_order,
+        }
+
+
 class AtomRelation(Base):
     __tablename__ = 'atom_relations'
 
@@ -205,8 +235,9 @@ class AtomRelation(Base):
         Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=False
     )
     relation_type: Mapped[str] = mapped_column(
-        String(30), nullable=False
-    )  # 見 VALID_TYPES
+        String(30), ForeignKey('relation_type_registry.relation_type'),
+        nullable=False
+    )
     label: Mapped[str] = mapped_column(Text, default='')
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
     created_by: Mapped[str] = mapped_column(String(20), default='human')
@@ -214,31 +245,36 @@ class AtomRelation(Base):
         DateTime, default=datetime.datetime.now
     )
 
+    # Phase 1 衍生欄位（由 DB trigger 從 registry 自動填入）
+    graph_family: Mapped[str] = mapped_column(String(20), nullable=False)
+    semantic_layer: Mapped[str] = mapped_column(String(20), nullable=False)
+    affects_scheduling: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+    # Phase 1 擴充欄位
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    rel_metadata: Mapped[dict | None] = mapped_column('metadata', JSONB, default=dict)
+
     from_atom: Mapped["KnowledgeAtom"] = relationship(foreign_keys=[from_atom_id])
     to_atom: Mapped["KnowledgeAtom"] = relationship(foreign_keys=[to_atom_id])
+    registry: Mapped["RelationTypeRegistry"] = relationship(
+        foreign_keys=[relation_type], viewonly=True
+    )
 
     __table_args__ = (
         UniqueConstraint('from_atom_id', 'to_atom_id', 'relation_type',
                          name='uq_atom_relation'),
+        CheckConstraint('from_atom_id <> to_atom_id', name='ck_no_self_loop'),
         Index('idx_relations_from', 'from_atom_id'),
         Index('idx_relations_to', 'to_atom_id'),
         Index('idx_relations_type', 'relation_type'),
     )
 
-    # 維度分類：
-    #   因果: causes, enables
-    #   論證: supports, contradicts
-    #   結構: contains
-    #   時序: follows
-    #   衍生: derives_from, supersedes, references
-    #   工作流: blocks
     VALID_TYPES = (
-        'causes', 'enables',
-        'supports', 'contradicts',
         'contains',
-        'follows',
-        'derives_from', 'supersedes', 'references',
-        'blocks',
+        'blocks', 'follows', 'enables', 'causes',
+        'derives_from', 'supersedes',
+        'supports', 'contradicts', 'references',
     )
 
     def to_dict(self, include_atoms=False):
@@ -247,10 +283,16 @@ class AtomRelation(Base):
             'from_atom_id': self.from_atom_id,
             'to_atom_id': self.to_atom_id,
             'relation_type': self.relation_type,
+            'graph_family': self.graph_family,
+            'semantic_layer': self.semantic_layer,
+            'affects_scheduling': self.affects_scheduling,
             'label': self.label,
             'confidence': self.confidence,
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'is_deleted': self.is_deleted,
+            'sort_order': self.sort_order,
+            'metadata': self.rel_metadata,
         }
         if include_atoms:
             d['from_atom'] = {'id': self.from_atom.id, 'title': self.from_atom.title} if self.from_atom else None
@@ -417,6 +459,7 @@ class CanvasConnection(Base):
     color: Mapped[str] = mapped_column(String(20), default='#3b82f6')
     label: Mapped[str] = mapped_column(Text, default='')
     animated: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_disconnected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     canvas: Mapped["Canvas"] = relationship(back_populates='connections')
     relation: Mapped["AtomRelation | None"] = relationship()
@@ -432,6 +475,7 @@ class CanvasConnection(Base):
             'color': self.color,
             'label': self.label,
             'animated': self.animated,
+            'is_disconnected': self.is_disconnected,
         }
 
 
