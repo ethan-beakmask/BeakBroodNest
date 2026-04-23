@@ -83,7 +83,7 @@ var BeakGanttChart = (function() {
         this._opts = Object.assign({
             gridWidth:450, viewMode:'day',
             customColumns:[], customData:{},
-            onTaskUpdate:null, onTaskCreate:null,
+            onTaskUpdate:null, onTaskCreate:null, onTaskDelete:null,
             onLinkCreate:null, onLinkDelete:null,
             onTaskReorder:null, onCustomEdit:null,
         }, opts||{});
@@ -188,19 +188,25 @@ var BeakGanttChart = (function() {
     P._renderGrid = function() {
         var self=this; this._gridEl.innerHTML='';
         var tbl=_el('table'),thd=_el('thead'),htr=_el('tr');
+        // 欄位順序: grip [+][-] WBS 項目 開始 天 進度 急 狀態 | 自訂欄...
         var cols=[
-            {k:'grip',l:'',w:18},{k:'wbs',l:'WBS',w:46},{k:'text',l:'項目',w:155},
+            {k:'grip',l:'',w:18},{k:'add',l:'',w:22},{k:'del',l:'',w:22},
+            {k:'wbs',l:'WBS',w:46},{k:'text',l:'項目',w:155},
             {k:'start',l:'開始',w:78},{k:'dur',l:'天',w:30},{k:'progress',l:'進度',w:78},
-            {k:'urgency',l:'急',w:28},{k:'status',l:'狀態',w:52},{k:'add',l:'',w:24},
+            {k:'urgency',l:'急',w:28},{k:'status',l:'狀態',w:52},
         ];
-        // Insert custom columns before 'add'
+        // Append custom columns at the end (after status, with separator)
         var ccols=this._opts.customColumns||[];
-        var insertIdx=cols.length-1; // before 'add'
+        var customStartIdx=cols.length;
         for(var ci=0;ci<ccols.length;ci++){
-            cols.splice(insertIdx+ci,0,{k:'_c_'+ccols[ci].key,l:ccols[ci].label,w:ccols[ci].width||80,custom:ccols[ci]});
+            cols.push({k:'_c_'+ccols[ci].key,l:ccols[ci].label,w:ccols[ci].width||80,custom:ccols[ci]});
         }
 
-        for(var i=0;i<cols.length;i++) htr.appendChild(_el('th','',{text:cols[i].l,style:'width:'+cols[i].w+'px;'}));
+        for(var i=0;i<cols.length;i++){
+            var thCls = (i === customStartIdx && ccols.length > 0) ? 'bk-th-sep' : '';
+            var th=_el('th',thCls,{text:cols[i].l,style:'width:'+cols[i].w+'px;'});
+            htr.appendChild(th);
+        }
         thd.appendChild(htr); tbl.appendChild(thd);
 
         var tb=_el('tbody');
@@ -258,6 +264,23 @@ var BeakGanttChart = (function() {
                     (function(t){ab.addEventListener('click',function(){if(self._opts.onTaskCreate)self._opts.onTaskCreate(t.id);});})(task);
                     td.appendChild(ab);
                     break;
+                case 'del':
+                    td=_el('td','',{style:'text-align:center;'});
+                    var db=_el('span','bk-del-btn',{text:'\u2212'}); // minus sign
+                    (function(t){db.addEventListener('click',function(){
+                        if(!confirm('Delete "'+t.text+'"?'))return;
+                        var idx=self._tasks.indexOf(t);if(idx>=0)self._tasks.splice(idx,1);
+                        // 子項目也一起移除
+                        var removeIds=[t.id];
+                        var found=true;
+                        while(found){found=false;for(var j=self._tasks.length-1;j>=0;j--){if(removeIds.indexOf(self._tasks[j].parent)>=0){removeIds.push(self._tasks[j].id);self._tasks.splice(j,1);found=true;}}}
+                        // 移除相關 links
+                        for(var j=self._links.length-1;j>=0;j--){if(removeIds.indexOf(self._links[j].source)>=0||removeIds.indexOf(self._links[j].target)>=0)self._links.splice(j,1);}
+                        if(self._opts.onTaskDelete)self._opts.onTaskDelete(t.id,removeIds);
+                        self.render();
+                    });})(task);
+                    td.appendChild(db);
+                    break;
                 default:
                     // custom column
                     if(col.custom){
@@ -270,6 +293,8 @@ var BeakGanttChart = (function() {
                         td=_el('td');
                     }
                 }
+                // 自訂欄起始處加分隔線 class
+                if(ci === customStartIdx && ccols.length > 0) td.classList.add('bk-td-sep');
                 row.appendChild(td);
             }
             tb.appendChild(row);
@@ -310,6 +335,13 @@ var BeakGanttChart = (function() {
                 gh.remove();ind.remove();
                 if(di<0||(!dz&&(di===ri||di===ri+1)))return;
                 var np=dz?0:(di<self._visibleList.length?(self._visibleList[di].parent||0):(di>0?(self._visibleList[di-1].parent||0):0));
+                // 防呆：不可把上層拖到自己的子孫下（會造成循環）
+                var checkId=np;
+                while(checkId&&checkId!==0){
+                    if(checkId===task.id)return; // 循環，取消
+                    var cp=self._tasks.find(function(x){return x.id===checkId;});
+                    checkId=cp?(cp.parent||0):0;
+                }
                 task.parent=np;
                 var ti=self._tasks.indexOf(task);if(ti>=0)self._tasks.splice(ti,1);
                 if(dz){self._tasks.push(task);}else{var tt=di<self._visibleList.length?self._visibleList[di]:null;var ib=tt?self._tasks.indexOf(tt):self._tasks.length;if(ib<0)ib=self._tasks.length;self._tasks.splice(ib,0,task);}

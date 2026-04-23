@@ -162,6 +162,25 @@
     color: #3b82f6;
 }
 
+/* Delete button */
+.bk-del-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #bbb;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+}
+.bk-del-btn:hover {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
 /* Progress bar in grid */
 .bk-progress-cell {
     display: flex;
@@ -451,6 +470,14 @@
     height: 30px;
     background: #fafafa;
     min-height: 30px;
+}
+
+/* Separator between WBS fixed cols and custom cols */
+.bk-th-sep {
+    border-left: 3px solid #6c757d !important;
+}
+.bk-td-sep {
+    border-left: 3px solid #adb5bd !important;
 }
 
 /* Custom column cells */

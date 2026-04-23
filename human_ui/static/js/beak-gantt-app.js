@@ -158,7 +158,49 @@
                 },
 
                 onLinkCreate: function(sourceId, targetId) {
-                    _toast('Link: #' + sourceId + ' -> #' + targetId + ' (save not yet implemented)');
+                    fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt/link', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({source: sourceId, target: targetId}),
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(resp) {
+                        if (resp.ok) _toast('Link saved');
+                        else _toast('Link error', true);
+                        _updateUndoBtn();
+                    })
+                    .catch(function() { _toast('Network error', true); });
+                },
+
+                onLinkDelete: function(sourceId, targetId) {
+                    fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt/link', {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({source: sourceId, target: targetId}),
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(resp) {
+                        if (resp.ok) _toast('Link deleted');
+                        else _toast('Delete link error', true);
+                        _updateUndoBtn();
+                    })
+                    .catch(function() { _toast('Network error', true); });
+                },
+
+                onTaskDelete: function(taskId, removedIds) {
+                    fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt/' + taskId, {
+                        method: 'DELETE',
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(resp) {
+                        if (resp.ok) {
+                            _toast('Deleted ' + resp.deleted.length + ' item(s)');
+                            _loadData();
+                        } else {
+                            _toast('Delete error', true);
+                        }
+                    })
+                    .catch(function() { _toast('Network error', true); });
                 },
 
                 onTaskReorder: function(taskId, newParentId, newIndex) {

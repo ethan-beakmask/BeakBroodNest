@@ -228,6 +228,112 @@ def patch_beak_gantt_task(slug, atom_id):
         return jsonify({'ok': True, 'entry_id': entry.id, 'updated': updated})
 
 
+@bp.route('/api/project/<slug>/beak-gantt/<int:atom_id>', methods=['DELETE'])
+def delete_beak_gantt_task(slug, atom_id):
+    """刪除任務：atom + entries + canvas_atom + 相關 relations。"""
+    with session_scope() as s:
+        atom = s.get(KnowledgeAtom, atom_id)
+        if not atom:
+            return jsonify({'error': 'atom not found'}), 404
+
+        # 收集要刪除的 atom_ids（含子孫）
+        remove_ids = [atom_id]
+        found = True
+        while found:
+            found = False
+            child_rels = (
+                s.query(AtomRelation)
+                .filter(
+                    AtomRelation.from_atom_id.in_(remove_ids),
+                    AtomRelation.relation_type == 'contains',
+                )
+                .all()
+            )
+            for rel in child_rels:
+                if rel.to_atom_id not in remove_ids:
+                    remove_ids.append(rel.to_atom_id)
+                    found = True
+
+        # 刪除 relations（所有涉及這些 atom 的）
+        s.query(AtomRelation).filter(
+            (AtomRelation.from_atom_id.in_(remove_ids)) |
+            (AtomRelation.to_atom_id.in_(remove_ids))
+        ).delete(synchronize_session='fetch')
+
+        # 刪除 entry field values + entries
+        entries = s.query(AtomEntry).filter(AtomEntry.atom_id.in_(remove_ids)).all()
+        entry_ids = [e.id for e in entries]
+        if entry_ids:
+            s.query(EntryFieldValue).filter(
+                EntryFieldValue.entry_id.in_(entry_ids)
+            ).delete(synchronize_session='fetch')
+        s.query(AtomEntry).filter(AtomEntry.atom_id.in_(remove_ids)).delete(synchronize_session='fetch')
+
+        # 刪除 canvas placement
+        s.query(CanvasAtom).filter(CanvasAtom.atom_id.in_(remove_ids)).delete(synchronize_session='fetch')
+
+        # 軟刪除 atom（設 is_deleted）
+        for aid in remove_ids:
+            a = s.get(KnowledgeAtom, aid)
+            if a:
+                a.is_deleted = True
+
+        s.flush()
+        return jsonify({'ok': True, 'deleted': remove_ids})
+
+
+@bp.route('/api/project/<slug>/beak-gantt/link', methods=['POST'])
+def create_beak_gantt_link(slug):
+    """建立依賴關係（blocks）。body: {source: atom_id, target: atom_id}"""
+    body = request.get_json()
+    if not body:
+        return jsonify({'error': 'need JSON body'}), 400
+
+    source_id = body.get('source')
+    target_id = body.get('target')
+    if not source_id or not target_id:
+        return jsonify({'error': 'need source and target'}), 400
+
+    with session_scope() as s:
+        # 檢查是否已存在
+        existing = (
+            s.query(AtomRelation)
+            .filter_by(from_atom_id=source_id, to_atom_id=target_id, relation_type='blocks')
+            .first()
+        )
+        if existing:
+            return jsonify({'ok': True, 'message': 'already exists'})
+
+        s.add(AtomRelation(from_atom_id=source_id, to_atom_id=target_id, relation_type='blocks'))
+        s.flush()
+        return jsonify({'ok': True})
+
+
+@bp.route('/api/project/<slug>/beak-gantt/link', methods=['DELETE'])
+def delete_beak_gantt_link(slug):
+    """刪除依賴關係。body: {source: atom_id, target: atom_id}"""
+    body = request.get_json()
+    if not body:
+        return jsonify({'error': 'need JSON body'}), 400
+
+    source_id = body.get('source')
+    target_id = body.get('target')
+    if not source_id or not target_id:
+        return jsonify({'error': 'need source and target'}), 400
+
+    with session_scope() as s:
+        rel = (
+            s.query(AtomRelation)
+            .filter_by(from_atom_id=source_id, to_atom_id=target_id, relation_type='blocks')
+            .first()
+        )
+        if not rel:
+            return jsonify({'error': 'relation not found'}), 404
+        s.delete(rel)
+        s.flush()
+        return jsonify({'ok': True})
+
+
 def _batch_fv(s, entry_ids):
     if not entry_ids:
         return {}

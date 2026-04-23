@@ -32,71 +32,17 @@
 
     <div class="container-fluid py-3">
 
-        <!-- Title -->
-        <div class="d-flex align-items-center justify-content-between mb-3">
-            <h5 class="mb-0" x-text="canvas.name || 'Loading...'"></h5>
-            <div class="d-flex gap-2">
-                <a :href="'/beakcortex/canvas/' + canvasSlug" class="btn btn-sm btn-outline-secondary">
-                    開啟白板
-                </a>
-            </div>
-        </div>
-
-        <!-- Stats Cards -->
-        <div class="row g-2 mb-3">
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value" x-text="summary.total"></div>
-                        <div class="stat-label">Total</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value text-primary" x-text="summary.in_progress"></div>
-                        <div class="stat-label">進行中</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value text-success" x-text="summary.done"></div>
-                        <div class="stat-label">已完成</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value text-warning" x-text="summary.pending"></div>
-                        <div class="stat-label">待辦</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value text-danger" x-text="summary.blocked"></div>
-                        <div class="stat-label">阻塞</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Progress bar -->
-        <div class="mb-3">
-            <div class="progress progress-thin">
-                <div class="progress-bar bg-success" :style="'width:' + pctDone + '%'"></div>
-                <div class="progress-bar bg-primary" :style="'width:' + pctProgress + '%'"></div>
-                <div class="progress-bar bg-warning" :style="'width:' + pctPending + '%'"></div>
-            </div>
-            <div class="d-flex justify-content-between mt-1" style="font-size:11px;color:#6c757d;">
-                <span x-text="pctDone + '% done'"></span>
+        <!-- Compact title bar -->
+        <div class="d-flex align-items-center justify-content-between mb-2" style="font-size:12px;color:#6c757d;">
+            <div class="d-flex align-items-center gap-2">
+                <span style="font-weight:600;color:#333;" x-text="canvas.name || 'Loading...'"></span>
+                <span x-text="summary.total + ' items'"></span>
+                <span class="text-success" x-text="pctDone + '% done'"></span>
                 <span>H:<span x-text="summary.h"></span> M:<span x-text="summary.m"></span> L:<span x-text="summary.l"></span></span>
             </div>
+            <a :href="'/beakcortex/canvas/' + canvasSlug" class="btn btn-sm btn-outline-secondary" style="font-size:11px;padding:1px 8px;">
+                開啟白板
+            </a>
         </div>
 
         <!-- View Tabs -->
@@ -477,7 +423,7 @@ function projectApp() {
         sortCol: '',
         sortAsc: true,
         lastRefresh: '',
-        activeTab: 'table',
+        activeTab: 'beak_gantt',
         _ganttMvpLoaded: false,
         _wbsLoaded: false,
         wbsFlat: [],
@@ -487,6 +433,9 @@ function projectApp() {
 
         async init() {
             await this.load();
+            // 預設進入專案管理分頁
+            var self = this;
+            this.$nextTick(function() { initBeakGantt(self.canvasSlug); });
         },
 
         async load() {
