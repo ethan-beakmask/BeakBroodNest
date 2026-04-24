@@ -142,7 +142,7 @@
     width: 100%; height: 100%;
     overflow: visible;
     pointer-events: none;
-    z-index: 5;
+    z-index: 12;
 }
 
 .wb-connections path {
@@ -562,6 +562,67 @@
 }
 
 .block-chain-node:hover { background: #fef2f2; }
+
+/* ---- Entry 行列（ER-model 風格） ---- */
+.wb-card-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.wb-entry-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 6px 2px 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-light);
+    position: relative;
+    min-height: 22px;
+    cursor: default;
+}
+
+.wb-entry-row:last-child { border-bottom: none; }
+
+.wb-entry-row:hover {
+    background: rgba(59, 130, 246, 0.04);
+}
+
+.wb-entry-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+}
+
+.wb-entry-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.4;
+}
+
+.wb-entry-anchor {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 1.5px solid var(--bg-secondary);
+    cursor: crosshair;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.wb-entry-row:hover .wb-entry-anchor { opacity: 1; }
+.wb-viewport.conn-dragging .wb-entry-anchor { opacity: 0.4; }
+.wb-viewport.conn-dragging .wb-entry-row:hover .wb-entry-anchor { opacity: 1; }
+
+.wb-entry-row.conn-entry-hover {
+    background: rgba(59, 130, 246, 0.12);
+}
+.wb-entry-row.conn-entry-hover .wb-entry-anchor { opacity: 1; }
 
 /* ---- 連線拖曳增強 ---- */
 .wb-card-anchor:hover {

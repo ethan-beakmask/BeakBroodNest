@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload
 from core.db import session_scope
 from core.models import (
     AtomEntry, EntryFieldValue, EntrySchemaField, EntrySchema,
-    KnowledgeAtom,
+    KnowledgeAtom, CanvasConnection,
 )
 
 bp = Blueprint('entries', __name__)
@@ -365,8 +365,17 @@ def sync_entries(atom_id):
                 incoming_ids.add(entry.id)
                 result_entries.append(entry)
 
-        # 刪除不在 incoming 中的舊 entries
+        # 刪除不在 incoming 中的舊 entries（先清理引用的 canvas_connections）
         old_entries = s.query(AtomEntry).filter_by(atom_id=atom_id).all()
+        deleted_entry_ids = [old.id for old in old_entries if old.id not in incoming_ids]
+        if deleted_entry_ids:
+            from sqlalchemy import or_
+            s.query(CanvasConnection).filter(
+                or_(
+                    CanvasConnection.source_entry_id.in_(deleted_entry_ids),
+                    CanvasConnection.target_entry_id.in_(deleted_entry_ids),
+                )
+            ).delete(synchronize_session='fetch')
         for old in old_entries:
             if old.id not in incoming_ids:
                 s.delete(old)

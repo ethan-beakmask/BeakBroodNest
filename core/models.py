@@ -453,13 +453,19 @@ class CanvasConnection(Base):
     )
     source_atom_id: Mapped[int] = mapped_column(Integer, nullable=False)
     target_atom_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_entry_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('atom_entries.id', ondelete='SET NULL'), nullable=True
+    )
+    target_entry_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('atom_entries.id', ondelete='SET NULL'), nullable=True
+    )
     # deprecated: 舊 FK，保留向後相容但不再寫入
     relation_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('atom_relations.id'), nullable=True
     )
     # 新 FK: 指向 unified_relations
     unified_relation_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey('unified_relations.id'), nullable=True
+        Integer, ForeignKey('unified_relations.id', ondelete='SET NULL'), nullable=True
     )
     line_style: Mapped[str] = mapped_column(String(30), default='bezier')
     color: Mapped[str] = mapped_column(String(20), default='#3b82f6')
@@ -477,6 +483,8 @@ class CanvasConnection(Base):
             'canvas_id': self.canvas_id,
             'source_atom_id': self.source_atom_id,
             'target_atom_id': self.target_atom_id,
+            'source_entry_id': self.source_entry_id,
+            'target_entry_id': self.target_entry_id,
             'unified_relation_id': self.unified_relation_id,
             'line_style': self.line_style,
             'color': self.color,

@@ -123,8 +123,24 @@
 
                         <div class="wb-card-body"
                              @mousedown.stop="editingAtomId !== ca.atom_id && onCardBodyMouseDown($event, ca)">
+                            <!-- 結構化 entry 行列（有 entries 時） -->
+                            <div class="wb-card-entries"
+                                 x-show="editingAtomId !== ca.atom_id && ca.atom && ca.atom.entries && ca.atom.entries.length > 0">
+                                <template x-for="entry in (ca.atom && ca.atom.entries ? ca.atom.entries : [])" :key="entry.id">
+                                    <div class="wb-entry-row"
+                                         :id="'entry-' + ca.atom_id + '-' + entry.id"
+                                         @mouseenter="onEntryMouseEnter(ca, entry)"
+                                         @mouseleave="onEntryMouseLeave(ca, entry)">
+                                        <i class="bi wb-entry-icon" :class="entry.schema_icon" :style="'color:' + entry.schema_color"></i>
+                                        <span class="wb-entry-text" x-text="(entry.raw_text || '').substring(0, 40)"></span>
+                                        <div class="wb-entry-anchor"
+                                             @mousedown.stop.prevent="startEntryConnDrag($event, ca, entry)"></div>
+                                    </div>
+                                </template>
+                            </div>
+                            <!-- 純文字 markdown（無 entries 時） -->
                             <div class="wb-card-content wb-markdown"
-                                 x-show="editingAtomId !== ca.atom_id"
+                                 x-show="editingAtomId !== ca.atom_id && !(ca.atom && ca.atom.entries && ca.atom.entries.length > 0)"
                                  x-html="renderMarkdown(ca.atom ? ca.atom.content : '', 800)"></div>
                             <template x-if="editingAtomId === ca.atom_id">
                                 <textarea :id="'edit-' + ca.atom_id"

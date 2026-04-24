@@ -118,6 +118,10 @@ function whiteboardApp(canvasId) {
         connDragMouseX: 0,
         connDragMouseY: 0,
 
+        // Entry-level connection drag
+        connDragSourceEntryId: null,
+        connDragHoverEntryId: null,
+
         // Phase 3: Relations & Block Chain
         selectedAtomDetails: null,
         highlightedAtomIds: [],
@@ -206,7 +210,7 @@ function whiteboardApp(canvasId) {
         renderMode: 'normal',
         renderStats: { total: 0, rendered: 0 },
         rtLineStyle: 'curve',
-        rtEngine: 'grouped',
+        rtEngine: 'individual',
         rtOptEnabled: false,
         rtOptPerSector: 10,
         rtPanelOpen: false,
@@ -685,7 +689,10 @@ function whiteboardApp(canvasId) {
 
         async confirmConnection() {
             if (!this.pendingConnection) return;
-            var resp = await API.createConnection({ canvas_id: this.canvasId, source_atom_id: this.pendingConnection.sourceAtomId, target_atom_id: this.pendingConnection.targetAtomId, relation_type: this.selectedRelationType, label: this.relationLabel });
+            var payload = { canvas_id: this.canvasId, source_atom_id: this.pendingConnection.sourceAtomId, target_atom_id: this.pendingConnection.targetAtomId, relation_type: this.selectedRelationType, label: this.relationLabel };
+            if (this.pendingConnection.sourceEntryId) payload.source_entry_id = this.pendingConnection.sourceEntryId;
+            if (this.pendingConnection.targetEntryId) payload.target_entry_id = this.pendingConnection.targetEntryId;
+            var resp = await API.createConnection(payload);
             this.showRelationModal = false; this.pendingConnection = null; this.mode = 'select';
             if (resp && !resp.error) { this.connections.push(resp); this.renderConnections(); }
         },

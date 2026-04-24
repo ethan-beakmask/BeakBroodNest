@@ -564,6 +564,7 @@ def register(mcp):
         """在兩個知識原子之間建立有向關係。
 
         relation_type 允許值（按維度分類）:
+          自由: freeform     -- A -> B（無語意約束，純視覺連線）
           因果: causes       -- A 導致了 B
                 enables      -- A 使 B 成為可能（比 causes 弱）
           論證: supports     -- 證據 A 支持結論 B

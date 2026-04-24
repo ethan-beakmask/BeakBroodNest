@@ -9,6 +9,7 @@ from core.models import (
     KnowledgeAtom, UnifiedRelation, RelationTypeRegistry,
     Canvas, CanvasAtom, CanvasConnection,
     CanvasGroup, Tag, atom_tags,
+    AtomEntry, EntrySchema,
 )
 from core import relations as rel_service
 
@@ -230,6 +231,40 @@ def get_canvas(slug):
 
         atom_ids = [r.atom_id for r in ca_rows]
 
+        # --- 1b. 批次載入 entries（含 schema 資訊）---
+        entries_map = {}
+        if atom_ids:
+            entry_rows = (
+                s.query(
+                    AtomEntry.id,
+                    AtomEntry.atom_id,
+                    AtomEntry.schema_id,
+                    AtomEntry.sort_order,
+                    AtomEntry.raw_text,
+                    AtomEntry.summary,
+                    EntrySchema.code.label('schema_code'),
+                    EntrySchema.name.label('schema_name'),
+                    EntrySchema.icon.label('schema_icon'),
+                    EntrySchema.color.label('schema_color'),
+                )
+                .join(EntrySchema, EntrySchema.id == AtomEntry.schema_id)
+                .filter(AtomEntry.atom_id.in_(atom_ids))
+                .order_by(AtomEntry.atom_id, AtomEntry.sort_order)
+                .all()
+            )
+            for er in entry_rows:
+                entries_map.setdefault(er.atom_id, []).append({
+                    'id': er.id,
+                    'schema_id': er.schema_id,
+                    'sort_order': er.sort_order,
+                    'raw_text': er.raw_text,
+                    'summary': er.summary or '',
+                    'schema_code': er.schema_code,
+                    'schema_name': er.schema_name,
+                    'schema_icon': er.schema_icon,
+                    'schema_color': er.schema_color,
+                })
+
         # --- 2. 批次載入標籤 ---
         tags_map = {}
         if atom_ids:
@@ -288,6 +323,7 @@ def get_canvas(slug):
                     'owner': r.atom_owner or 'ethan',
                     'tags': tags_map.get(r.atom_id, []),
                     'updated_at': r.atom_updated_at.isoformat() if r.atom_updated_at else None,
+                    'entries': entries_map.get(r.atom_id, []),
                 },
                 'is_blocked': r.atom_id in blocked_ids,
             })
@@ -326,6 +362,8 @@ def get_canvas(slug):
                 CanvasConnection.canvas_id,
                 CanvasConnection.source_atom_id,
                 CanvasConnection.target_atom_id,
+                CanvasConnection.source_entry_id,
+                CanvasConnection.target_entry_id,
                 CanvasConnection.unified_relation_id,
                 CanvasConnection.line_style,
                 CanvasConnection.color,
@@ -345,6 +383,8 @@ def get_canvas(slug):
             'canvas_id': cr.canvas_id,
             'source_atom_id': cr.source_atom_id,
             'target_atom_id': cr.target_atom_id,
+            'source_entry_id': cr.source_entry_id,
+            'target_entry_id': cr.target_entry_id,
             'unified_relation_id': cr.unified_relation_id,
             'line_style': cr.line_style,
             'color': cr.color,
@@ -557,21 +597,42 @@ def create_canvas_connection():
         else:
             canvas_id = canvas_ref
 
-        # 查找或建立 unified_relation（atom-atom）
-        relation = s.query(UnifiedRelation).filter(
-            UnifiedRelation.from_atom_id == data['source_atom_id'],
-            UnifiedRelation.to_atom_id == data['target_atom_id'],
+        # entry-level 連線參數（可選）
+        src_entry_id = data.get('source_entry_id')
+        tgt_entry_id = data.get('target_entry_id')
+
+        # unified_relation 端點：entry 優先，否則 atom
+        # create_relation 要求二擇一（atom_id 或 entry_id）
+        ur_from_atom = None if src_entry_id else data['source_atom_id']
+        ur_from_entry = src_entry_id
+        ur_to_atom = None if tgt_entry_id else data['target_atom_id']
+        ur_to_entry = tgt_entry_id
+
+        # 查找現有 relation
+        filter_conds = [
             UnifiedRelation.relation_type == rel_type,
             UnifiedRelation.is_deleted == False,
-        ).first()
+        ]
+        if ur_from_atom:
+            filter_conds.append(UnifiedRelation.from_atom_id == ur_from_atom)
+        if ur_from_entry:
+            filter_conds.append(UnifiedRelation.from_entry_id == ur_from_entry)
+        if ur_to_atom:
+            filter_conds.append(UnifiedRelation.to_atom_id == ur_to_atom)
+        if ur_to_entry:
+            filter_conds.append(UnifiedRelation.to_entry_id == ur_to_entry)
+
+        relation = s.query(UnifiedRelation).filter(*filter_conds).first()
 
         if not relation:
             try:
                 relation = rel_service.create_relation(
                     s,
                     relation_type=rel_type,
-                    from_atom_id=data['source_atom_id'],
-                    to_atom_id=data['target_atom_id'],
+                    from_atom_id=ur_from_atom,
+                    to_atom_id=ur_to_atom,
+                    from_entry_id=ur_from_entry,
+                    to_entry_id=ur_to_entry,
                     label=data.get('label', ''),
                     created_by='human',
                 )
@@ -584,6 +645,8 @@ def create_canvas_connection():
             canvas_id=canvas_id,
             source_atom_id=data['source_atom_id'],
             target_atom_id=data['target_atom_id'],
+            source_entry_id=src_entry_id,
+            target_entry_id=tgt_entry_id,
             unified_relation_id=relation.id,
             line_style=style['line_style'],
             color=style['color'],
