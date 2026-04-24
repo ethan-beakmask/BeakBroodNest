@@ -6,7 +6,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
 from core.models import (
-    UnifiedRelation, AtomRelation, KnowledgeAtom, AtomEntry,
+    UnifiedRelation, KnowledgeAtom, AtomEntry,
 )
 
 bp = Blueprint('unified_relations', __name__)

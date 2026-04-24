@@ -1,7 +1,7 @@
 /**
  * BeakCortex Slash Command -- Tiptap Extension
  *
- * 在行首輸入 / 時觸發下拉選單，列出所有 entry schemas。
+ * 在行首輸入 ;; 時觸發下拉選單，列出所有 entry schemas。
  * 選擇後將當前行（paragraph）轉為 structuredEntry node。
  *
  * 依賴 window._entrySchemas（由 whiteboard-card-editor.js 設定）。
@@ -32,8 +32,8 @@ export const SlashCommand = Extension.create({
                             return { active: false, query: '', from: 0 }
                         }
                         const text = $from.parent.textContent
-                        if (text.startsWith('/')) {
-                            const query = text.slice(1).toLowerCase()
+                        if (text.startsWith(';;')) {
+                            const query = text.slice(2).toLowerCase()
                             return { active: true, query, from: $from.before() }
                         }
                         return { active: false, query: '', from: 0 }
@@ -111,7 +111,7 @@ class SlashMenuView {
 
             if (schema.slash_alias) {
                 const alias = document.createElement('span')
-                alias.textContent = '/' + schema.slash_alias
+                alias.textContent = ';;' + schema.slash_alias
                 alias.style.fontSize = '11px'
                 alias.style.color = '#94a3b8'
                 item.appendChild(alias)

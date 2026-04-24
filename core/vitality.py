@@ -52,7 +52,7 @@ def _write_heartbeat(suffix=None):
     )
 
 from core.db import init_engine, session_scope
-from core.models import KnowledgeAtom, AtomRelation
+from core.models import KnowledgeAtom, UnifiedRelation
 
 logger = logging.getLogger('beak_cortex.vitality')
 
@@ -110,10 +110,11 @@ def recalc_all(verbose=False):
         for atom in atoms:
             # 計算因果鍊活性
             relations = (
-                s.query(AtomRelation)
+                s.query(UnifiedRelation)
                 .filter(
-                    (AtomRelation.from_atom_id == atom.id) |
-                    (AtomRelation.to_atom_id == atom.id)
+                    UnifiedRelation.is_deleted == False,
+                    (UnifiedRelation.from_atom_id == atom.id) |
+                    (UnifiedRelation.to_atom_id == atom.id)
                 )
                 .all()
             )
@@ -144,10 +145,11 @@ def recalc_all(verbose=False):
 
             # 檢查是否被 contradicts
             is_refuted = (
-                s.query(AtomRelation)
+                s.query(UnifiedRelation)
                 .filter(
-                    AtomRelation.to_atom_id == atom.id,
-                    AtomRelation.relation_type == 'contradicts',
+                    UnifiedRelation.is_deleted == False,
+                    UnifiedRelation.to_atom_id == atom.id,
+                    UnifiedRelation.relation_type == 'contradicts',
                 )
                 .first()
             ) is not None

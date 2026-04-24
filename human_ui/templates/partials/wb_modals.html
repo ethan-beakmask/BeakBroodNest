@@ -2,7 +2,7 @@
     <!-- Modals -->
     <!-- ============================================ -->
 
-    <!-- 原子資訊對話框（雙擊卡片觸發） -->
+    <!-- 卡片資訊對話框（雙擊卡片觸發） -->
     <template x-if="showAtomInfoModal && selectedAtomDetails">
         <div class="modal-overlay">
             <div class="modal atom-info-modal">
@@ -181,12 +181,12 @@
         </div>
     </template>
 
-    <!-- 新增原子 -->
+    <!-- 新增卡片 -->
     <template x-if="showNewAtomModal">
         <div class="modal-overlay">
             <div class="modal">
                 <div class="modal-header">
-                    <h3>新增原子</h3>
+                    <h3>新增卡片</h3>
                     <button class="modal-close" @click="showNewAtomModal=false">x</button>
                 </div>
                 <div class="modal-body">
@@ -219,17 +219,17 @@
         </div>
     </template>
 
-    <!-- 放置現有原子 -->
+    <!-- 放置現有卡片 -->
     <template x-if="showAddExistingModal">
         <div class="modal-overlay">
             <div class="modal">
                 <div class="modal-header">
-                    <h3>放置現有原子</h3>
+                    <h3>放置現有卡片</h3>
                     <button class="modal-close" @click="showAddExistingModal=false">x</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <input class="form-control" x-model="searchQuery" placeholder="搜尋原子..."
+                        <input class="form-control" x-model="searchQuery" placeholder="搜尋卡片..."
                                @input.debounce.300ms="doSearch()">
                     </div>
                     <div style="max-height:300px; overflow-y:auto;">
@@ -247,7 +247,7 @@
                             </div>
                         </template>
                         <div x-show="searchResults.length === 0" class="empty-state" style="padding:20px;">
-                            <p>沒有可放置的原子</p>
+                            <p>沒有可放置的卡片</p>
                         </div>
                     </div>
                 </div>
@@ -538,6 +538,46 @@
         </div>
     </template>
 
+    <!-- 連線右鍵選單 -->
+    <template x-if="connContextMenu">
+        <div class="context-menu" :style="'left:' + connContextMenu.x + 'px; top:' + connContextMenu.y + 'px;'"
+             @click.stop @click.away="closeConnContextMenu()">
+            <div class="context-menu-item" @click="connContextAction('change-type')">變更關係類型</div>
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item danger" @click="connContextAction('delete')">刪除連線</div>
+        </div>
+    </template>
+
+    <!-- 連線型別修改 -->
+    <template x-if="showConnTypeModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>變更關係類型</h3>
+                    <button class="modal-close" @click="showConnTypeModal=false; connTypeChangeTarget=null;">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <template x-for="rt in relationTypeList" :key="'ct-'+rt.value">
+                            <label class="relation-option"
+                                   :class="{ selected: selectedRelationType === rt.value }">
+                                <input type="radio" name="connRelType" :value="rt.value"
+                                       x-model="selectedRelationType" style="margin-right:8px;">
+                                <span class="relation-color-dot" :style="'background:' + rt.color"></span>
+                                <span x-text="rt.label"></span>
+                                <span class="text-muted text-sm" style="margin-left:4px;" x-text="rt.desc"></span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showConnTypeModal=false; connTypeChangeTarget=null;">取消</button>
+                    <button class="btn btn-primary" @click="confirmConnTypeChange()">變更</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <!-- 連線標籤 inline 編輯 -->
     <template x-if="editingConnId">
         <div class="conn-edit-overlay"
@@ -588,7 +628,7 @@
                 </div>
                 <div class="modal-body">
                     <p class="text-sm text-muted" style="margin-bottom:12px;">
-                        選擇先前匯出的 JSON 檔案，將原子放置到當前畫布。已存在的原子會跳過。
+                        選擇先前匯出的 JSON 檔案，將卡片放置到當前畫布。已存在的卡片會跳過。
                     </p>
                     <input type="file" accept=".json" @change="importCanvasFromFile($event)"
                            style="font-size:13px;">
@@ -648,7 +688,7 @@
                                             @click="deleteCurrentCanvas()">刪除白板</button>
                                 </div>
                                 <div style="font-size:11px;color:var(--text-muted);margin-top:6px;">
-                                    歸檔：隱藏但保留。刪除：永久移除白板（原子不受影響）。
+                                    歸檔：隱藏但保留。刪除：永久移除白板（卡片不受影響）。
                                 </div>
                             </div>
                         </div>
@@ -929,7 +969,7 @@
         <div class="context-menu" :style="'left:' + contextMenu.x + 'px; top:' + contextMenu.y + 'px;'" @click.stop>
             <template x-if="contextMenu.type === 'canvas'">
                 <div>
-                    <div class="context-menu-item" @click="contextAddAtom()">新增原子</div>
+                    <div class="context-menu-item" @click="contextAddAtom()">新增卡片</div>
                     <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="fitView(); closeContextMenu()">適應視圖</div>
                     <div class="context-menu-item" @click="resetZoom(); closeContextMenu()">重置縮放</div>
@@ -945,7 +985,7 @@
                     <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除</div>
                     <div class="context-menu-item danger"
-                         @click="if(confirm('刪除此原子? 所有白板都會移除')) { deleteAtomEntirely(contextMenu.ca); closeContextMenu(); }">刪除原子</div>
+                         @click="if(confirm('刪除此卡片? 所有白板都會移除')) { deleteAtomEntirely(contextMenu.ca); closeContextMenu(); }">刪除卡片</div>
                 </div>
             </template>
             <template x-if="contextMenu.type === 'group'">

@@ -34,7 +34,7 @@ function whiteboardUndoMixin() {
             var self = this;
             this.pushUndo({
                 type: 'move',
-                desc: '移動 ' + atomIds.length + ' 個原子',
+                desc: '移動 ' + atomIds.length + ' 張卡片',
                 undo: async function() {
                     for (var i = 0; i < atomIds.length; i++) {
                         var ca = self.atoms.find(function(a) { return a.atom_id === atomIds[i]; });
@@ -78,7 +78,7 @@ function whiteboardUndoMixin() {
                 });
                 this.pushUndo({
                     type: 'remove_multi',
-                    desc: '移除 ' + toDelete.length + ' 個原子',
+                    desc: '移除 ' + toDelete.length + ' 張卡片',
                     undo: async function() {
                         for (var i = 0; i < removedData.length; i++) {
                             var rd = removedData[i];

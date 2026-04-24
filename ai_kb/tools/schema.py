@@ -8,7 +8,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
 from core.models import (
-    KnowledgeAtom, AtomRelation, Tag, atom_tags,
+    KnowledgeAtom, UnifiedRelation, Tag, atom_tags,
     AtomSchema, SchemaField,
 )
 from core import relations as rel_service
@@ -158,8 +158,11 @@ def register(mcp):
             )
 
             blocked_atom_ids = (
-                s.query(AtomRelation.to_atom_id)
-                .filter(AtomRelation.relation_type == 'blocks')
+                s.query(UnifiedRelation.to_atom_id)
+                .filter(
+                    UnifiedRelation.is_deleted == False,
+                    UnifiedRelation.relation_type == 'blocks',
+                )
                 .distinct()
                 .subquery()
             )

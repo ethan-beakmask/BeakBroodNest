@@ -4,7 +4,7 @@
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from core.models import KnowledgeAtom, AtomRelation, Tag, atom_tags
+from core.models import KnowledgeAtom, UnifiedRelation, Tag, atom_tags
 
 
 def check_consistency(
@@ -66,12 +66,13 @@ def check_consistency(
     contradictions = []
     if similar_ids:
         conflict_rels = (
-            session.query(AtomRelation)
+            session.query(UnifiedRelation)
             .filter(
-                AtomRelation.relation_type == 'contradicts',
+                UnifiedRelation.is_deleted == False,
+                UnifiedRelation.relation_type == 'contradicts',
                 or_(
-                    AtomRelation.from_atom_id.in_(similar_ids),
-                    AtomRelation.to_atom_id.in_(similar_ids),
+                    UnifiedRelation.from_atom_id.in_(similar_ids),
+                    UnifiedRelation.to_atom_id.in_(similar_ids),
                 ),
             )
             .all()

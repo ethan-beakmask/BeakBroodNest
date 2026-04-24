@@ -14,7 +14,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
 from core.models import (
-    KnowledgeAtom, Canvas, CanvasAtom, AtomRelation,
+    KnowledgeAtom, Canvas, CanvasAtom, UnifiedRelation,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
 )
 
@@ -64,11 +64,12 @@ def get_beak_gantt(slug):
                 }
 
         relations = (
-            s.query(AtomRelation)
+            s.query(UnifiedRelation)
             .filter(
-                AtomRelation.from_atom_id.in_(atom_ids),
-                AtomRelation.to_atom_id.in_(atom_ids),
-                AtomRelation.relation_type.in_(['contains', 'follows', 'blocks']),
+                UnifiedRelation.from_atom_id.in_(atom_ids),
+                UnifiedRelation.to_atom_id.in_(atom_ids),
+                UnifiedRelation.relation_type.in_(['contains', 'follows', 'blocks']),
+                UnifiedRelation.is_deleted == False,
             )
             .all()
         )
@@ -187,7 +188,7 @@ def create_beak_gantt_task(slug):
         if parent_id and parent_id != 0:
             parent_atom = s.get(KnowledgeAtom, parent_id)
             if parent_atom:
-                s.add(AtomRelation(from_atom_id=parent_id, to_atom_id=atom.id, relation_type='contains'))
+                s.add(UnifiedRelation(from_atom_id=parent_id, to_atom_id=atom.id, relation_type='contains'))
 
         s.flush()
         return jsonify({'ok': True, 'tid': atom.id, 'entry_id': entry.id})
@@ -242,10 +243,11 @@ def delete_beak_gantt_task(slug, atom_id):
         while found:
             found = False
             child_rels = (
-                s.query(AtomRelation)
+                s.query(UnifiedRelation)
                 .filter(
-                    AtomRelation.from_atom_id.in_(remove_ids),
-                    AtomRelation.relation_type == 'contains',
+                    UnifiedRelation.from_atom_id.in_(remove_ids),
+                    UnifiedRelation.relation_type == 'contains',
+                    UnifiedRelation.is_deleted == False,
                 )
                 .all()
             )
@@ -254,11 +256,18 @@ def delete_beak_gantt_task(slug, atom_id):
                     remove_ids.append(rel.to_atom_id)
                     found = True
 
-        # 刪除 relations（所有涉及這些 atom 的）
-        s.query(AtomRelation).filter(
-            (AtomRelation.from_atom_id.in_(remove_ids)) |
-            (AtomRelation.to_atom_id.in_(remove_ids))
-        ).delete(synchronize_session='fetch')
+        # 軟刪除 relations（所有涉及這些 atom 的）
+        rels_to_delete = (
+            s.query(UnifiedRelation)
+            .filter(
+                (UnifiedRelation.from_atom_id.in_(remove_ids)) |
+                (UnifiedRelation.to_atom_id.in_(remove_ids)),
+                UnifiedRelation.is_deleted == False,
+            )
+            .all()
+        )
+        for rel in rels_to_delete:
+            rel.is_deleted = True
 
         # 刪除 entry field values + entries
         entries = s.query(AtomEntry).filter(AtomEntry.atom_id.in_(remove_ids)).all()
@@ -297,14 +306,15 @@ def create_beak_gantt_link(slug):
     with session_scope() as s:
         # 檢查是否已存在
         existing = (
-            s.query(AtomRelation)
+            s.query(UnifiedRelation)
             .filter_by(from_atom_id=source_id, to_atom_id=target_id, relation_type='blocks')
+            .filter(UnifiedRelation.is_deleted == False)
             .first()
         )
         if existing:
             return jsonify({'ok': True, 'message': 'already exists'})
 
-        s.add(AtomRelation(from_atom_id=source_id, to_atom_id=target_id, relation_type='blocks'))
+        s.add(UnifiedRelation(from_atom_id=source_id, to_atom_id=target_id, relation_type='blocks'))
         s.flush()
         return jsonify({'ok': True})
 
@@ -323,13 +333,14 @@ def delete_beak_gantt_link(slug):
 
     with session_scope() as s:
         rel = (
-            s.query(AtomRelation)
+            s.query(UnifiedRelation)
             .filter_by(from_atom_id=source_id, to_atom_id=target_id, relation_type='blocks')
+            .filter(UnifiedRelation.is_deleted == False)
             .first()
         )
         if not rel:
             return jsonify({'error': 'relation not found'}), 404
-        s.delete(rel)
+        rel.is_deleted = True
         s.flush()
         return jsonify({'ok': True})
 

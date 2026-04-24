@@ -7,7 +7,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
 from core.models import (
-    KnowledgeAtom, Canvas, CanvasAtom, AtomRelation,
+    KnowledgeAtom, Canvas, CanvasAtom, UnifiedRelation,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
 )
 
@@ -76,11 +76,12 @@ def project_summary(slug):
 
         # 阻塞狀態：哪些原子被 blocks
         blocking_rels = (
-            s.query(AtomRelation)
-            .join(KnowledgeAtom, KnowledgeAtom.id == AtomRelation.from_atom_id)
+            s.query(UnifiedRelation)
+            .join(KnowledgeAtom, KnowledgeAtom.id == UnifiedRelation.from_atom_id)
             .filter(
-                AtomRelation.to_atom_id.in_(atom_ids),
-                AtomRelation.relation_type == 'blocks',
+                UnifiedRelation.to_atom_id.in_(atom_ids),
+                UnifiedRelation.relation_type == 'blocks',
+                UnifiedRelation.is_deleted == False,
                 KnowledgeAtom.lifecycle.in_(['active', 'aging']),
                 KnowledgeAtom.is_deleted == False,
             )
@@ -92,11 +93,12 @@ def project_summary(slug):
 
         # 所有 blocks 關係（含已完成的，用於依賴圖）
         all_blocks = (
-            s.query(AtomRelation)
+            s.query(UnifiedRelation)
             .filter(
-                AtomRelation.from_atom_id.in_(atom_ids),
-                AtomRelation.to_atom_id.in_(atom_ids),
-                AtomRelation.relation_type == 'blocks',
+                UnifiedRelation.from_atom_id.in_(atom_ids),
+                UnifiedRelation.to_atom_id.in_(atom_ids),
+                UnifiedRelation.relation_type == 'blocks',
+                UnifiedRelation.is_deleted == False,
             )
             .all()
         )
@@ -345,11 +347,12 @@ def project_wbs(slug):
 
         # 取出白板原子間的三種關係
         relations = (
-            s.query(AtomRelation)
+            s.query(UnifiedRelation)
             .filter(
-                AtomRelation.from_atom_id.in_(atom_ids),
-                AtomRelation.to_atom_id.in_(atom_ids),
-                AtomRelation.relation_type.in_(['contains', 'follows', 'blocks']),
+                UnifiedRelation.from_atom_id.in_(atom_ids),
+                UnifiedRelation.to_atom_id.in_(atom_ids),
+                UnifiedRelation.relation_type.in_(['contains', 'follows', 'blocks']),
+                UnifiedRelation.is_deleted == False,
             )
             .all()
         )

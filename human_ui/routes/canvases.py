@@ -6,7 +6,8 @@ from sqlalchemy import func
 
 from core.db import session_scope
 from core.models import (
-    KnowledgeAtom, AtomRelation, Canvas, CanvasAtom, CanvasConnection,
+    KnowledgeAtom, UnifiedRelation, RelationTypeRegistry,
+    Canvas, CanvasAtom, CanvasConnection,
     CanvasGroup, Tag, atom_tags,
 )
 from core import relations as rel_service
@@ -20,10 +21,9 @@ def _get_canvas_by_slug(s, slug):
 
 
 def _build_canvas_snapshot(s, canvas_id):
-    """建立白板的完整快照：原子（完整內容）、連線、群組、標籤"""
-    from core.models import AtomRelation
+    """建立白板的完整快照：卡片（完整內容）、連線、群組、標籤"""
 
-    # 原子 + 完整內容
+    # 卡片 + 完整內容
     ca_rows = (
         s.query(CanvasAtom, KnowledgeAtom)
         .join(KnowledgeAtom, KnowledgeAtom.id == CanvasAtom.atom_id)
@@ -47,15 +47,16 @@ def _build_canvas_snapshot(s, canvas_id):
                 {'id': tid, 'name': tname, 'color': tcolor}
             )
 
-    # 阻塞狀態
+    # 阻塞狀態（unified_relations）
     blocked_ids = set()
     if atom_ids:
         blocking = (
-            s.query(AtomRelation.to_atom_id)
-            .join(KnowledgeAtom, KnowledgeAtom.id == AtomRelation.from_atom_id)
+            s.query(UnifiedRelation.to_atom_id)
+            .join(KnowledgeAtom, KnowledgeAtom.id == UnifiedRelation.from_atom_id)
             .filter(
-                AtomRelation.to_atom_id.in_(atom_ids),
-                AtomRelation.relation_type == 'blocks',
+                UnifiedRelation.to_atom_id.in_(atom_ids),
+                UnifiedRelation.relation_type == 'blocks',
+                UnifiedRelation.is_deleted == False,
                 KnowledgeAtom.lifecycle.in_(['active', 'aging']),
                 KnowledgeAtom.is_deleted == False,
             )
@@ -109,25 +110,30 @@ def _build_canvas_snapshot(s, canvas_id):
         'z_index': g.z_index, 'atom_ids': group_members.get(g.id, []),
     } for g in groups]
 
-    # 連線
+    # 連線（unified_relations）
     conn_rows = (
         s.query(
             CanvasConnection.id, CanvasConnection.canvas_id,
             CanvasConnection.source_atom_id, CanvasConnection.target_atom_id,
-            CanvasConnection.relation_id, CanvasConnection.line_style,
+            CanvasConnection.unified_relation_id, CanvasConnection.line_style,
             CanvasConnection.color, CanvasConnection.label, CanvasConnection.animated,
-            AtomRelation.relation_type,
+            UnifiedRelation.relation_type,
+            UnifiedRelation.graph_family,
+            UnifiedRelation.semantic_layer,
         )
-        .outerjoin(AtomRelation, AtomRelation.id == CanvasConnection.relation_id)
+        .outerjoin(UnifiedRelation, UnifiedRelation.id == CanvasConnection.unified_relation_id)
         .filter(CanvasConnection.canvas_id == canvas_id)
         .all()
     )
     snap_conns = [{
         'id': cr.id, 'canvas_id': cr.canvas_id,
         'source_atom_id': cr.source_atom_id, 'target_atom_id': cr.target_atom_id,
-        'relation_id': cr.relation_id, 'line_style': cr.line_style,
+        'unified_relation_id': cr.unified_relation_id,
+        'line_style': cr.line_style,
         'color': cr.color, 'label': cr.label, 'animated': cr.animated,
         'relation_type': cr.relation_type,
+        'graph_family': cr.graph_family,
+        'semantic_layer': cr.semantic_layer,
     } for cr in conn_rows]
 
     return {
@@ -238,15 +244,16 @@ def get_canvas(slug):
                     {'id': tid, 'name': tname, 'color': tcolor}
                 )
 
-        # --- 3. 批次檢查阻塞狀態 ---
+        # --- 3. 批次檢查阻塞狀態（unified_relations） ---
         blocked_ids = set()
         if atom_ids:
             blocking_rels = (
-                s.query(AtomRelation.to_atom_id)
-                .join(KnowledgeAtom, KnowledgeAtom.id == AtomRelation.from_atom_id)
+                s.query(UnifiedRelation.to_atom_id)
+                .join(KnowledgeAtom, KnowledgeAtom.id == UnifiedRelation.from_atom_id)
                 .filter(
-                    AtomRelation.to_atom_id.in_(atom_ids),
-                    AtomRelation.relation_type == 'blocks',
+                    UnifiedRelation.to_atom_id.in_(atom_ids),
+                    UnifiedRelation.relation_type == 'blocks',
+                    UnifiedRelation.is_deleted == False,
                     KnowledgeAtom.lifecycle.in_(['active', 'aging']),
                     KnowledgeAtom.is_deleted == False,
                 )
@@ -312,21 +319,24 @@ def get_canvas(slug):
             'atom_ids': group_members.get(g.id, []),
         } for g in groups]
 
-        # --- 5. 連線 ---
+        # --- 5. 連線（unified_relations） ---
         conn_rows = (
             s.query(
                 CanvasConnection.id,
                 CanvasConnection.canvas_id,
                 CanvasConnection.source_atom_id,
                 CanvasConnection.target_atom_id,
-                CanvasConnection.relation_id,
+                CanvasConnection.unified_relation_id,
                 CanvasConnection.line_style,
                 CanvasConnection.color,
                 CanvasConnection.label,
                 CanvasConnection.animated,
-                AtomRelation.relation_type,
+                CanvasConnection.is_disconnected,
+                UnifiedRelation.relation_type,
+                UnifiedRelation.graph_family,
+                UnifiedRelation.semantic_layer,
             )
-            .outerjoin(AtomRelation, AtomRelation.id == CanvasConnection.relation_id)
+            .outerjoin(UnifiedRelation, UnifiedRelation.id == CanvasConnection.unified_relation_id)
             .filter(CanvasConnection.canvas_id == canvas_id)
             .all()
         )
@@ -335,12 +345,15 @@ def get_canvas(slug):
             'canvas_id': cr.canvas_id,
             'source_atom_id': cr.source_atom_id,
             'target_atom_id': cr.target_atom_id,
-            'relation_id': cr.relation_id,
+            'unified_relation_id': cr.unified_relation_id,
             'line_style': cr.line_style,
             'color': cr.color,
             'label': cr.label,
             'animated': cr.animated,
+            'is_disconnected': cr.is_disconnected,
             'relation_type': cr.relation_type,
+            'graph_family': cr.graph_family,
+            'semantic_layer': cr.semantic_layer,
         } for cr in conn_rows]
 
         return jsonify(result)
@@ -509,9 +522,17 @@ def delete_canvas_group(group_id):
 # Canvas Connections
 # ============================================================
 
+def _get_relation_style(s, relation_type):
+    """從 registry 取得關係類型的視覺樣式"""
+    reg = s.get(RelationTypeRegistry, relation_type)
+    if reg:
+        return {'color': reg.default_color, 'line_style': reg.default_style}
+    return {'color': '#94a3b8', 'line_style': 'solid'}
+
+
 @bp.route('/api/canvas-connections', methods=['POST'])
 def create_canvas_connection():
-    """建立視覺連線（同時建立或重用 AtomRelation）"""
+    """建立視覺連線（同時建立或重用 UnifiedRelation）"""
     data = request.get_json()
     if not data:
         return jsonify({'error': '需要 JSON body'}), 400
@@ -520,6 +541,10 @@ def create_canvas_connection():
     for f in required:
         if f not in data:
             return jsonify({'error': f'缺少必要欄位: {f}'}), 400
+
+    rel_type = data['relation_type']
+    if rel_type not in UnifiedRelation.VALID_TYPES:
+        return jsonify({'error': f'無效的 relation_type: {rel_type}'}), 400
 
     with session_scope() as s:
         # canvas_id 接受 slug 字串
@@ -532,45 +557,34 @@ def create_canvas_connection():
         else:
             canvas_id = canvas_ref
 
-        relation = s.query(AtomRelation).filter(
-            AtomRelation.from_atom_id == data['source_atom_id'],
-            AtomRelation.to_atom_id == data['target_atom_id'],
-            AtomRelation.relation_type == data['relation_type'],
+        # 查找或建立 unified_relation（atom-atom）
+        relation = s.query(UnifiedRelation).filter(
+            UnifiedRelation.from_atom_id == data['source_atom_id'],
+            UnifiedRelation.to_atom_id == data['target_atom_id'],
+            UnifiedRelation.relation_type == rel_type,
+            UnifiedRelation.is_deleted == False,
         ).first()
 
         if not relation:
             try:
                 relation = rel_service.create_relation(
                     s,
+                    relation_type=rel_type,
                     from_atom_id=data['source_atom_id'],
                     to_atom_id=data['target_atom_id'],
-                    relation_type=data['relation_type'],
                     label=data.get('label', ''),
                     created_by='human',
                 )
             except ValueError as e:
                 return jsonify({'error': str(e)}), 400
 
-        # 依關係類型決定連線樣式
-        rel_styles = {
-            'causes':       {'color': '#ef4444', 'line_style': 'solid'},
-            'enables':      {'color': '#f97316', 'line_style': 'solid'},
-            'supports':     {'color': '#10b981', 'line_style': 'solid'},
-            'contradicts':  {'color': '#f59e0b', 'line_style': 'dashed'},
-            'contains':     {'color': '#6b7280', 'line_style': 'dotted'},
-            'follows':      {'color': '#3b82f6', 'line_style': 'solid'},
-            'derives_from': {'color': '#8b5cf6', 'line_style': 'solid'},
-            'supersedes':   {'color': '#a855f7', 'line_style': 'dashed'},
-            'references':   {'color': '#64748b', 'line_style': 'dotted'},
-            'blocks':       {'color': '#dc2626', 'line_style': 'solid'},
-        }
-        style = rel_styles.get(data['relation_type'], {'color': '#94a3b8', 'line_style': 'solid'})
+        style = _get_relation_style(s, rel_type)
 
         conn = CanvasConnection(
             canvas_id=canvas_id,
             source_atom_id=data['source_atom_id'],
             target_atom_id=data['target_atom_id'],
-            relation_id=relation.id,
+            unified_relation_id=relation.id,
             line_style=style['line_style'],
             color=style['color'],
             label=data.get('label', '') or relation.label,
@@ -579,13 +593,13 @@ def create_canvas_connection():
         s.flush()
 
         result = conn.to_dict()
-        result['relation_type'] = data['relation_type']
+        result['relation_type'] = rel_type
         return jsonify(result), 201
 
 
 @bp.route('/api/canvas-connections/<int:conn_id>', methods=['PUT'])
 def update_canvas_connection(conn_id):
-    """更新視覺連線（標籤等）"""
+    """更新視覺連線（標籤、關係類型等）"""
     data = request.get_json()
     if not data:
         return jsonify({'error': '需要 JSON body'}), 400
@@ -597,8 +611,8 @@ def update_canvas_connection(conn_id):
 
         if 'label' in data:
             conn.label = data['label']
-            if conn.relation_id:
-                rel = s.get(AtomRelation, conn.relation_id)
+            if conn.unified_relation_id:
+                rel = s.get(UnifiedRelation, conn.unified_relation_id)
                 if rel:
                     rel.label = data['label']
 
@@ -607,36 +621,51 @@ def update_canvas_connection(conn_id):
         if 'line_style' in data:
             conn.line_style = data['line_style']
 
+        # 變更關係類型
+        if 'relation_type' in data:
+            new_type = data['relation_type']
+            if new_type not in UnifiedRelation.VALID_TYPES:
+                return jsonify({'error': f'無效的 relation_type: {new_type}'}), 400
+            if conn.unified_relation_id:
+                rel = s.get(UnifiedRelation, conn.unified_relation_id)
+                if rel:
+                    rel.relation_type = new_type
+                    s.flush()
+                    s.refresh(rel)
+                    # 更新連線樣式
+                    style = _get_relation_style(s, new_type)
+                    conn.color = style['color']
+                    conn.line_style = style['line_style']
+
         s.flush()
         return jsonify(conn.to_dict())
 
 
 @bp.route('/api/canvas-connections/<int:conn_id>', methods=['DELETE'])
 def delete_canvas_connection(conn_id):
-    """刪除視覺連線，若底層 AtomRelation 無其他白板引用則一併刪除"""
+    """刪除視覺連線，若底層 UnifiedRelation 無其他白板引用則軟刪除"""
     with session_scope() as s:
         conn = s.get(CanvasConnection, conn_id)
         if not conn:
             return jsonify({'error': '連線不存在'}), 404
 
-        relation_id = conn.relation_id
+        unified_rel_id = conn.unified_relation_id
         s.delete(conn)
         s.flush()
 
         relation_kept = False
-        if relation_id:
+        if unified_rel_id:
             other_refs = s.query(CanvasConnection).filter(
-                CanvasConnection.relation_id == relation_id,
+                CanvasConnection.unified_relation_id == unified_rel_id,
             ).count()
             if other_refs == 0:
-                rel = s.get(AtomRelation, relation_id)
+                rel = s.get(UnifiedRelation, unified_rel_id)
                 if rel:
-                    s.delete(rel)
+                    rel.is_deleted = True
             else:
                 relation_kept = True
 
         return jsonify({
             'message': f'連線 {conn_id} 已刪除',
             'relation_kept': relation_kept,
-            'relation_kept_reason': '底層知識關係仍被其他白板引用' if relation_kept else None,
         })

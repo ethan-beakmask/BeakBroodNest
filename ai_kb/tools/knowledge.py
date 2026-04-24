@@ -9,7 +9,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
 from core.models import (
-    KnowledgeAtom, AtomRelation, Tag, atom_tags,
+    KnowledgeAtom, UnifiedRelation, Tag, atom_tags,
     AtomSchema, SchemaField, AtomFieldValue,
 )
 from core import relations as rel_service
@@ -580,7 +580,8 @@ def register(mcp):
         with session_scope() as s:
             try:
                 rel = rel_service.create_relation(
-                    s, from_atom_id, to_atom_id, relation_type,
+                    s, relation_type=relation_type,
+                    from_atom_id=from_atom_id, to_atom_id=to_atom_id,
                     label=label, confidence=confidence, created_by='ai',
                 )
                 return json.dumps({
@@ -632,7 +633,8 @@ def register(mcp):
 
                 try:
                     rel = rel_service.create_relation(
-                        s, from_id, to_id, rel_type,
+                        s, relation_type=rel_type,
+                        from_atom_id=from_id, to_atom_id=to_id,
                         label=label, confidence=confidence, created_by='ai',
                     )
                     results.append({
@@ -747,7 +749,7 @@ def register(mcp):
             return json.dumps({'error': f'無效的 direction: {direction}，允許值: {", ".join(valid_directions)}'})
 
         if relation_types:
-            invalid = [t for t in relation_types if t not in AtomRelation.VALID_TYPES]
+            invalid = [t for t in relation_types if t not in UnifiedRelation.VALID_TYPES]
             if invalid:
                 return json.dumps({'error': f'無效的關係類型: {", ".join(invalid)}'})
 

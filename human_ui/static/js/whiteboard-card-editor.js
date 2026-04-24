@@ -47,7 +47,7 @@ function whiteboardCardEditorMixin() {
             }
 
             var resp = await API.getAtom(atomId);
-            if (!resp || resp.error) { this.showToast('無法載入原子', 'error'); return; }
+            if (!resp || resp.error) { this.showToast('無法載入卡片', 'error'); return; }
             var atom = resp;
             var typeCfg = this.atomTypeConfig[atom.atom_type] || {};
             var editorId = ++this._ceSeq;

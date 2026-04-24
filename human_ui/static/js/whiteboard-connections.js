@@ -10,6 +10,7 @@ function whiteboardConnectionsMixin() {
             this.connDragSourceAtomId = ca.atom_id;
             this.connDragSourceAnchor = anchor;
             this.connDragHoverAtomId = null;
+            this.connDragShiftKey = e.shiftKey;
             this.connDragMouseX = e.clientX;
             this.connDragMouseY = e.clientY;
             this.updatePreviewLine();
@@ -17,19 +18,49 @@ function whiteboardConnectionsMixin() {
 
         endConnDrag() {
             if (this.connDragHoverAtomId && this.connDragHoverAtomId !== this.connDragSourceAtomId) {
-                this.pendingConnection = {
-                    sourceAtomId: this.connDragSourceAtomId,
-                    targetAtomId: this.connDragHoverAtomId,
-                };
-                this.selectedRelationType = 'follows';
-                this.relationLabel = '';
-                this.showRelationModal = true;
+                if (this.connDragShiftKey) {
+                    // Shift+拖拉：跳 modal 選擇型別
+                    this.pendingConnection = {
+                        sourceAtomId: this.connDragSourceAtomId,
+                        targetAtomId: this.connDragHoverAtomId,
+                    };
+                    this.selectedRelationType = 'references';
+                    this.relationLabel = '';
+                    this.showRelationModal = true;
+                } else {
+                    // 普通拖拉：直接建立 references 線
+                    this.createConnectionDirect(
+                        this.connDragSourceAtomId,
+                        this.connDragHoverAtomId,
+                        'references'
+                    );
+                }
             }
             this.isConnDragging = false;
             this.connDragSourceAtomId = null;
             this.connDragSourceAnchor = null;
             this.connDragHoverAtomId = null;
+            this.connDragShiftKey = false;
             this.clearPreviewLine();
+        },
+
+        async createConnectionDirect(sourceAtomId, targetAtomId, relationType) {
+            try {
+                var resp = await API.post('/beakcortex/api/canvas-connections', {
+                    canvas_id: this.canvasId,
+                    source_atom_id: sourceAtomId,
+                    target_atom_id: targetAtomId,
+                    relation_type: relationType,
+                });
+                if (resp && !resp.error) {
+                    this.connections.push(resp);
+                    this.renderConnections();
+                    this.showToast(this.relationLabelMap[relationType] || relationType, 'success', 1500);
+                }
+            } catch (e) {
+                this.showToast('連線建立失敗', 'error');
+            }
+            this.mode = 'select';
         },
 
         cancelConnDrag() {
@@ -239,6 +270,36 @@ function whiteboardConnectionsMixin() {
             else this._renderIndividual(svg, renderList);
         },
 
+        // 計算同對端點的偏移量（多條線避重疊）
+        _calcPairOffset(conn, renderList) {
+            var a = Math.min(conn.source_atom_id, conn.target_atom_id);
+            var b = Math.max(conn.source_atom_id, conn.target_atom_id);
+            var sameCount = 0, myIndex = 0;
+            for (var i = 0; i < renderList.length; i++) {
+                var c = renderList[i];
+                var ca = Math.min(c.source_atom_id, c.target_atom_id);
+                var cb = Math.max(c.source_atom_id, c.target_atom_id);
+                if (ca === a && cb === b) {
+                    if (c.id === conn.id) myIndex = sameCount;
+                    sameCount++;
+                }
+            }
+            if (sameCount <= 1) return 0;
+            var spread = 18;
+            return (myIndex - (sameCount - 1) / 2) * spread;
+        },
+
+        _buildPathDWithOffset(ep, isStraight, offset) {
+            if (offset === 0) return this._buildPathD(ep, isStraight);
+            // 計算法向量偏移
+            var dx = ep.tx - ep.sx, dy = ep.ty - ep.sy;
+            var len = Math.sqrt(dx * dx + dy * dy) || 1;
+            var nx = -dy / len * offset, ny = dx / len * offset;
+            var mx = (ep.sx + ep.tx) / 2 + nx;
+            var my = (ep.sy + ep.ty) / 2 + ny;
+            return 'M ' + ep.sx + ' ' + ep.sy + ' Q ' + mx + ' ' + my + ', ' + ep.tx + ' ' + ep.ty;
+        },
+
         _renderIndividual(svg, renderList) {
             var isStraight = (this.rtLineStyle === 'straight');
             var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
@@ -265,21 +326,33 @@ function whiteboardConnectionsMixin() {
                 var tgtCa = atomMap[conn.target_atom_id];
                 if (!srcCa || !tgtCa) return;
                 var ep = self._calcEdgeEndpoints(srcCa, tgtCa);
+                var offset = self._calcPairOffset(conn, renderList);
                 var lc = conn.color || '#94a3b8';
                 var mid = 'arr-' + lc.replace('#', '');
                 var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', self._buildPathD(ep, isStraight));
+                path.setAttribute('d', self._buildPathDWithOffset(ep, isStraight, offset));
                 path.setAttribute('fill', 'none'); path.setAttribute('stroke', lc);
                 path.setAttribute('stroke-width', '2'); path.setAttribute('marker-end', 'url(#' + mid + ')');
                 if (conn.line_style === 'dashed') path.setAttribute('stroke-dasharray', '8 4');
                 else if (conn.line_style === 'dotted') path.setAttribute('stroke-dasharray', '3 3');
                 path.style.pointerEvents = 'stroke'; path.style.cursor = 'pointer';
                 var connId = conn.id;
-                path.addEventListener('click', function() { if (confirm('刪除此連線?')) self.deleteConnection(connId); });
+                var connRelType = conn.relation_type || '';
+                // 右鍵：開啟連線選單（改型別 / 刪除）
+                path.addEventListener('contextmenu', function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    self.showConnContextMenu(connId, connRelType, e.clientX, e.clientY);
+                });
+                // 雙擊：開啟型別修改
+                path.addEventListener('dblclick', function(e) {
+                    e.stopPropagation();
+                    self.showConnTypeChangeModal(connId, connRelType);
+                });
                 svg.appendChild(path);
                 var labelText = conn.label || self.relationLabelMap[conn.relation_type] || '';
                 if (labelText) {
                     var mx = (ep.sx + ep.tx) / 2, my = (ep.sy + ep.ty) / 2;
+                    if (offset !== 0) { var ndx = ep.tx - ep.sx, ndy = ep.ty - ep.sy; var nl = Math.sqrt(ndx*ndx+ndy*ndy)||1; mx += (-ndy/nl*offset)/2; my += (ndx/nl*offset)/2; }
                     var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
                     text.setAttribute('x', mx); text.setAttribute('y', my - 8);
                     text.setAttribute('text-anchor', 'middle');
@@ -291,6 +364,47 @@ function whiteboardConnectionsMixin() {
                     svg.appendChild(text);
                 }
             });
+        },
+
+        showConnContextMenu(connId, relType, x, y) {
+            this.connContextMenu = { connId: connId, relType: relType, x: x, y: y };
+        },
+
+        closeConnContextMenu() {
+            this.connContextMenu = null;
+        },
+
+        async connContextAction(action) {
+            var menu = this.connContextMenu;
+            if (!menu) return;
+            this.connContextMenu = null;
+            if (action === 'delete') {
+                this.deleteConnection(menu.connId);
+            } else if (action === 'change-type') {
+                this.showConnTypeChangeModal(menu.connId, menu.relType);
+            }
+        },
+
+        showConnTypeChangeModal(connId, currentType) {
+            this.connTypeChangeTarget = connId;
+            this.selectedRelationType = currentType || 'references';
+            this.showConnTypeModal = true;
+        },
+
+        async confirmConnTypeChange() {
+            if (!this.connTypeChangeTarget) return;
+            try {
+                await API.put('/beakcortex/api/canvas-connections/' + this.connTypeChangeTarget, {
+                    relation_type: this.selectedRelationType,
+                });
+                this.showConnTypeModal = false;
+                this.connTypeChangeTarget = null;
+                await this.loadData();
+                this.renderConnections();
+                this.showToast('已變更為 ' + (this.relationLabelMap[this.selectedRelationType] || this.selectedRelationType), 'success', 1500);
+            } catch (e) {
+                this.showToast('變更失敗', 'error');
+            }
         },
 
         _renderGrouped(svg, renderList) {

@@ -1,76 +1,89 @@
 """
-因果鍊操作 -- CRUD 與圖查詢
-Phase 1: 所有查詢加入 is_deleted = FALSE 過濾
+關係操作 -- CRUD 與圖查詢
+統一使用 unified_relations 表，支援 atom/entry 混合端點。
+所有查詢加入 is_deleted = FALSE 過濾。
 """
-from sqlalchemy import and_, text
+from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import Session, joinedload
 
-from core.models import AtomRelation, KnowledgeAtom, RelationTypeRegistry
+from core.models import UnifiedRelation, KnowledgeAtom, RelationTypeRegistry
 
 
 def create_relation(
     session: Session,
-    from_atom_id: int,
-    to_atom_id: int,
     relation_type: str,
+    from_atom_id: int | None = None,
+    from_entry_id: int | None = None,
+    to_atom_id: int | None = None,
+    to_entry_id: int | None = None,
     label: str = '',
     confidence: float = 1.0,
     created_by: str = 'human',
-) -> AtomRelation:
+) -> UnifiedRelation:
     """建立一條關係。
+
+    端點二擇一：
+      from_atom_id 或 from_entry_id 填其一
+      to_atom_id 或 to_entry_id 填其一
 
     graph_family / semantic_layer / affects_scheduling
     由 DB trigger 從 relation_type_registry 自動填入。
-    ORM 物件在 flush 後需要 refresh 才能讀到 trigger 填入的值。
     """
-    if relation_type not in AtomRelation.VALID_TYPES:
+    if relation_type not in UnifiedRelation.VALID_TYPES:
         raise ValueError(
             f"無效的關係類型: {relation_type}，"
-            f"允許值: {', '.join(AtomRelation.VALID_TYPES)}"
+            f"允許值: {', '.join(UnifiedRelation.VALID_TYPES)}"
         )
 
-    # 查 registry 取得 trigger 會填入的值（ORM 層需要，因為 NOT NULL 無 DEFAULT）
-    reg = session.get(RelationTypeRegistry, relation_type)
-    if not reg:
-        raise ValueError(f"relation_type_registry 中找不到: {relation_type}")
+    # 驗證端點
+    from_count = (from_atom_id is not None) + (from_entry_id is not None)
+    to_count = (to_atom_id is not None) + (to_entry_id is not None)
+    if from_count != 1:
+        raise ValueError("來源端必須且僅能填 from_atom_id 或 from_entry_id 其一")
+    if to_count != 1:
+        raise ValueError("目標端必須且僅能填 to_atom_id 或 to_entry_id 其一")
 
-    rel = AtomRelation(
+    rel = UnifiedRelation(
         from_atom_id=from_atom_id,
+        from_entry_id=from_entry_id,
         to_atom_id=to_atom_id,
+        to_entry_id=to_entry_id,
         relation_type=relation_type,
         label=label,
         confidence=confidence,
         created_by=created_by,
-        graph_family=reg.graph_family,
-        semantic_layer=reg.semantic_layer,
-        affects_scheduling=reg.affects_scheduling,
     )
     session.add(rel)
     session.flush()
+    session.refresh(rel)
     return rel
 
 
-def get_relations_from(session: Session, atom_id: int) -> list[AtomRelation]:
-    """取得從某原子出發的所有關係（排除已軟刪除）"""
+# ============================================================
+# Atom-level 查詢（向後相容 MCP 工具）
+# ============================================================
+
+def get_relations_from(session: Session, atom_id: int) -> list[UnifiedRelation]:
+    """取得從某 Card 出發的所有關係（排除已軟刪除）"""
     return (
-        session.query(AtomRelation)
-        .options(joinedload(AtomRelation.to_atom))
+        session.query(UnifiedRelation)
+        .options(joinedload(UnifiedRelation.to_atom))
         .filter(
-            AtomRelation.from_atom_id == atom_id,
-            AtomRelation.is_deleted == False,
+            UnifiedRelation.from_atom_id == atom_id,
+            UnifiedRelation.is_deleted == False,
         )
         .all()
     )
 
 
-def get_relations_to(session: Session, atom_id: int) -> list[AtomRelation]:
-    """取得指向某原子的所有關係（排除已軟刪除）"""
+def get_relations_to(session: Session, atom_id: int) -> list[UnifiedRelation]:
+    """取得指向某 Card 的所有關係（排除已軟刪除）"""
     return (
-        session.query(AtomRelation)
-        .options(joinedload(AtomRelation.from_atom))
+        session.query(UnifiedRelation)
+        .options(joinedload(UnifiedRelation.from_atom))
         .filter(
-            AtomRelation.to_atom_id == atom_id,
-            AtomRelation.is_deleted == False,
+            UnifiedRelation.to_atom_id == atom_id,
+            UnifiedRelation.is_deleted == False,
         )
         .all()
     )
@@ -78,19 +91,19 @@ def get_relations_to(session: Session, atom_id: int) -> list[AtomRelation]:
 
 def get_blockers(session: Session, atom_id: int) -> list[KnowledgeAtom]:
     """
-    取得阻塞某原子的所有上游原子（relation_type='blocks'）
+    取得阻塞某 Card 的所有上游 Card（relation_type='blocks'）
     回傳尚未 archived/terminal 的阻塞者
     """
     rels = (
-        session.query(AtomRelation)
+        session.query(UnifiedRelation)
         .filter(
-            AtomRelation.to_atom_id == atom_id,
-            AtomRelation.relation_type == 'blocks',
-            AtomRelation.is_deleted == False,
+            UnifiedRelation.to_atom_id == atom_id,
+            UnifiedRelation.relation_type == 'blocks',
+            UnifiedRelation.is_deleted == False,
         )
         .all()
     )
-    blocker_ids = [r.from_atom_id for r in rels]
+    blocker_ids = [r.from_atom_id for r in rels if r.from_atom_id]
     if not blocker_ids:
         return []
     return (
@@ -105,14 +118,14 @@ def get_blockers(session: Session, atom_id: int) -> list[KnowledgeAtom]:
 
 
 def is_blocked(session: Session, atom_id: int) -> bool:
-    """檢查某原子是否被阻塞"""
+    """檢查某 Card 是否被阻塞"""
     return len(get_blockers(session, atom_id)) > 0
 
 
 def trace_block_chain(session: Session, atom_id: int, max_depth: int = 10) -> list[dict]:
     """
     追溯阻塞鍊的根節點
-    回傳 [{atom, depth, blockers: [...]}, ...] 由近到遠
+    回傳 [{atom_id, title, lifecycle, depth}, ...] 由近到遠
     """
     visited = set()
     chain = []
@@ -136,9 +149,13 @@ def trace_block_chain(session: Session, atom_id: int, max_depth: int = 10) -> li
     return chain
 
 
+# ============================================================
+# 軟刪除 / 還原 / 硬刪除
+# ============================================================
+
 def soft_delete_relation(session: Session, relation_id: int) -> bool:
-    """軟刪除一條關係（設 is_deleted = TRUE，觸發 canvas_connections 同步）"""
-    rel = session.get(AtomRelation, relation_id)
+    """軟刪除一條關係"""
+    rel = session.get(UnifiedRelation, relation_id)
     if rel and not rel.is_deleted:
         rel.is_deleted = True
         session.flush()
@@ -148,7 +165,7 @@ def soft_delete_relation(session: Session, relation_id: int) -> bool:
 
 def restore_relation(session: Session, relation_id: int) -> bool:
     """還原一條軟刪除的關係"""
-    rel = session.get(AtomRelation, relation_id)
+    rel = session.get(UnifiedRelation, relation_id)
     if rel and rel.is_deleted:
         rel.is_deleted = False
         session.flush()
@@ -157,26 +174,63 @@ def restore_relation(session: Session, relation_id: int) -> bool:
 
 
 def delete_relation(session: Session, relation_id: int) -> bool:
-    """硬刪除一條關係（向後相容，建議改用 soft_delete_relation）"""
-    rel = session.get(AtomRelation, relation_id)
+    """硬刪除一條關係"""
+    rel = session.get(UnifiedRelation, relation_id)
     if rel:
         session.delete(rel)
         return True
     return False
 
 
-def check_cycle(session: Session, from_id: int, to_id: int, graph_family: str) -> bool:
-    """檢查新增邊 (from->to) 是否會在指定 graph_family 中產生環。
+# ============================================================
+# 環偵測
+# ============================================================
 
-    呼叫 DB 層的 check_would_create_cycle 函式。
+def check_cycle(
+    session: Session,
+    from_atom_id: int | None,
+    to_atom_id: int | None,
+    graph_family: str,
+) -> bool:
+    """檢查新增 atom-atom 邊是否會在指定 graph_family 中產生環。
+
+    使用 Python 層 BFS 偵測（不依賴 DB function）。
     回傳 True 表示會產生環。
     """
-    result = session.execute(
-        text("SELECT check_would_create_cycle(:from_id, :to_id, :gf)"),
-        {'from_id': from_id, 'to_id': to_id, 'gf': graph_family}
-    )
-    return result.scalar()
+    if not from_atom_id or not to_atom_id:
+        return False
+    if from_atom_id == to_atom_id:
+        return True
 
+    # BFS: 從 to 出發，沿 from_atom_id -> to_atom_id 方向走，看能否到達 from
+    visited = set()
+    queue = [to_atom_id]
+    while queue:
+        current = queue.pop(0)
+        if current == from_atom_id:
+            return True
+        if current in visited:
+            continue
+        visited.add(current)
+        neighbors = (
+            session.query(UnifiedRelation.to_atom_id)
+            .filter(
+                UnifiedRelation.from_atom_id == current,
+                UnifiedRelation.graph_family == graph_family,
+                UnifiedRelation.is_deleted == False,
+                UnifiedRelation.to_atom_id.isnot(None),
+            )
+            .all()
+        )
+        for (nid,) in neighbors:
+            if nid not in visited:
+                queue.append(nid)
+    return False
+
+
+# ============================================================
+# 子圖展開
+# ============================================================
 
 def trace_subgraph(
     session: Session,
@@ -187,12 +241,12 @@ def trace_subgraph(
     include_archived: bool = False,
 ) -> dict:
     """
-    從起點原子出發，沿指定方向/關係類型展開 N 層，回傳子圖。
+    從起點 Card 出發，沿指定方向/關係類型展開 N 層，回傳子圖。
 
     direction: 'outgoing' / 'incoming' / 'both'
     relation_types: 過濾關係類型，None 表示全部
-    max_depth: 最大展開層數（呼叫端應限制上限）
-    include_archived: 是否包含 archived/terminal 原子
+    max_depth: 最大展開層數
+    include_archived: 是否包含 archived/terminal
 
     回傳 {'root': {...}, 'nodes': [...], 'edges': [...], 'stats': {...}}
     """
@@ -202,16 +256,15 @@ def trace_subgraph(
         .first()
     )
     if not root_atom:
-        return {'error': f'原子 {atom_id} 不存在'}
+        return {'error': f'卡片 {atom_id} 不存在'}
 
     lifecycle_filter = ['active', 'aging']
     if include_archived:
         lifecycle_filter.extend(['archived', 'terminal'])
 
-    # 收集結果（用 dict 避免重複）
-    nodes = {}  # atom_id -> {node_data}
-    edges = []  # [{from, to, type, label, confidence}]
-    seen_edges = set()  # (from_id, to_id, type) 去重
+    nodes = {}
+    edges = []
+    seen_edges = set()
     visited = set()
 
     def _expand(current_id: int, depth: int):
@@ -222,33 +275,33 @@ def trace_subgraph(
         queries = []
 
         if direction in ('outgoing', 'both'):
-            q_out = session.query(AtomRelation).filter(
-                AtomRelation.from_atom_id == current_id,
-                AtomRelation.is_deleted == False,
+            q_out = session.query(UnifiedRelation).filter(
+                UnifiedRelation.from_atom_id == current_id,
+                UnifiedRelation.is_deleted == False,
             )
             if relation_types:
-                q_out = q_out.filter(AtomRelation.relation_type.in_(relation_types))
+                q_out = q_out.filter(UnifiedRelation.relation_type.in_(relation_types))
             queries.append(('outgoing', q_out.all()))
 
         if direction in ('incoming', 'both'):
-            q_in = session.query(AtomRelation).filter(
-                AtomRelation.to_atom_id == current_id,
-                AtomRelation.is_deleted == False,
+            q_in = session.query(UnifiedRelation).filter(
+                UnifiedRelation.to_atom_id == current_id,
+                UnifiedRelation.is_deleted == False,
             )
             if relation_types:
-                q_in = q_in.filter(AtomRelation.relation_type.in_(relation_types))
+                q_in = q_in.filter(UnifiedRelation.relation_type.in_(relation_types))
             queries.append(('incoming', q_in.all()))
 
         for dir_label, rels in queries:
             for rel in rels:
                 neighbor_id = rel.to_atom_id if dir_label == 'outgoing' else rel.from_atom_id
+                if not neighbor_id:
+                    continue
 
-                # 去重 edge
                 edge_key = (rel.from_atom_id, rel.to_atom_id, rel.relation_type)
                 if edge_key in seen_edges:
                     continue
 
-                # 取鄰居原子
                 if neighbor_id not in nodes and neighbor_id != atom_id:
                     neighbor = session.get(KnowledgeAtom, neighbor_id)
                     if not neighbor or neighbor.is_deleted:
@@ -264,7 +317,6 @@ def trace_subgraph(
                         'depth': depth,
                     }
 
-                # 即使鄰居已在 nodes 中（被更淺的路徑加入），edge 仍要記錄
                 if neighbor_id in nodes or neighbor_id == atom_id:
                     seen_edges.add(edge_key)
                     edges.append({
@@ -275,7 +327,6 @@ def trace_subgraph(
                         'confidence': rel.confidence,
                     })
 
-                # 遞迴展開鄰居
                 if neighbor_id in nodes:
                     _expand(neighbor_id, depth + 1)
 
@@ -295,8 +346,22 @@ def trace_subgraph(
         'nodes': sorted(nodes.values(), key=lambda n: (n['depth'], n['id'])),
         'edges': edges,
         'stats': {
-            'total_nodes': len(nodes) + 1,  # +1 for root
+            'total_nodes': len(nodes) + 1,
             'total_edges': len(edges),
             'max_depth_reached': actual_max_depth,
         },
     }
+
+
+# ============================================================
+# Registry 查詢
+# ============================================================
+
+def get_relation_types(session: Session) -> list[dict]:
+    """取得所有關係類型定義"""
+    regs = (
+        session.query(RelationTypeRegistry)
+        .order_by(RelationTypeRegistry.sort_order)
+        .all()
+    )
+    return [r.to_dict() for r in regs]

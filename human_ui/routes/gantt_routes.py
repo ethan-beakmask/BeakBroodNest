@@ -13,7 +13,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
 from core.models import (
-    KnowledgeAtom, Canvas, CanvasAtom, AtomRelation,
+    KnowledgeAtom, Canvas, CanvasAtom, UnifiedRelation,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
 )
 from human_ui.validators.gantt_validator import validate_gantt_data
@@ -132,11 +132,12 @@ def _fetch_deps(s, canvas_id):
     atom_to_entry = {e.atom_id: e.id for e in entries}
 
     rels = (
-        s.query(AtomRelation)
+        s.query(UnifiedRelation)
         .filter(
-            AtomRelation.from_atom_id.in_(atom_ids),
-            AtomRelation.to_atom_id.in_(atom_ids),
-            AtomRelation.relation_type == 'blocks',
+            UnifiedRelation.from_atom_id.in_(atom_ids),
+            UnifiedRelation.to_atom_id.in_(atom_ids),
+            UnifiedRelation.relation_type == 'blocks',
+            UnifiedRelation.is_deleted == False,
         )
         .all()
     )
@@ -394,18 +395,19 @@ def delete_dependency(slug):
             return jsonify({'error': 'entry 不存在'}), 404
 
         rel = (
-            s.query(AtomRelation)
+            s.query(UnifiedRelation)
             .filter_by(
                 from_atom_id=from_entry.atom_id,
                 to_atom_id=to_entry.atom_id,
                 relation_type='blocks',
             )
+            .filter(UnifiedRelation.is_deleted == False)
             .first()
         )
         if not rel:
             return jsonify({'error': '依賴關係不存在'}), 404
 
-        s.delete(rel)
+        rel.is_deleted = True
         s.flush()
 
         return jsonify({

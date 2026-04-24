@@ -58,6 +58,10 @@ function whiteboardApp(canvasId) {
         showNewCanvasModal: false,
         showTagModal: false,
         showRelationModal: false,
+        showConnTypeModal: false,
+        connTypeChangeTarget: null,
+        connContextMenu: null,
+        connDragShiftKey: false,
         showUISettingsModal: false,
         showBatchTagModal: false,
         batchTagActiveTab: 0,
@@ -596,7 +600,7 @@ function whiteboardApp(canvasId) {
 
         async createNewAtom() {
             if (this.isSnapshot) return;
-            const atom = await API.createAtom({ title: this.newAtom.title || '新原子', content: this.newAtom.content, atom_type: this.newAtom.atom_type, source: 'human' });
+            const atom = await API.createAtom({ title: this.newAtom.title || '新卡片', content: this.newAtom.content, atom_type: this.newAtom.atom_type, source: 'human' });
             await API.addAtomToCanvas(this.canvasId, { atom_id: atom.id, pos_x: this.newAtomPos.x, pos_y: this.newAtomPos.y });
             this.showNewAtomModal = false; await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
@@ -671,7 +675,7 @@ function whiteboardApp(canvasId) {
             if (!this.connSourceAtomId) { this.connSourceAtomId = ca.atom_id; }
             else if (this.connSourceAtomId !== ca.atom_id) {
                 this.pendingConnection = { sourceAtomId: this.connSourceAtomId, targetAtomId: ca.atom_id };
-                this.selectedRelationType = 'supports'; this.relationLabel = ''; this.showRelationModal = true;
+                this.selectedRelationType = 'references'; this.relationLabel = ''; this.showRelationModal = true;
                 this.connSourceAtomId = null;
             }
         },
@@ -925,7 +929,7 @@ function whiteboardApp(canvasId) {
         },
 
         async deleteCurrentCanvas() {
-            if (!confirm('永久刪除此白板？原子不受影響，但白板上的佈局將無法復原。')) return;
+            if (!confirm('永久刪除此白板？卡片不受影響，但白板上的佈局將無法復原。')) return;
             await API.deleteCanvas(this.canvasId);
             this.showUISettingsModal = false;
             window.location.href = '/beakcortex/';
@@ -965,7 +969,7 @@ function whiteboardApp(canvasId) {
         // ============================================
         onCanvasContextMenu(e) { e.preventDefault(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' }; },
         onCardContextMenu(e, ca) { e.preventDefault(); e.stopPropagation(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: ca }; },
-        closeContextMenu() { this.contextMenu = null; },
+        closeContextMenu() { this.contextMenu = null; this.connContextMenu = null; },
         contextAddAtom() { this.openNewAtomModal({ clientX: this.contextMenu.x, clientY: this.contextMenu.y }); this.closeContextMenu(); },
 
         // ============================================

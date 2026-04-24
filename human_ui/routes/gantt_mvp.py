@@ -12,7 +12,7 @@ from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
 from core.models import (
-    KnowledgeAtom, Canvas, CanvasAtom, AtomRelation,
+    KnowledgeAtom, Canvas, CanvasAtom, UnifiedRelation,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
 )
 
@@ -66,11 +66,12 @@ def _fetch_tasks(s):
 
     # blocks 關係
     all_blocks = (
-        s.query(AtomRelation)
+        s.query(UnifiedRelation)
         .filter(
-            AtomRelation.from_atom_id.in_(atom_ids),
-            AtomRelation.to_atom_id.in_(atom_ids),
-            AtomRelation.relation_type == 'blocks',
+            UnifiedRelation.from_atom_id.in_(atom_ids),
+            UnifiedRelation.to_atom_id.in_(atom_ids),
+            UnifiedRelation.relation_type == 'blocks',
+            UnifiedRelation.is_deleted == False,
         )
         .all()
     )

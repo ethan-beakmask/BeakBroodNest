@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Relations API + Block Chain"""
+"""Relations API + Block Chain（使用 unified_relations）"""
 
 from flask import Blueprint, request, jsonify
 
@@ -11,7 +11,7 @@ bp = Blueprint('relations', __name__)
 
 @bp.route('/api/relations', methods=['POST'])
 def create_relation():
-    """建立因果關係"""
+    """建立因果關係（atom-atom）"""
     data = request.get_json()
     if not data:
         return jsonify({'error': '需要 JSON body'}), 400
@@ -25,9 +25,9 @@ def create_relation():
         try:
             rel = rel_service.create_relation(
                 s,
+                relation_type=data['relation_type'],
                 from_atom_id=data['from_atom_id'],
                 to_atom_id=data['to_atom_id'],
-                relation_type=data['relation_type'],
                 label=data.get('label', ''),
                 confidence=data.get('confidence', 1.0),
                 created_by=data.get('created_by', 'human'),
@@ -39,16 +39,16 @@ def create_relation():
 
 @bp.route('/api/relations/<int:relation_id>', methods=['DELETE'])
 def delete_relation(relation_id):
-    """刪除因果關係"""
+    """軟刪除關係"""
     with session_scope() as s:
-        if rel_service.delete_relation(s, relation_id):
+        if rel_service.soft_delete_relation(s, relation_id):
             return jsonify({'message': f'關係 {relation_id} 已刪除'})
         return jsonify({'error': '關係不存在'}), 404
 
 
 @bp.route('/api/atoms/<int:atom_id>/block-chain', methods=['GET'])
 def get_block_chain(atom_id):
-    """取得某原子的阻塞鍊"""
+    """取得某卡片的阻塞鍊"""
     max_depth = request.args.get('max_depth', 10, type=int)
     with session_scope() as s:
         chain = rel_service.trace_block_chain(s, atom_id, max_depth)
@@ -57,3 +57,11 @@ def get_block_chain(atom_id):
             'is_blocked': len(chain) > 0,
             'chain': chain,
         })
+
+
+@bp.route('/api/relation-types', methods=['GET'])
+def list_relation_types():
+    """取得所有關係類型定義（from registry）"""
+    with session_scope() as s:
+        types = rel_service.get_relation_types(s)
+        return jsonify(types)

@@ -26,7 +26,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.db import init_engine, session_scope, get_engine, Base
-from core.models import KnowledgeAtom, AtomRelation
+from core.models import KnowledgeAtom, UnifiedRelation
 from sqlalchemy import Integer, String, Text, DateTime, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -146,13 +146,14 @@ def run_transitions(dry_run=False, verbose=False):
         contradicted_atoms = (
             s.query(KnowledgeAtom)
             .join(
-                AtomRelation,
-                AtomRelation.to_atom_id == KnowledgeAtom.id,
+                UnifiedRelation,
+                UnifiedRelation.to_atom_id == KnowledgeAtom.id,
             )
             .filter(
                 KnowledgeAtom.is_deleted == False,
                 KnowledgeAtom.lifecycle.in_(['active', 'aging']),
-                AtomRelation.relation_type == 'contradicts',
+                UnifiedRelation.is_deleted == False,
+                UnifiedRelation.relation_type == 'contradicts',
             )
             .all()
         )

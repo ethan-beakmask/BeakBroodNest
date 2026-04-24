@@ -59,7 +59,7 @@ function whiteboardBatchMixin() {
             });
             for (var i = 0; i < ids.length; i++) { var ca = this.atoms.find(function(a) { return a.atom_id === ids[i]; }); if (ca && ca.atom) { ca.atom.atom_type = newType; await API.updateAtom(ids[i], { atom_type: newType }); } }
             this.$nextTick(function() { self.renderConnections(); });
-            this.showToast(ids.length + ' 個原子已改為 ' + newType, 'success', 2000);
+            this.showToast(ids.length + ' 張卡片已改為 ' + newType, 'success', 2000);
         },
 
         async batchUpdateLifecycle(newLc) {
@@ -75,7 +75,7 @@ function whiteboardBatchMixin() {
             });
             for (var i = 0; i < ids.length; i++) { var ca = this.atoms.find(function(a) { return a.atom_id === ids[i]; }); if (ca && ca.atom) { ca.atom.lifecycle = newLc; await API.updateAtom(ids[i], { lifecycle: newLc }); } }
             this.$nextTick(function() { self.renderConnections(); });
-            this.showToast(ids.length + ' 個原子已改為 ' + newLc, 'success', 2000);
+            this.showToast(ids.length + ' 張卡片已改為 ' + newLc, 'success', 2000);
         },
 
         async batchToggleTag(tagId) {
@@ -105,7 +105,7 @@ function whiteboardBatchMixin() {
                 await API.updateAtom(ids[i], { tag_ids: cur });
             }
             await this.loadData(); this.$nextTick(function() { self.renderConnections(); });
-            this.showToast(ids.length + ' 個原子' + (adding ? '加入' : '移除') + '標籤 ' + tagName, 'success', 2000);
+            this.showToast(ids.length + ' 張卡片' + (adding ? '加入' : '移除') + '標籤 ' + tagName, 'success', 2000);
         },
 
         // Connection Inline Edit
@@ -149,7 +149,7 @@ function whiteboardBatchMixin() {
             } else {
                 var lines = ['# ' + (this.canvas ? this.canvas.name : 'Canvas'), ''];
                 lines.push('匯出時間: ' + new Date().toLocaleString('zh-TW'), '');
-                lines.push('## 原子 (' + this.atoms.length + ')', '');
+                lines.push('## 卡片 (' + this.atoms.length + ')', '');
                 var self = this;
                 this.atoms.forEach(function(ca) {
                     if (!ca.atom) return;
@@ -204,7 +204,7 @@ function whiteboardBatchMixin() {
                     imported++;
                 }
                 await this.loadData(); this.$nextTick(() => this.renderConnections());
-                this.showToast('已匯入 ' + imported + ' 個原子', 'success');
+                this.showToast('已匯入 ' + imported + ' 張卡片', 'success');
                 this.showImportModal = false;
             } catch (err) { this.showToast('匯入失敗: ' + err.message, 'error'); }
         },

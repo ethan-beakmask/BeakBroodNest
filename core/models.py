@@ -452,8 +452,13 @@ class CanvasConnection(Base):
     )
     source_atom_id: Mapped[int] = mapped_column(Integer, nullable=False)
     target_atom_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # deprecated: 舊 FK，保留向後相容但不再寫入
     relation_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('atom_relations.id'), nullable=True
+    )
+    # 新 FK: 指向 unified_relations
+    unified_relation_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('unified_relations.id'), nullable=True
     )
     line_style: Mapped[str] = mapped_column(String(30), default='bezier')
     color: Mapped[str] = mapped_column(String(20), default='#3b82f6')
@@ -463,20 +468,26 @@ class CanvasConnection(Base):
 
     canvas: Mapped["Canvas"] = relationship(back_populates='connections')
     relation: Mapped["AtomRelation | None"] = relationship()
+    unified_relation: Mapped["UnifiedRelation | None"] = relationship()
 
     def to_dict(self):
-        return {
+        d = {
             'id': self.id,
             'canvas_id': self.canvas_id,
             'source_atom_id': self.source_atom_id,
             'target_atom_id': self.target_atom_id,
-            'relation_id': self.relation_id,
+            'unified_relation_id': self.unified_relation_id,
             'line_style': self.line_style,
             'color': self.color,
             'label': self.label,
             'animated': self.animated,
             'is_disconnected': self.is_disconnected,
         }
+        if self.unified_relation:
+            d['relation_type'] = self.unified_relation.relation_type
+            d['graph_family'] = self.unified_relation.graph_family
+            d['semantic_layer'] = self.unified_relation.semantic_layer
+        return d
 
 
 # ============================================================
@@ -1061,13 +1072,13 @@ class UnifiedRelation(Base):
     """統一關係表：支援 atom/entry 混合端點。
 
     四種組合：
-      atom  -> atom     （等效現有 atom_relations）
-      atom  -> entry
-      entry -> atom
-      entry -> entry    （ER-model 風格跨卡片連線）
+      atom  -> atom     （Card-Card，心智圖/discourse 層）
+      atom  -> entry    （Card-Item）
+      entry -> atom     （Item-Card）
+      entry -> entry    （Item-Item，PM/ER-model 風格）
 
     每個端點二擇一：atom_id 或 entry_id 必填其一。
-    relation_type 複用 AtomRelation.VALID_TYPES（10 種）。
+    graph_family / semantic_layer / affects_scheduling 由 DB trigger 從 registry 自動填入。
     """
     __tablename__ = 'unified_relations'
 
@@ -1089,13 +1100,26 @@ class UnifiedRelation(Base):
         Integer, ForeignKey('atom_entries.id', ondelete='CASCADE'), nullable=True
     )
 
-    relation_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    relation_type: Mapped[str] = mapped_column(
+        String(30), ForeignKey('relation_type_registry.relation_type'),
+        nullable=False
+    )
     label: Mapped[str] = mapped_column(Text, default='')
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
     created_by: Mapped[str] = mapped_column(String(20), default='human')
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now
     )
+
+    # 由 DB trigger 從 relation_type_registry 自動填入
+    graph_family: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    semantic_layer: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    affects_scheduling: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # 軟刪除 + 排序 + 擴充
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    rel_metadata: Mapped[dict | None] = mapped_column('metadata', JSONB, default=dict)
 
     # Relationships
     from_atom: Mapped["KnowledgeAtom | None"] = relationship(
@@ -1110,8 +1134,16 @@ class UnifiedRelation(Base):
     to_entry: Mapped["AtomEntry | None"] = relationship(
         foreign_keys=[to_entry_id]
     )
+    registry: Mapped["RelationTypeRegistry | None"] = relationship(
+        foreign_keys=[relation_type], viewonly=True
+    )
 
-    VALID_TYPES = AtomRelation.VALID_TYPES
+    VALID_TYPES = (
+        'contains',
+        'blocks', 'follows', 'enables', 'causes',
+        'derives_from', 'supersedes',
+        'supports', 'contradicts', 'references',
+    )
 
     __table_args__ = (
         # 來源端：atom_id 或 entry_id 恰好填一個
@@ -1129,9 +1161,10 @@ class UnifiedRelation(Base):
         Index('idx_urel_to_atom', 'to_atom_id'),
         Index('idx_urel_to_entry', 'to_entry_id'),
         Index('idx_urel_type', 'relation_type'),
+        Index('idx_urel_is_deleted', 'is_deleted'),
     )
 
-    def to_dict(self):
+    def to_dict(self, include_endpoints=False):
         d = {
             'id': self.id,
             'from_atom_id': self.from_atom_id,
@@ -1139,9 +1172,20 @@ class UnifiedRelation(Base):
             'to_atom_id': self.to_atom_id,
             'to_entry_id': self.to_entry_id,
             'relation_type': self.relation_type,
+            'graph_family': self.graph_family,
+            'semantic_layer': self.semantic_layer,
+            'affects_scheduling': self.affects_scheduling,
             'label': self.label,
             'confidence': self.confidence,
             'created_by': self.created_by,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            'is_deleted': self.is_deleted,
+            'sort_order': self.sort_order,
+            'metadata': self.rel_metadata,
         }
+        if include_endpoints:
+            if self.from_atom:
+                d['from_atom'] = {'id': self.from_atom.id, 'title': self.from_atom.title}
+            if self.to_atom:
+                d['to_atom'] = {'id': self.to_atom.id, 'title': self.to_atom.title}
         return d
