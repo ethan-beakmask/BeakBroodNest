@@ -72,6 +72,20 @@ class SlashMenuView {
         }
 
         const schemas = (window._entrySchemas || []).filter(s => s.code !== 'freetext')
+
+        // 虛擬別名：;;cal 建立 task entry（calendar 已合併入 task）
+        const taskSchema = schemas.find(s => s.code === 'task')
+        if (taskSchema && !schemas.find(s => s._virtualAlias === 'cal')) {
+            schemas.push({
+                ...taskSchema,
+                name: '行事曆',
+                icon: 'bi-calendar-event',
+                color: '#f97316',
+                slash_alias: 'cal',
+                _virtualAlias: 'cal',
+            })
+        }
+
         const query = state.query
         const filtered = query
             ? schemas.filter(s =>

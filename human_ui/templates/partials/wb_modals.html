@@ -529,7 +529,14 @@
                         <div class="ce-pane-footer">
                             <span class="status-text" x-text="ed.readonly ? '唯讀' : (ed.dirty ? '已修改' : '已儲存')"
                                   :style="ed.readonly ? 'color:#d97706;' : ''"></span>
-                            <button class="btn btn-sm btn-primary" x-show="!ed.readonly && ed.dirty"
+                            <span style="flex:1;"></span>
+                            <button class="btn btn-sm btn-outline-warning" x-show="!ed.readonly"
+                                    @click="undoDeletedEntry(ed.id)"
+                                    style="margin-right:20px;"
+                                    title="還原最近刪除的 Item">誤刪Item</button>
+                            <button class="btn btn-sm" x-show="!ed.readonly"
+                                    :class="ed.dirty ? 'btn-primary' : 'btn-secondary'"
+                                    :disabled="!ed.dirty"
                                     @click="saveEditor(ed.id)">儲存</button>
                         </div>
                     </div>

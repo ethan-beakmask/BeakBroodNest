@@ -173,7 +173,7 @@ def create_beak_gantt_task(slug):
         if not canvas:
             return jsonify({'error': 'canvas not found'}), 404
 
-        todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
         if not todo_schema:
             return jsonify({'error': 'todo schema not found'}), 500
 
@@ -226,7 +226,7 @@ def patch_beak_gantt_task(slug, atom_id):
         return jsonify({'error': 'need JSON body'}), 400
 
     with session_scope() as s:
-        todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
         if not todo_schema:
             return jsonify({'error': 'todo schema not found'}), 500
 

@@ -743,9 +743,9 @@
 }
 
 /* Per-type border colors */
-.se-block.se-todo      { border-left-color: #3b82f6; background: rgba(59,130,246,0.04); }
+.se-block.se-task      { border-left-color: #3b82f6; background: rgba(59,130,246,0.04); }
+.se-block.se-task.se-task--calendar { border-left-color: #f97316; background: rgba(249,115,22,0.04); }
 .se-block.se-expense   { border-left-color: #10b981; background: rgba(16,185,129,0.04); }
-.se-block.se-calendar  { border-left-color: #f97316; background: rgba(249,115,22,0.04); }
 .se-block.se-diary     { border-left-color: #a855f7; background: rgba(168,85,247,0.04); }
 .se-block.se-health    { border-left-color: #ef4444; background: rgba(239,68,68,0.04); }
 .se-block.se-freetext  { border-left-color: transparent; background: transparent; padding-left: 8px; }
@@ -794,6 +794,60 @@
 .se-toggle-btn:hover {
     background: rgba(0,0,0,0.15);
     color: #374151;
+}
+
+/* 拖拉把手 */
+.se-drag-handle {
+    display: inline-block;
+    font-size: 14px;
+    font-weight: 700;
+    color: #d1d5db;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    cursor: grab;
+    user-select: none;
+    flex-shrink: 0;
+}
+.se-drag-handle:hover {
+    color: #6b7280;
+}
+.se-drag-handle:active {
+    cursor: grabbing;
+}
+
+/* 拖拉中的視覺回饋 */
+.ProseMirror-selectednode .se-block {
+    outline: 2px dashed #3b82f6;
+    outline-offset: 1px;
+    opacity: 0.7;
+}
+
+/* freetext 隱藏拖拉把手 */
+.se-freetext .se-drag-handle {
+    display: none;
+}
+
+/* 刪除 Item 按鈕 */
+.se-delete-btn {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #d1d5db;
+    background: transparent;
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+    margin-left: auto;
+}
+.se-delete-btn:hover {
+    background: #fee2e2;
+    color: #dc2626;
 }
 
 .se-freetext .se-tag-row {

@@ -57,7 +57,7 @@ def project_summary(slug):
             })
 
         # 取出這些原子的 todo entries
-        todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
         if not todo_schema:
             return jsonify({'error': 'todo schema 不存在'}), 500
 
@@ -319,7 +319,7 @@ def project_wbs(slug):
         }
 
         # todo entries + field values
-        todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
         entries_by_atom = {}
         if todo_schema:
             entries = (

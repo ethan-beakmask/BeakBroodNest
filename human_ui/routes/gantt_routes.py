@@ -67,7 +67,7 @@ def _fetch_tasks(s, canvas_id):
     if not atom_ids:
         return []
 
-    todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+    todo_schema = s.query(EntrySchema).filter_by(code='task').first()
     if not todo_schema:
         return []
 
@@ -117,7 +117,7 @@ def _fetch_deps(s, canvas_id):
         return []
 
     # 建 atom_id -> entry_id 對照表
-    todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+    todo_schema = s.query(EntrySchema).filter_by(code='task').first()
     if not todo_schema:
         return []
 

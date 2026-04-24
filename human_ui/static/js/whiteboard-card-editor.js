@@ -289,6 +289,22 @@ function whiteboardCardEditorMixin() {
             this.openEditors.forEach(ed => { if (ed.dirty) this.saveEditor(ed.id); });
         },
 
+        undoDeletedEntry(editorId) {
+            if (!window._deletedEntries || window._deletedEntries.length === 0) {
+                this.showToast('沒有可復原的 Item', 'warning');
+                return;
+            }
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce || !ce.editor) return;
+            var last = window._deletedEntries.pop();
+            // 插入到文件末尾，避免覆蓋游標所在的 node
+            var endPos = ce.editor.state.doc.content.size;
+            ce.editor.chain().focus().insertContentAt(endPos, last.node).run();
+            this.showToast('已復原: ' + (last.text || '(空白 Item)').substring(0, 30), 'success');
+        },
+
         async openSelectedInEditor() {
             if (!this.selectedAtomIds || this.selectedAtomIds.length === 0) return;
             var ids = this.selectedAtomIds.slice();

@@ -36,7 +36,7 @@ def _fetch_tasks(s):
     if not atom_ids:
         return [], None
 
-    todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+    todo_schema = s.query(EntrySchema).filter_by(code='task').first()
     if not todo_schema:
         return None, 'todo schema not found'
 

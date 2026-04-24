@@ -20,6 +20,7 @@ export const StructuredEntry = Node.create({
     group: 'block',
     content: 'inline*',
     defining: true,
+    draggable: true,
 
     addAttributes() {
         return {
@@ -117,10 +118,19 @@ class StructuredEntryView {
         this.tagRow = document.createElement('div')
         this.tagRow.className = 'se-tag-row'
 
+        // 拖拉把手
+        this.dragHandle = document.createElement('span')
+        this.dragHandle.className = 'se-drag-handle'
+        this.dragHandle.setAttribute('data-drag-handle', '')
+        this.dragHandle.textContent = '\u2261'  // ≡
+        this.dragHandle.title = '拖拉排序'
+        this.dragHandle.contentEditable = 'false'
+        this.tagRow.appendChild(this.dragHandle)
+
         // Type tag badge -- 點擊選取整個 node（供擷取/謄寫）
         this.badge = document.createElement('span')
         this.badge.className = 'se-badge'
-        this._updateBadge()
+        this._updateVisualMode()
         this.badge.addEventListener('click', (e) => {
             e.stopPropagation()
             e.preventDefault()
@@ -138,6 +148,20 @@ class StructuredEntryView {
             this._toggleCollapsed()
         })
         this.tagRow.appendChild(this.toggleBtn)
+
+        // 刪除 Item 按鈕（freetext 不顯示）
+        if ((node.attrs.schemaCode || 'freetext') !== 'freetext') {
+            this.deleteBtn = document.createElement('span')
+            this.deleteBtn.className = 'se-delete-btn'
+            this.deleteBtn.textContent = 'x'
+            this.deleteBtn.title = '刪除此 Item'
+            this.deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                this._deleteEntry()
+            })
+            this.tagRow.appendChild(this.deleteBtn)
+        }
 
         this.dom.appendChild(this.tagRow)
 
@@ -159,17 +183,33 @@ class StructuredEntryView {
         return this._schemas.find(s => s.code === code)
     }
 
+    _isCalendarMode() {
+        if ((this.node.attrs.schemaCode || 'freetext') !== 'task') return false
+        const fv = this.node.attrs.fieldValues || {}
+        return !!(fv.planned_start && fv.planned_start.trim())
+    }
+
     _updateBadge() {
         const schema = this._getSchema()
         const code = this.node.attrs.schemaCode || 'freetext'
+        const isCal = this._isCalendarMode()
         if (schema) {
-            this.badge.textContent = schema.name
-            this.badge.style.backgroundColor = schema.color || '#6b7280'
+            this.badge.textContent = isCal ? '行事曆' : schema.name
+            this.badge.style.backgroundColor = isCal ? '#f97316' : (schema.color || '#6b7280')
         } else {
             this.badge.textContent = code
             this.badge.style.backgroundColor = '#6b7280'
         }
         this.badge.title = '點擊選取此物件（供擷取/謄寫）'
+    }
+
+    _updateVisualMode() {
+        const isCal = this._isCalendarMode()
+        const code = this.node.attrs.schemaCode || 'freetext'
+        if (code === 'task') {
+            this.dom.classList.toggle('se-task--calendar', isCal)
+        }
+        this._updateBadge()
     }
 
     _selectNode() {
@@ -191,6 +231,22 @@ class StructuredEntryView {
                 collapsed,
             })
         )
+    }
+
+    _deleteEntry() {
+        const pos = this.getPos()
+        if (pos === undefined) return
+        // 存入全域回收站供復原
+        if (!window._deletedEntries) window._deletedEntries = []
+        window._deletedEntries.push({
+            node: this.node.toJSON(),
+            text: this.node.textContent,
+            time: Date.now(),
+        })
+        // 軟刪除：直接從文件移除此 node
+        const tr = this.editor.view.state.tr
+        tr.delete(pos, pos + this.node.nodeSize)
+        this.editor.view.dispatch(tr)
     }
 
     _renderFields() {
@@ -299,7 +355,7 @@ class StructuredEntryView {
         if (node.type.name !== 'structuredEntry') return false
         this.node = node
         this.dom.className = 'se-block se-' + (node.attrs.schemaCode || 'freetext')
-        this._updateBadge()
+        this._updateVisualMode()
         this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
         this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
         this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'

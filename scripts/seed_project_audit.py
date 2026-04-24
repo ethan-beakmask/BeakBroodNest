@@ -108,7 +108,7 @@ def seed(dry_run=False):
 
     with session_scope() as s:
         # 1. 確保 todo schema 存在並取得 field mapping
-        todo_schema = s.query(EntrySchema).filter_by(code='todo').first()
+        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
         if not todo_schema:
             print('ERROR: todo schema 不存在，請先執行 app.py --init-db --seed')
             return
