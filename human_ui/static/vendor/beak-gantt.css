@@ -1,5 +1,5 @@
 /**
- * BeakGantt -- WBS + Gantt 一體化元件樣式
+ * BeakGantt v0.3 -- WBS + Gantt 一體化元件樣式
  * 自製套件，不依賴任何第三方甘特圖元件
  */
 
@@ -85,6 +85,24 @@
 
 .bk-gantt-grid tbody tr.bk-row-done td {
     opacity: 0.45;
+}
+
+/* ---- Summary row (Card) ---- */
+.bk-gantt-grid tbody tr.bk-row-summary td {
+    background: #e8edf3;
+    border-bottom: 1px solid #ccd5e0;
+    font-weight: 600;
+}
+.bk-gantt-grid tbody tr.bk-row-summary:hover td {
+    background: #dce3ed;
+}
+
+/* ---- Colored rows (outline-only / no-bar) ---- */
+.bk-gantt-grid tbody tr.bk-row-colored td {
+    background: var(--bk-row-bg, transparent);
+}
+.bk-gantt-grid tbody tr.bk-row-colored.bk-row-summary td {
+    color: #fff;
 }
 
 /* WBS number */
@@ -271,6 +289,29 @@
     background: #f0f7ff;
 }
 
+/* Summary row in timeline */
+.bk-gantt-row.bk-row-summary {
+    border-bottom: 1px solid #ccd5e0;
+}
+
+/* Colored row (outline-only / no-bar) in timeline -- override hover */
+.bk-gantt-row.bk-row-colored {
+    border-bottom-color: rgba(255,255,255,0.15);
+}
+.bk-gantt-row.bk-row-colored:hover {
+    filter: brightness(0.95);
+}
+
+/* Summary label in no-bar / outline-only */
+.bk-summary-label {
+    position: relative;
+    z-index: 2;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Today line */
 .bk-today-line {
     position: absolute;
@@ -384,6 +425,35 @@
 .bk-bar-done .bk-bar-body { background: #bbf7d0; border-color: #198754; }
 .bk-bar-done .bk-bar-progress { background: #198754; }
 
+/* ---- Summary bar (Mode 1) ---- */
+.bk-bar-summary {
+    height: 10px;
+    top: 10px;
+    cursor: default;
+    border-radius: 0;
+}
+.bk-bar-summary .bk-bar-body {
+    background: #003366;
+    border-color: #001a33;
+    border-radius: 0;
+}
+.bk-bar-summary .bk-bar-text {
+    display: none;
+}
+/* Summary bar end caps (downward triangles) */
+.bk-bar-summary-cap {
+    position: absolute;
+    bottom: -5px;
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #003366;
+    z-index: 3;
+}
+.bk-bar-summary-cap-l { left: 0; }
+.bk-bar-summary-cap-r { right: 0; }
+
 /* Unscheduled task (no bar, show placeholder) */
 .bk-bar-unsched {
     border: 1px dashed #bbb;
@@ -411,7 +481,6 @@
 .bk-dep-arrow {
     fill: #999;
 }
-/* Hit area for clicking deps (invisible, wider) */
 .bk-dep-hit {
     cursor: pointer;
 }

@@ -1,8 +1,8 @@
 <!-- 動態導覽選單 (Alpine.js) - 橫向展開 -->
 <div x-data="navMenu()" x-init="load()" style="display:inline-flex; gap:4px;">
     <template x-for="item in items" :key="item.id">
-        <a :href="item.url" class="bc-nav-item"
-           :class="item.url === activeUrl ? 'bc-nav-active' : ''"
+        <a :href="item._resolvedUrl || item.url" class="bc-nav-item"
+           :class="item._isActive ? 'bc-nav-active' : ''"
            x-text="item.name"></a>
     </template>
 </div>
@@ -40,21 +40,67 @@ function navMenu() {
     return {
         items: [],
         currentPath: window.location.pathname,
-        activeUrl: '',
         async load() {
             try {
                 const resp = await fetch('/beakcortex/api/nav-menu');
-                if (resp.ok) {
-                    this.items = await resp.json();
-                    let best = '';
-                    for (const item of this.items) {
-                        if (this.currentPath.startsWith(item.url) && item.url.length > best.length) {
-                            best = item.url;
-                        }
-                    }
-                    this.activeUrl = best;
-                }
+                if (!resp.ok) return;
+                this.items = await resp.json();
+                this._resolveContext();
             } catch (e) { console.error('navMenu load error:', e); }
+        },
+
+        /**
+         * 焦點互傳：從當前路徑提取 slug，
+         * 將「白板」與「專案」連結指向同一 slug 的對應頁面。
+         */
+        _resolveContext() {
+            var path = this.currentPath;
+
+            // 從 /beakcortex/canvas/<slug> 或 /beakcortex/project/<slug> 提取 slug
+            var slug = '';
+            var m = path.match(/^\/beakcortex\/(canvas|project)\/([A-Za-z0-9_-]+)/);
+            if (m) slug = m[2];
+
+            // 找出白板/專案選單項（靠 url pattern 識別）
+            var best = '';
+            for (var i = 0; i < this.items.length; i++) {
+                var item = this.items[i];
+                var url = item.url;
+
+                // 決定 active 狀態
+                if (path.startsWith(url) && url.length > best.length) {
+                    best = url;
+                }
+
+                // 焦點互傳：有 slug 時動態改寫 URL
+                if (slug) {
+                    // 白板入口（首頁 / 或 /canvas/...）
+                    if (url === '/beakcortex/' || url.match(/^\/beakcortex\/canvas\//)) {
+                        item._resolvedUrl = '/beakcortex/canvas/' + slug;
+                    }
+                    // 專案入口
+                    else if (url.match(/^\/beakcortex\/project\//)) {
+                        item._resolvedUrl = '/beakcortex/project/' + slug;
+                    }
+                }
+
+                // 也處理 active 判定（考慮 resolved URL）
+                item._isActive = false;
+            }
+
+            // 設定 active
+            for (var i = 0; i < this.items.length; i++) {
+                var item = this.items[i];
+                var checkUrl = item._resolvedUrl || item.url;
+                // 精確匹配或前綴匹配
+                if (path === checkUrl || (checkUrl !== '/beakcortex/' && path.startsWith(checkUrl))) {
+                    item._isActive = true;
+                } else if (checkUrl === '/beakcortex/' && (path === '/beakcortex/' || path.match(/^\/beakcortex\/canvas\//))) {
+                    item._isActive = true;
+                } else if (checkUrl.match(/^\/beakcortex\/project\//) && path.match(/^\/beakcortex\/project\//)) {
+                    item._isActive = true;
+                }
+            }
         }
     };
 }

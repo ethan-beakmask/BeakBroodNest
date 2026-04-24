@@ -356,7 +356,12 @@
                         <span class="bk-view-pill" data-lay="wbs" onclick="setBeakGanttLayout('wbs')">WBS</span>
                         <span class="bk-view-pill" data-lay="gantt" onclick="setBeakGanttLayout('gantt')">Gantt</span>
                         <span style="width:1px;height:18px;background:#ddd;margin:0 4px;"></span>
+                        <span class="bk-view-pill active" data-smode="summary-bar" onclick="setBeakGanttSummaryMode('summary-bar')">SummaryBar</span>
+                        <span class="bk-view-pill" data-smode="no-bar" onclick="setBeakGanttSummaryMode('no-bar')">NoBar</span>
+                        <span class="bk-view-pill" data-smode="outline-only" onclick="setBeakGanttSummaryMode('outline-only')">Outline</span>
+                        <span style="width:1px;height:18px;background:#ddd;margin:0 4px;"></span>
                         <button id="bk-undo-btn" class="btn btn-sm btn-outline-secondary" onclick="beakGanttUndo()" disabled style="font-size:11px;padding:2px 8px;opacity:0.4;">Undo</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="toggleColorPanel()" style="font-size:11px;padding:2px 8px;" title="配色設定">Palette</button>
                     </div>
                     <div style="font-size:11px; color:#6c757d;">
                         <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:2px;"></span>High
@@ -390,6 +395,47 @@
             </div>
         </div>
 
+        <!-- Color picker panel -->
+        <div id="bk-color-panel" style="display:none; position:fixed; top:80px; right:20px; z-index:9999;
+             background:#fff; border:1px solid #ccc; border-radius:6px; padding:16px; width:260px;
+             box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:12px;">
+            <div style="font-weight:600; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                Gantt 配色設定
+                <span style="cursor:pointer; color:#999; font-size:16px;" onclick="toggleColorPanel()">&times;</span>
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="display:block; margin-bottom:2px; color:#666;">Summary Bar</label>
+                <input type="color" id="bk-clr-summary" value="#266ACF" style="width:100%; height:28px; border:1px solid #ddd; border-radius:3px; cursor:pointer;">
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="display:block; margin-bottom:2px; color:#666;">NoBar 背景</label>
+                <input type="color" id="bk-clr-nobar" value="#3A9CFD" style="width:100%; height:28px; border:1px solid #ddd; border-radius:3px; cursor:pointer;">
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="display:block; margin-bottom:2px; color:#666;">Outline Card 行</label>
+                <input type="color" id="bk-clr-ol-card" value="#3A9CFD" style="width:100%; height:28px; border:1px solid #ddd; border-radius:3px; cursor:pointer;">
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="display:block; margin-bottom:2px; color:#666;">Outline Task 色1</label>
+                <input type="color" id="bk-clr-ol-t1" value="#F0F0FF" style="width:100%; height:28px; border:1px solid #ddd; border-radius:3px; cursor:pointer;">
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="display:block; margin-bottom:2px; color:#666;">Outline Task 色2</label>
+                <input type="color" id="bk-clr-ol-t2" value="#F7FFF5" style="width:100%; height:28px; border:1px solid #ddd; border-radius:3px; cursor:pointer;">
+            </div>
+            <div style="margin-bottom:10px;">
+                <label style="display:block; margin-bottom:2px; color:#666;">Outline Task 色3 (空=2色模式)</label>
+                <div style="display:flex; gap:4px; align-items:center;">
+                    <input type="color" id="bk-clr-ol-t3" value="#F0F9FF" style="flex:1; height:28px; border:1px solid #ddd; border-radius:3px; cursor:pointer;" disabled>
+                    <label style="white-space:nowrap;"><input type="checkbox" id="bk-clr-ol-t3-on"> 啟用</label>
+                </div>
+            </div>
+            <div style="display:flex; gap:6px;">
+                <button class="btn btn-sm btn-primary" style="flex:1; font-size:11px;" onclick="applyGanttColors()">套用</button>
+                <button class="btn btn-sm btn-outline-secondary" style="font-size:11px;" onclick="resetGanttColors()">還原預設</button>
+            </div>
+        </div>
+
         <!-- Toast area -->
         <div class="toast-area" id="toast-area"></div>
 
@@ -406,6 +452,7 @@
 <script src="/beakcortex/static/js/gantt-baseline.js"></script>
 <!-- BeakGantt -->
 <script src="/beakcortex/static/vendor/beak-gantt.js"></script>
+<script>window._beakUsername = '{{ username }}';</script>
 <script src="/beakcortex/static/js/beak-gantt-app.js?v={{ cache_ver }}"></script>
 
 

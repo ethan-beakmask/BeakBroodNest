@@ -294,7 +294,8 @@ def project_page(slug):
         canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
         if not canvas:
             abort(404)
-    return render_template('project.html', canvas_slug=slug)
+    return render_template('project.html', canvas_slug=slug,
+                           username=session.get('username', 'default'))
 
 
 # ============================================================
