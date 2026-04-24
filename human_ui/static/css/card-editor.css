@@ -26,6 +26,29 @@
     color: #94a3b8;
 }
 
+/* ---- 排列控制按鈕 ---- */
+.ce-layout-btns {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 8px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    padding: 2px;
+}
+.ce-layout-btn {
+    background: transparent;
+    color: #64748b;
+    border: none;
+    padding: 3px 7px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    line-height: 1;
+}
+.ce-layout-btn:hover { color: #cbd5e1; background: rgba(255,255,255,0.1); }
+.ce-layout-btn.active { color: #93c5fd; background: rgba(59,130,246,0.2); }
+
 /* ---- 編輯器容器（多卡片排版） ---- */
 .ce-container {
     flex: 1;
@@ -40,13 +63,27 @@
 
 /* 排版模式 */
 .ce-layout-single .ce-pane { width: 100%; height: 100%; }
-.ce-layout-horizontal .ce-pane { width: calc(50% - 4px); height: 100%; }
-.ce-layout-vertical .ce-pane { width: 100%; height: calc(50% - 4px); }
-.ce-layout-grid .ce-pane { width: calc(50% - 4px); height: calc(50% - 4px); }
-.ce-layout-list .ce-pane { width: 100%; min-height: 300px; max-height: 66vh; flex-shrink: 0; }
-.ce-layout-list { flex-wrap: nowrap; flex-direction: column; overflow-y: auto; }
-.ce-layout-list::-webkit-scrollbar-thumb { background: #3b82f6; }
-.ce-layout-list::-webkit-scrollbar-thumb:hover { background: #2563eb; }
+
+/* 左右 -- 一排橫向排列 */
+.ce-layout-row { flex-wrap: nowrap; flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+.ce-layout-row .ce-pane { flex: 1 0 400px; height: 100%; }
+
+/* 上下 -- 一列縱向排列 */
+.ce-layout-col { flex-wrap: nowrap; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+.ce-layout-col .ce-pane { width: 100%; min-height: 300px; max-height: 66vh; flex-shrink: 0; }
+.ce-layout-col::-webkit-scrollbar-thumb { background: #3b82f6; }
+
+/* 田字 -- 2 欄，row 平均分配 */
+.ce-layout-grid2 { display: grid !important; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; }
+.ce-layout-grid2 .ce-pane { width: auto; height: auto; min-height: 0; overflow: hidden; }
+
+/* 井字 -- 3 欄，row 平均分配 */
+.ce-layout-grid3 { display: grid !important; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; }
+.ce-layout-grid3 .ce-pane { width: auto; height: auto; min-height: 0; overflow: hidden; }
+
+/* 自訂 -- inline style 控制 grid */
+.ce-layout-custom { overflow: auto; }
+.ce-layout-custom .ce-pane { width: auto; height: auto; min-height: 0; overflow: hidden; }
 
 /* ---- 單一編輯窗格 ---- */
 .ce-pane {
@@ -70,12 +107,10 @@
 /* 閃爍提示特效（整張卡片底色） */
 @keyframes ce-flash {
     0%   { background-color: #dbeafe; }
-    30%  { background-color: #fff; }
-    55%  { background-color: #dbeafe; }
     100% { background-color: #fff; }
 }
 .ce-pane-flash {
-    animation: ce-flash 2s ease-out;
+    animation: ce-flash 0.8s ease-out;
 }
 
 .card-editor-maximize {
@@ -263,12 +298,28 @@
 }
 
 /* mode toggle bar */
+.ce-transcribe-label {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    color: #93c5fd;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+.ce-transcribe-label:hover { background: rgba(255,255,255,0.05); }
+.ce-transcribe-label.disabled { color: #475569; cursor: not-allowed; }
+.ce-transcribe-label input { margin: 0; }
+
 .ce-staging-mode-bar {
     display: flex;
     padding: 6px 8px;
     gap: 4px;
     border-bottom: 1px solid #334155;
     flex-shrink: 0;
+    align-items: center;
 }
 .ce-staging-mode-btn {
     flex: 1;
@@ -724,6 +775,27 @@
 .se-badge:hover {
     opacity: 0.85;
 }
+
+/* 展開/收合按鈕 */
+.se-toggle-btn {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #9ca3af;
+    background: rgba(0,0,0,0.08);
+    width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+}
+.se-toggle-btn:hover {
+    background: rgba(0,0,0,0.15);
+    color: #374151;
+}
+
 .se-freetext .se-tag-row {
     display: none;
 }

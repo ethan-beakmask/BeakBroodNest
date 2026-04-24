@@ -23,6 +23,10 @@
                 <button @click="doRedo()" :disabled="redoStack.length === 0"
                         :style="redoStack.length === 0 ? 'opacity:0.4;' : ''" title="重做 (Ctrl+Shift+Z)">&#8631;</button>
                 <div class="separator"></div>
+                <button @click="cycleCardSizeMode()" :title="'卡片高度：' + cardSizeModeLabels[cardSizeMode]"
+                        x-text="cardSizeModeLabels[cardSizeMode]"
+                        style="min-width:36px;"></button>
+                <div class="separator"></div>
                 <button @click="exportCanvas('json')" title="匯出 JSON">&#8615;</button>
                 <button @click="showImportModal=true" title="匯入">&#8613;</button>
             </div>

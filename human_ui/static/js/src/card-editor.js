@@ -190,7 +190,7 @@ class CardEditor {
     /**
      * 擷取選取文字並可選地刪除（單一原子操作）
      * @param {boolean} shouldDelete - true 時刪除選取範圍（移動模式）
-     * @returns {{ from, to, markdown }} | null
+     * @returns {{ from, to, markdown, contentJson }} | null
      */
     captureSelection(shouldDelete) {
         if (!this.editor) return null
@@ -199,8 +199,17 @@ class CardEditor {
         const { from, to, empty } = state.selection
         if (empty) return null
 
-        // 先取文字（純文字，避免序列化產生副作用）
-        const text = state.doc.textBetween(from, to, '\n\n', '\n')
+        // JSON 內容（保留 structuredEntry 等 node 結構）
+        const slice = state.doc.slice(from, to)
+        const contentJson = slice.content.toJSON()
+
+        // 顯示用純文字
+        let text = state.doc.textBetween(from, to, '\n\n', '\n')
+        // NodeSelection 選取 structuredEntry 時，加上 schema 標記方便辨識
+        if (state.selection.node && state.selection.node.type.name === 'structuredEntry') {
+            const code = state.selection.node.attrs.schemaCode || 'freetext'
+            text = '[' + code + '] ' + text
+        }
         if (!text.trim()) return null
 
         // 刪除必須在同一個 state 上操作
@@ -208,7 +217,7 @@ class CardEditor {
             view.dispatch(state.tr.delete(from, to))
         }
 
-        return { from, to, markdown: text }
+        return { from, to, markdown: text, contentJson: contentJson }
     }
 
     /**

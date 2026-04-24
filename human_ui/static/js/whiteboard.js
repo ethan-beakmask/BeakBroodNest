@@ -99,7 +99,7 @@ function whiteboardApp(canvasId) {
         ],
 
         // Forms
-        newAtom: { title: '', content: '', atom_type: 'F' },
+        newAtom: { title: '', content: '', atom_type: 'A' },
         newAtomPos: { x: 100, y: 100 },
         newCanvasName: '',
         newTagName: '',
@@ -214,6 +214,10 @@ function whiteboardApp(canvasId) {
         rtOptEnabled: false,
         rtOptPerSector: 10,
         rtPanelOpen: false,
+
+        // -- Card Size Mode --
+        cardSizeMode: 'default',  // 'min' | 'default' | 'full'
+        cardSizeModeLabels: { min: '精簡', 'default': '標準', full: '展開' },
 
         // -- Config --
         atomTypeConfig: {
@@ -334,6 +338,12 @@ function whiteboardApp(canvasId) {
             if (!vp) return;
             vp.addEventListener('wheel', (e) => {
                 if (this.editingAtomId) return;
+                // Shift+wheel 或滑鼠在卡片 body 上：捲動卡片內容，不縮放
+                var scrollTarget = e.target.closest('.wb-card-body');
+                if (scrollTarget && (e.shiftKey || scrollTarget.scrollHeight > scrollTarget.clientHeight)) {
+                    scrollTarget.scrollTop += e.deltaY;
+                    e.preventDefault(); e.stopPropagation(); return;
+                }
                 e.preventDefault();
                 const delta = e.deltaY > 0 ? 0.92 : 1.08;
                 const newZoom = Math.max(0.15, Math.min(3, this.zoom * delta));
@@ -610,7 +620,7 @@ function whiteboardApp(canvasId) {
             const lifecycle = ca.atom ? ca.atom.lifecycle : 'active';
             const cfg = this.atomTypeConfig[type] || this.atomTypeConfig.F;
             const opacity = { active: 1, aging: 0.65, archived: 0.35, terminal: 0.2 }[lifecycle] || 1;
-            const border = type === 'F' ? '2px dashed ' + cfg.border : '2px solid ' + cfg.border;
+            const border = type === 'F' ? '1px dashed ' + cfg.border : '1px solid ' + cfg.border;
             var s = 'left:' + ca.pos_x + 'px; top:' + ca.pos_y + 'px; z-index:' + (ca.z_index || 10) + '; border:' + border + '; opacity:' + opacity + ';';
             if (ca.width) s += ' width:' + ca.width + 'px;'; if (ca.height) s += ' height:' + ca.height + 'px;';
             return s;
@@ -618,12 +628,60 @@ function whiteboardApp(canvasId) {
 
         getTypeBadgeStyle(type) { const cfg = this.atomTypeConfig[type] || this.atomTypeConfig.F; return 'background:' + cfg.bg + '; color:' + cfg.color + ';'; },
 
+        cycleCardSizeMode() {
+            const order = ['min', 'default', 'full'];
+            const idx = order.indexOf(this.cardSizeMode);
+            this.cardSizeMode = order[(idx + 1) % order.length];
+            this.applyCardSizeMode();
+        },
+
+        applyCardSizeMode() {
+            const HEADER_H = 34;
+            const ENTRY_H = 23;
+            const FOOTER_H = 28;
+            const CONTENT_LINE_H = 20;
+            const PADDING = 12;
+            const MIN_H = 80;
+            var self = this;
+            this.atoms.forEach(function(ca) {
+                var entries = (ca.atom && ca.atom.entries) ? ca.atom.entries.length : 0;
+                var hasContent = ca.atom && ca.atom.content && ca.atom.content.trim().length > 0;
+                var hasTags = ca.atom && ca.atom.tags && ca.atom.tags.length > 0;
+                var footerH = hasTags ? FOOTER_H : 0;
+                var h;
+                if (entries > 0) {
+                    if (self.cardSizeMode === 'min') {
+                        h = HEADER_H + ENTRY_H + footerH + PADDING;
+                    } else if (self.cardSizeMode === 'default') {
+                        h = HEADER_H + Math.min(entries, 6) * ENTRY_H + footerH + PADDING;
+                    } else {
+                        h = HEADER_H + entries * ENTRY_H + footerH + PADDING;
+                    }
+                } else if (hasContent) {
+                    var lines = ca.atom.content.split('\n').length;
+                    if (self.cardSizeMode === 'min') {
+                        h = HEADER_H + CONTENT_LINE_H + footerH + PADDING;
+                    } else if (self.cardSizeMode === 'default') {
+                        h = HEADER_H + Math.min(lines, 6) * CONTENT_LINE_H + footerH + PADDING;
+                    } else {
+                        h = HEADER_H + lines * CONTENT_LINE_H + footerH + PADDING;
+                    }
+                } else {
+                    h = MIN_H;
+                }
+                h = Math.max(MIN_H, h);
+                ca.height = h;
+                API.updateCanvasAtom(ca.id, { height: h });
+            });
+            this.$nextTick(function() { self.renderConnections(); });
+        },
+
         // ============================================
         // New Atom
         // ============================================
         openNewAtomModal(e) {
             if (this.isSnapshot) { this.showToast('歸檔白板為唯讀快照', 'warn'); return; }
-            this.newAtom = { title: '', content: '', atom_type: 'F' };
+            this.newAtom = { title: '', content: '', atom_type: 'A' };
             if (e && e.clientX) { const pos = this.screenToCanvas(e.clientX, e.clientY); this.newAtomPos = { x: pos.x, y: pos.y }; }
             else { this.newAtomPos = { x: (-this.panX / this.zoom) + 200, y: (-this.panY / this.zoom) + 200 }; }
             this.showNewAtomModal = true;

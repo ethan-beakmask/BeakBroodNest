@@ -423,6 +423,23 @@
                             @click="ceSidebarOpen = !ceSidebarOpen"
                             x-text="ceSidebarOpen ? '< 收合' : '+ 加入卡片'"></button>
                     <span class="ce-topbar-info" x-text="openEditors.length + ' 張卡片'"></span>
+                    <div class="ce-layout-btns" x-show="openEditors.length > 1">
+                        <button class="ce-layout-btn" :class="{ active: editorLayout === 'row' }" @click="editorLayout = 'row'" title="左右">&#9776;</button>
+                        <button class="ce-layout-btn" :class="{ active: editorLayout === 'col' }" @click="editorLayout = 'col'" title="上下">&#9783;</button>
+                        <button class="ce-layout-btn" :class="{ active: editorLayout === 'grid2' }" @click="editorLayout = 'grid2'" title="田字">&#9638;</button>
+                        <button class="ce-layout-btn" :class="{ active: editorLayout === 'grid3' }" @click="editorLayout = 'grid3'" title="井字">&#9641;</button>
+                        <button class="ce-layout-btn" :class="{ active: editorLayout === 'custom' }" @click="editorLayout = 'custom'" title="自訂">&#9881;</button>
+                        <template x-if="editorLayout === 'custom'">
+                            <span style="display:inline-flex;align-items:center;gap:3px;margin-left:4px;">
+                                <input type="number" min="1" max="8" x-model.number="customLayoutCols"
+                                       style="width:36px;background:rgba(255,255,255,0.1);color:#e2e8f0;border:1px solid rgba(255,255,255,0.2);border-radius:3px;text-align:center;font-size:11px;padding:2px;">
+                                <span style="color:#94a3b8;font-size:11px;">x</span>
+                                <input type="number" min="1" max="8" x-model.number="customLayoutRows"
+                                       style="width:36px;background:rgba(255,255,255,0.1);color:#e2e8f0;border:1px solid rgba(255,255,255,0.2);border-radius:3px;text-align:center;font-size:11px;padding:2px;">
+                            </span>
+                        </template>
+                        <button class="ce-layout-btn" :class="{ active: editorLayout === 'auto' }" @click="editorLayout = 'auto'" title="自動">A</button>
+                    </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
                     <button class="btn btn-sm"
@@ -455,7 +472,7 @@
                     </div>
                 </div>
             <!-- 編輯器容器 -->
-            <div class="ce-container" :class="editorLayoutClass">
+            <div class="ce-container" :class="editorLayoutClass" :style="customGridStyle">
                 <template x-for="ed in openEditors" :key="ed.id">
                     <div class="ce-pane" :data-ce-id="ed.id"
                          :class="{ 'ce-pane-maximized': maximizedEditorId === ed.id }"
@@ -528,12 +545,17 @@
                 </div>
 
                 <div class="ce-staging-mode-bar">
-                    <button class="ce-staging-mode-btn"
-                            :class="{ active: stagingMode === 'copy' }"
-                            @click="stagingMode = 'copy'">複製</button>
-                    <button class="ce-staging-mode-btn"
-                            :class="{ active: stagingMode === 'move' }"
-                            @click="stagingMode = 'move'">移動</button>
+                    <label class="ce-transcribe-label"
+                           :class="{ disabled: openEditors.length !== 2 }"
+                           :title="openEditors.length !== 2 ? '需開啟 2 個文件' : '選取文字直接謄寫到另一文件'">
+                        <input type="checkbox" x-model="transcribeMode"
+                               :disabled="openEditors.length !== 2">
+                        <span>謄寫</span>
+                    </label>
+                    <button class="ce-staging-mode-btn active"
+                            @click="stagingMode = stagingMode === 'copy' ? 'move' : 'copy'"
+                            x-text="stagingMode === 'copy' ? '複製' : '移動'"
+                            :title="stagingMode === 'copy' ? '目前：複製（保留原文），點擊切換為移動' : '目前：移動（刪除原文），點擊切換為複製'"></button>
                     <span class="ce-staging-bar-sep"></span>
                     <button class="ce-staging-mode-btn"
                             @click="clearStaging()"

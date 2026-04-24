@@ -19,6 +19,7 @@ function whiteboardCardEditorMixin() {
         // 右側抓重點
         ceStagingOpen: false,
         stagingMode: 'copy',     // 'copy' or 'move'
+        transcribeMode: false,   // 謄寫模式：直接在兩文件間複製/移動
         stagingItems: [],        // [{ id, text, sourceAtomId, sourceTitle }]
         stagingTitle: '',        // 自訂新卡片標題（空白時用預設）
         _stagingSeq: 0,
@@ -27,15 +28,26 @@ function whiteboardCardEditorMixin() {
         maximizedEditorId: null,  // 目前最大化的 editorId，null = 無
 
         // 排版模式
-        editorLayout: 'auto',  // auto, horizontal, vertical, grid, list
+        editorLayout: 'auto',
+        customLayoutCols: 3,
+        customLayoutRows: 2,
 
         get editorLayoutClass() {
             var count = this.openEditors.length;
-            if (this.editorLayout !== 'auto') return 'ce-layout-' + this.editorLayout;
+            var m = this.editorLayout;
+            // 卡片數少時，無論選什麼模式都用最合理的排版
             if (count <= 1) return 'ce-layout-single';
-            if (count === 2) return 'ce-layout-horizontal';
-            if (count <= 4) return 'ce-layout-grid';
-            return 'ce-layout-list';
+            if (count === 2 && (m === 'auto' || m === 'grid2' || m === 'grid3' || m === 'custom')) return 'ce-layout-row';
+            if (count <= 4 && (m === 'auto' || m === 'grid3' || m === 'custom')) return 'ce-layout-grid2';
+            // 卡片數夠多時才套用指定模式
+            if (m === 'auto') return 'ce-layout-col';
+            if (m === 'custom') return 'ce-layout-custom';
+            return 'ce-layout-' + m;
+        },
+
+        get customGridStyle() {
+            if (this.editorLayoutClass !== 'ce-layout-custom') return '';
+            return 'display:grid; grid-template-columns:repeat(' + this.customLayoutCols + ',1fr); grid-template-rows:repeat(' + this.customLayoutRows + ',1fr);';
         },
 
         async openCardEditor(atomId) {
@@ -81,11 +93,12 @@ function whiteboardCardEditorMixin() {
                 // Make entry schemas available to NodeView
                 window._entrySchemas = self.entrySchemas || [];
 
+                var initializing = true;
                 var ce = new window.CardEditor();
                 ce.create(host, {
                     contentJson: atom.content_json || null,
                     content: atom.content || '',
-                    onChange: function() { self._markEditorDirty(editorId); },
+                    onChange: function() { if (!initializing) self._markEditorDirty(editorId); },
                     editable: (atom.owner || 'ethan') === 'ethan',
                 });
 
@@ -98,6 +111,7 @@ function whiteboardCardEditorMixin() {
                 } catch (e) { /* no entries yet, use content as-is */ }
 
                 _ceStore[atomId] = ce;
+                self.$nextTick(function() { initializing = false; });
                 self._focusEditor(editorId);
             });
         },
@@ -300,17 +314,34 @@ function whiteboardCardEditorMixin() {
 
             // 單一原子操作：讀取 + 刪除（若為移動模式）在同一 state 上完成
             var shouldDelete = this.stagingMode === 'move';
+
+            // 謄寫模式：直接在兩文件間複製/移動
+            if (this.transcribeMode && this.openEditors.length === 2) {
+                var info = ce.captureSelection(shouldDelete);
+                if (!info) return;
+                var other = this.openEditors.find(function(e) { return e.id !== editorId; });
+                if (!other) return;
+                var otherCe = _ceStore[other.atomId];
+                if (!otherCe || !otherCe.editor) return;
+                // 用 contentJson 插入，保留 structuredEntry node 結構
+                otherCe.editor.commands.insertContent(info.contentJson);
+                this._markEditorDirty(other.id);
+                if (shouldDelete) this._markEditorDirty(editorId);
+                return;
+            }
+
             var info = ce.captureSelection(shouldDelete);
             if (!info) return;
 
             if (shouldDelete) this._markEditorDirty(editorId);
-            this.addToStaging(info.markdown, ed.atomId, ed.title);
+            this.addToStaging(info.markdown, ed.atomId, ed.title, info.contentJson);
         },
 
-        addToStaging(text, atomId, title) {
+        addToStaging(text, atomId, title, contentJson) {
             this.stagingItems.push({
                 id: ++this._stagingSeq,
                 text: text,
+                contentJson: contentJson || null,
                 sourceAtomId: atomId,
                 sourceTitle: title || '#' + atomId,
             });
@@ -343,13 +374,24 @@ function whiteboardCardEditorMixin() {
         async saveStagingAsAtom() {
             if (this.stagingItems.length === 0) { this.showToast('暫存區無內容', 'error'); return; }
 
+            // 組合純文字（fallback）
             var combined = this.stagingItems.map(function(s) { return s.text; }).join('\n\n');
+            // 組合 JSON 內容（保留 structuredEntry 等 node）
+            var allContent = [];
+            this.stagingItems.forEach(function(s) {
+                if (s.contentJson && Array.isArray(s.contentJson)) {
+                    s.contentJson.forEach(function(n) { allContent.push(n); });
+                }
+            });
+            var contentJson = allContent.length > 0 ? { type: 'doc', content: allContent } : null;
+
             var title = this.stagingTitle.trim() || ('重組筆記 (' + this.stagingItems.length + ' 片段)');
             try {
                 var atom = await API.createAtom({
                     title: title,
                     content: combined,
-                    atom_type: 'F',
+                    content_json: contentJson,
+                    atom_type: 'A',
                     source: 'human',
                 });
                 var vpX = (-this.panX / this.zoom) + 300 + Math.random() * 100;

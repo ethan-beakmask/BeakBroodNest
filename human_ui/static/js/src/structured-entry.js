@@ -13,6 +13,7 @@
  *   collapsed   - 欄位面板是否收合
  */
 import { Node, mergeAttributes } from '@tiptap/core'
+import { NodeSelection } from '@tiptap/pm/state'
 
 export const StructuredEntry = Node.create({
     name: 'structuredEntry',
@@ -116,15 +117,27 @@ class StructuredEntryView {
         this.tagRow = document.createElement('div')
         this.tagRow.className = 'se-tag-row'
 
-        // Type tag badge
+        // Type tag badge -- 點擊選取整個 node（供擷取/謄寫）
         this.badge = document.createElement('span')
         this.badge.className = 'se-badge'
         this._updateBadge()
         this.badge.addEventListener('click', (e) => {
             e.stopPropagation()
-            this._toggleCollapsed()
+            e.preventDefault()
+            this._selectNode()
         })
         this.tagRow.appendChild(this.badge)
+
+        // 展開/收合按鈕
+        this.toggleBtn = document.createElement('span')
+        this.toggleBtn.className = 'se-toggle-btn'
+        this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
+        this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
+        this.toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation()
+            this._toggleCollapsed()
+        })
+        this.tagRow.appendChild(this.toggleBtn)
 
         this.dom.appendChild(this.tagRow)
 
@@ -156,8 +169,16 @@ class StructuredEntryView {
             this.badge.textContent = code
             this.badge.style.backgroundColor = '#6b7280'
         }
-        const collapsed = this.node.attrs.collapsed
-        this.badge.title = collapsed ? 'Click to expand fields' : 'Click to collapse fields'
+        this.badge.title = '點擊選取此物件（供擷取/謄寫）'
+    }
+
+    _selectNode() {
+        const pos = this.getPos()
+        if (pos === undefined) return
+        const tr = this.editor.view.state.tr
+        const sel = NodeSelection.create(this.editor.view.state.doc, pos)
+        this.editor.view.dispatch(tr.setSelection(sel))
+        this.editor.view.focus()
     }
 
     _toggleCollapsed() {
@@ -280,6 +301,8 @@ class StructuredEntryView {
         this.dom.className = 'se-block se-' + (node.attrs.schemaCode || 'freetext')
         this._updateBadge()
         this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
+        this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
+        this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
         if (!node.attrs.collapsed) {
             this._renderFields()
         }

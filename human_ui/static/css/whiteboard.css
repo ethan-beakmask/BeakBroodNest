@@ -164,7 +164,7 @@
 .wb-card {
     position: absolute;
     background: var(--bg-secondary);
-    border: 2px solid var(--border-light);
+    border: 1px solid var(--border-light);
     border-radius: var(--radius-lg);
     box-shadow: var(--card-shadow);
     width: 260px;
@@ -457,8 +457,8 @@
 /* ---- 阻塞徽章 ---- */
 .wb-card-blocked {
     position: absolute;
-    bottom: 4px;
-    left: 4px;
+    top: 4px;
+    right: 4px;
     background: #dc2626;
     color: white;
     font-size: 9px;
@@ -563,6 +563,15 @@
 }
 
 .block-chain-node:hover { background: #fef2f2; }
+
+/* ---- 卡片高度模式 ---- */
+.wb-card.card-mode-min .wb-card-body,
+.wb-card.card-mode-default .wb-card-body {
+    overflow-y: auto;
+}
+.wb-card.card-mode-full .wb-card-body {
+    overflow-y: visible;
+}
 
 /* ---- Entry 行列（ER-model 風格） ---- */
 .wb-card-entries {

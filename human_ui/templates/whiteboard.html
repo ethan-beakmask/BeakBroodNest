@@ -99,6 +99,9 @@
                              'conn-source': mode === 'connect' && connSourceAtomId === ca.atom_id,
                              'conn-drop-target': isConnDragging && connDragHoverAtomId === ca.atom_id,
                              highlighted: highlightedAtomIds.includes(ca.atom_id),
+                             'card-mode-min': cardSizeMode === 'min',
+                             'card-mode-default': cardSizeMode === 'default',
+                             'card-mode-full': cardSizeMode === 'full',
                          }"
                          :style="getCardStyle(ca)"
                          @click.stop="mode === 'connect' ? onCardClickForConnect($event, ca) : onCardClick(ca)"
