@@ -538,26 +538,17 @@
         </div>
     </template>
 
-    <!-- 連線右鍵選單 -->
-    <template x-if="connContextMenu">
-        <div class="context-menu" :style="'left:' + connContextMenu.x + 'px; top:' + connContextMenu.y + 'px;'"
-             @click.stop @click.away="closeConnContextMenu()">
-            <div class="context-menu-item" @click="connContextAction('change-type')">變更關係類型</div>
-            <div class="context-menu-separator"></div>
-            <div class="context-menu-item danger" @click="connContextAction('delete')">刪除連線</div>
-        </div>
-    </template>
-
-    <!-- 連線型別修改 -->
+    <!-- 連線編輯（變更類型 + 說明 + 刪除） -->
     <template x-if="showConnTypeModal">
         <div class="modal-overlay">
             <div class="modal">
                 <div class="modal-header">
-                    <h3>變更關係類型</h3>
+                    <h3>編輯連線</h3>
                     <button class="modal-close" @click="showConnTypeModal=false; connTypeChangeTarget=null;">x</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
+                        <label>關係類型</label>
                         <template x-for="rt in relationTypeList" :key="'ct-'+rt.value">
                             <label class="relation-option"
                                    :class="{ selected: selectedRelationType === rt.value }">
@@ -569,10 +560,18 @@
                             </label>
                         </template>
                     </div>
+                    <div class="form-group">
+                        <label>說明（選填）</label>
+                        <input class="form-control" x-model="connTypeChangeLabel" placeholder="關係描述..."
+                               @keydown.enter="confirmConnTypeChange()">
+                    </div>
                 </div>
                 <div class="modal-footer">
+                    <button class="btn btn-sm"
+                            style="border:1px solid var(--danger, #dc2626);color:var(--danger, #dc2626);background:transparent;margin-right:auto;"
+                            @click="deleteConnFromModal()">刪除連線</button>
                     <button class="btn btn-secondary" @click="showConnTypeModal=false; connTypeChangeTarget=null;">取消</button>
-                    <button class="btn btn-primary" @click="confirmConnTypeChange()">變更</button>
+                    <button class="btn btn-primary" @click="confirmConnTypeChange()">儲存</button>
                 </div>
             </div>
         </div>

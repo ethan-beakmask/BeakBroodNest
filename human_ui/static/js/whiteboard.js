@@ -60,7 +60,7 @@ function whiteboardApp(canvasId) {
         showRelationModal: false,
         showConnTypeModal: false,
         connTypeChangeTarget: null,
-        connContextMenu: null,
+        connTypeChangeLabel: '',
         connDragShiftKey: false,
         showUISettingsModal: false,
         showBatchTagModal: false,
@@ -455,7 +455,7 @@ function whiteboardApp(canvasId) {
             if (this.atoms.length === 0) return;
             const vp = this.$refs.viewport; if (!vp) return;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            this.atoms.forEach(ca => { minX = Math.min(minX, ca.pos_x); minY = Math.min(minY, ca.pos_y); maxX = Math.max(maxX, ca.pos_x + (ca.width || 260)); maxY = Math.max(maxY, ca.pos_y + (ca.height || 160)); });
+            this.atoms.forEach(ca => { minX = Math.min(minX, ca.pos_x); minY = Math.min(minY, ca.pos_y); maxX = Math.max(maxX, ca.pos_x + (ca.width || 265)); maxY = Math.max(maxY, ca.pos_y + (ca.height || 160)); });
             const pad = 80, cw = maxX - minX + pad * 2, ch = maxY - minY + pad * 2;
             const rect = vp.getBoundingClientRect();
             this.zoom = Math.min(rect.width / cw, rect.height / ch, 1.2);
@@ -519,8 +519,8 @@ function whiteboardApp(canvasId) {
             e.stopPropagation(); e.preventDefault();
             this.resizeCard = ca; this.resizeStartX = e.clientX; this.resizeStartY = e.clientY;
             const el = document.getElementById('card-' + ca.atom_id);
-            this.resizeStartW = el ? el.offsetWidth : (ca.width || 260);
-            this.resizeStartH = el ? el.offsetHeight : (ca.height || 120);
+            this.resizeStartW = el ? el.offsetWidth : (ca.width || 265);
+            this.resizeStartH = el ? el.offsetHeight : (ca.height || 125);
         },
 
         // Atom info dialog
@@ -567,7 +567,7 @@ function whiteboardApp(canvasId) {
             var left = Math.min(start.x, end.x), top = Math.min(start.y, end.y);
             var right = Math.max(start.x, end.x), bottom = Math.max(start.y, end.y);
             this.selectedAtomIds = this.atoms.filter(function(ca) {
-                var w = ca.width || 260, h = ca.height || 120;
+                var w = ca.width || 265, h = ca.height || 125;
                 return ca.pos_x + w > left && ca.pos_x < right && ca.pos_y + h > top && ca.pos_y < bottom;
             }).map(function(ca) { return ca.atom_id; });
         },
@@ -684,14 +684,15 @@ function whiteboardApp(canvasId) {
 
         async confirmConnection() {
             if (!this.pendingConnection) return;
-            await API.createConnection({ canvas_id: this.canvasId, source_atom_id: this.pendingConnection.sourceAtomId, target_atom_id: this.pendingConnection.targetAtomId, relation_type: this.selectedRelationType, label: this.relationLabel });
+            var resp = await API.createConnection({ canvas_id: this.canvasId, source_atom_id: this.pendingConnection.sourceAtomId, target_atom_id: this.pendingConnection.targetAtomId, relation_type: this.selectedRelationType, label: this.relationLabel });
             this.showRelationModal = false; this.pendingConnection = null; this.mode = 'select';
-            await this.loadData(); this.renderConnections();
+            if (resp && !resp.error) { this.connections.push(resp); this.renderConnections(); }
         },
 
         async deleteConnection(connId) {
-            var result = await API.deleteConnection(connId); await this.loadData(); this.renderConnections();
-            if (result && result.relation_kept) this.showToast(result.relation_kept_reason || '底層知識關係仍被其他白板引用', 'warn', 5000);
+            await API.deleteConnection(connId);
+            await this.loadData();
+            this.renderConnections();
         },
 
         // ============================================
@@ -969,7 +970,7 @@ function whiteboardApp(canvasId) {
         // ============================================
         onCanvasContextMenu(e) { e.preventDefault(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' }; },
         onCardContextMenu(e, ca) { e.preventDefault(); e.stopPropagation(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: ca }; },
-        closeContextMenu() { this.contextMenu = null; this.connContextMenu = null; },
+        closeContextMenu() { this.contextMenu = null; },
         contextAddAtom() { this.openNewAtomModal({ clientX: this.contextMenu.x, clientY: this.contextMenu.y }); this.closeContextMenu(); },
 
         // ============================================

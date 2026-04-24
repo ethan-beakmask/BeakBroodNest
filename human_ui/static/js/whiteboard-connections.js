@@ -53,7 +53,7 @@ function whiteboardConnectionsMixin() {
                     relation_type: relationType,
                 });
                 if (resp && !resp.error) {
-                    this.connections.push(resp);
+                    await this.loadData();
                     this.renderConnections();
                     this.showToast(this.relationLabelMap[relationType] || relationType, 'success', 1500);
                 }
@@ -75,8 +75,8 @@ function whiteboardConnectionsMixin() {
             var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
             if (!ca) return { x: 0, y: 0 };
             var el = document.getElementById('card-' + atomId);
-            var w = el ? el.offsetWidth : 260;
-            var h = el ? el.offsetHeight : 120;
+            var w = el ? el.offsetWidth : 265;
+            var h = el ? el.offsetHeight : 125;
             switch (anchor) {
                 case 'top':    return { x: ca.pos_x + w / 2, y: ca.pos_y };
                 case 'bottom': return { x: ca.pos_x + w / 2, y: ca.pos_y + h };
@@ -90,8 +90,8 @@ function whiteboardConnectionsMixin() {
             var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
             if (!ca) return { x: canvasX, y: canvasY };
             var el = document.getElementById('card-' + atomId);
-            var w = el ? el.offsetWidth : 260;
-            var h = el ? el.offsetHeight : 120;
+            var w = el ? el.offsetWidth : 265;
+            var h = el ? el.offsetHeight : 125;
             var anchors = [
                 { x: ca.pos_x + w / 2, y: ca.pos_y },
                 { x: ca.pos_x + w / 2, y: ca.pos_y + h },
@@ -139,9 +139,19 @@ function whiteboardConnectionsMixin() {
         },
 
         // SVG Render helpers
+        _getCardSize(ca) {
+            var el = document.getElementById('card-' + ca.atom_id);
+            return {
+                w: el ? el.offsetWidth : (ca.width || 265),
+                h: el ? el.offsetHeight : (ca.height || 125),
+            };
+        },
+
         _calcEdgeEndpoints(srcCa, tgtCa) {
-            var sw = srcCa.width || 260, sh = srcCa.height || 120;
-            var tw = tgtCa.width || 260, th = tgtCa.height || 120;
+            var srcSize = this._getCardSize(srcCa);
+            var tgtSize = this._getCardSize(tgtCa);
+            var sw = srcSize.w, sh = srcSize.h;
+            var tw = tgtSize.w, th = tgtSize.h;
             var scx = srcCa.pos_x + sw / 2, scy = srcCa.pos_y + sh / 2;
             var tcx = tgtCa.pos_x + tw / 2, tcy = tgtCa.pos_y + th / 2;
             var ddx = tcx - scx, ddy = tcy - scy;
@@ -183,7 +193,7 @@ function whiteboardConnectionsMixin() {
         },
 
         _isInViewport(ca, vb) {
-            var w = ca.width || 260, h = ca.height || 120;
+            var csz = this._getCardSize(ca); var w = csz.w, h = csz.h;
             return ca.pos_x + w > vb.left && ca.pos_x < vb.right && ca.pos_y + h > vb.top && ca.pos_y < vb.bottom;
         },
 
@@ -206,8 +216,8 @@ function whiteboardConnectionsMixin() {
                 if (self._isInViewport(src, vb) && self._isInViewport(tgt, vb)) {
                     insideConns.push(conn);
                 } else {
-                    var sw = src.width || 260, sh = src.height || 120;
-                    var tw = tgt.width || 260, th = tgt.height || 120;
+                    var sw = src.width || 265, sh = src.height || 125;
+                    var tw = tgt.width || 265, th = tgt.height || 125;
                     var mx = ((src.pos_x + sw / 2) + (tgt.pos_x + tw / 2)) / 2;
                     var my = ((src.pos_y + sh / 2) + (tgt.pos_y + th / 2)) / 2;
                     var dx = mx - vb.cx, dy = my - vb.cy;
@@ -284,9 +294,9 @@ function whiteboardConnectionsMixin() {
                     sameCount++;
                 }
             }
-            if (sameCount <= 1) return 0;
-            var spread = 18;
-            return (myIndex - (sameCount - 1) / 2) * spread;
+            if (sameCount <= 1) return { offset: 0, index: 0, total: 1 };
+            var spread = 27;
+            return { offset: (myIndex - (sameCount - 1) / 2) * spread, index: myIndex, total: sameCount };
         },
 
         _buildPathDWithOffset(ep, isStraight, offset) {
@@ -326,7 +336,8 @@ function whiteboardConnectionsMixin() {
                 var tgtCa = atomMap[conn.target_atom_id];
                 if (!srcCa || !tgtCa) return;
                 var ep = self._calcEdgeEndpoints(srcCa, tgtCa);
-                var offset = self._calcPairOffset(conn, renderList);
+                var pairInfo = self._calcPairOffset(conn, renderList);
+                var offset = pairInfo.offset;
                 var lc = conn.color || '#94a3b8';
                 var mid = 'arr-' + lc.replace('#', '');
                 var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -338,12 +349,7 @@ function whiteboardConnectionsMixin() {
                 path.style.pointerEvents = 'stroke'; path.style.cursor = 'pointer';
                 var connId = conn.id;
                 var connRelType = conn.relation_type || '';
-                // 右鍵：開啟連線選單（改型別 / 刪除）
-                path.addEventListener('contextmenu', function(e) {
-                    e.preventDefault(); e.stopPropagation();
-                    self.showConnContextMenu(connId, connRelType, e.clientX, e.clientY);
-                });
-                // 雙擊：開啟型別修改
+                // 雙擊：開啟連線編輯 modal（變更類型 + 說明 + 刪除）
                 path.addEventListener('dblclick', function(e) {
                     e.stopPropagation();
                     self.showConnTypeChangeModal(connId, connRelType);
@@ -351,10 +357,21 @@ function whiteboardConnectionsMixin() {
                 svg.appendChild(path);
                 var labelText = conn.label || self.relationLabelMap[conn.relation_type] || '';
                 if (labelText) {
-                    var mx = (ep.sx + ep.tx) / 2, my = (ep.sy + ep.ty) / 2;
-                    if (offset !== 0) { var ndx = ep.tx - ep.sx, ndy = ep.ty - ep.sy; var nl = Math.sqrt(ndx*ndx+ndy*ndy)||1; mx += (-ndy/nl*offset)/2; my += (ndx/nl*offset)/2; }
+                    // 文字位置：多條線時分散到 1/(n+1), 2/(n+1)... 避免重疊
+                    var tRatio = pairInfo.total > 1 ? (pairInfo.index + 1) / (pairInfo.total + 1) : 0.5;
+                    var lx = ep.sx + (ep.tx - ep.sx) * tRatio;
+                    var ly = ep.sy + (ep.ty - ep.sy) * tRatio;
+                    if (offset !== 0) {
+                        var ndx = ep.tx - ep.sx, ndy = ep.ty - ep.sy;
+                        var nl = Math.sqrt(ndx * ndx + ndy * ndy) || 1;
+                        // 偏移量在文字位置處按比例縮放（曲線中段偏移最大）
+                        var curveT = 2 * Math.abs(tRatio - 0.5);
+                        var textOffset = offset * (1 - curveT * curveT);
+                        lx += (-ndy / nl) * textOffset;
+                        ly += (ndx / nl) * textOffset;
+                    }
                     var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    text.setAttribute('x', mx); text.setAttribute('y', my - 8);
+                    text.setAttribute('x', lx); text.setAttribute('y', ly - 8);
                     text.setAttribute('text-anchor', 'middle');
                     text.setAttribute('class', 'conn-label conn-label-editable');
                     text.setAttribute('fill', lc); text.style.cursor = 'text';
@@ -366,42 +383,54 @@ function whiteboardConnectionsMixin() {
             });
         },
 
-        showConnContextMenu(connId, relType, x, y) {
-            this.connContextMenu = { connId: connId, relType: relType, x: x, y: y };
-        },
-
-        closeConnContextMenu() {
-            this.connContextMenu = null;
-        },
-
-        async connContextAction(action) {
-            var menu = this.connContextMenu;
-            if (!menu) return;
-            this.connContextMenu = null;
-            if (action === 'delete') {
-                this.deleteConnection(menu.connId);
-            } else if (action === 'change-type') {
-                this.showConnTypeChangeModal(menu.connId, menu.relType);
-            }
-        },
-
         showConnTypeChangeModal(connId, currentType) {
             this.connTypeChangeTarget = connId;
             this.selectedRelationType = currentType || 'references';
+            // 讀取現有 label
+            var conn = this.connections.find(function(c) { return c.id === connId; });
+            this.connTypeChangeLabel = conn ? (conn.label || '') : '';
             this.showConnTypeModal = true;
+        },
+
+        async deleteConnFromModal() {
+            if (!this.connTypeChangeTarget) return;
+            if (!confirm('確定刪除此連線?')) return;
+            var connId = this.connTypeChangeTarget;
+            // 先完成刪除+重繪，最後才關 modal（避免 Alpine DOM 更新覆蓋 SVG）
+            await API.deleteConnection(connId);
+            await this.loadData();
+            this.renderConnections();
+            this.showConnTypeModal = false;
+            this.connTypeChangeTarget = null;
+            this.connTypeChangeLabel = '';
         },
 
         async confirmConnTypeChange() {
             if (!this.connTypeChangeTarget) return;
             try {
-                await API.put('/beakcortex/api/canvas-connections/' + this.connTypeChangeTarget, {
-                    relation_type: this.selectedRelationType,
-                });
+                var payload = { relation_type: this.selectedRelationType };
+                if (this.connTypeChangeLabel !== undefined) payload.label = this.connTypeChangeLabel;
+                var resp = await API.put('/beakcortex/api/canvas-connections/' + this.connTypeChangeTarget, payload);
+                // 本地更新 connection 屬性 + 同步重繪
+                var connId = this.connTypeChangeTarget;
+                var newType = this.selectedRelationType;
+                var newLabel = this.connTypeChangeLabel;
+                for (var i = 0; i < this.connections.length; i++) {
+                    if (this.connections[i].id === connId) {
+                        this.connections[i].relation_type = newType;
+                        this.connections[i].label = newLabel;
+                        if (resp && resp.color) this.connections[i].color = resp.color;
+                        if (resp && resp.line_style) this.connections[i].line_style = resp.line_style;
+                        if (resp && resp.graph_family) this.connections[i].graph_family = resp.graph_family;
+                        if (resp && resp.semantic_layer) this.connections[i].semantic_layer = resp.semantic_layer;
+                        break;
+                    }
+                }
                 this.showConnTypeModal = false;
                 this.connTypeChangeTarget = null;
-                await this.loadData();
+                this.connTypeChangeLabel = '';
                 this.renderConnections();
-                this.showToast('已變更為 ' + (this.relationLabelMap[this.selectedRelationType] || this.selectedRelationType), 'success', 1500);
+                this.showToast('已變更為 ' + (this.relationLabelMap[newType] || newType), 'success', 1500);
             } catch (e) {
                 this.showToast('變更失敗', 'error');
             }
@@ -439,7 +468,7 @@ function whiteboardConnectionsMixin() {
                         ' L ' + (ep.tx - ux * as * 1.5 - px * as) + ' ' + (ep.ty - uy * as * 1.5 - py * as) + ' Z ';
                 }
                 var lt = conn.label || self.relationLabelMap[conn.relation_type] || '';
-                geom.push({ connId: conn.id, sx: ep.sx, sy: ep.sy, tx: ep.tx, ty: ep.ty, label: lt, color: lc });
+                geom.push({ connId: conn.id, sx: ep.sx, sy: ep.sy, tx: ep.tx, ty: ep.ty, label: lt, color: lc, relType: conn.relation_type || '' });
             });
             this._connGeometry = geom;
             geom.forEach(function(g) {
@@ -463,7 +492,7 @@ function whiteboardConnectionsMixin() {
                 path.setAttribute('stroke', g.color); path.setAttribute('stroke-width', '2');
                 if (g.dasharray) path.setAttribute('stroke-dasharray', g.dasharray);
                 path.style.pointerEvents = 'stroke'; path.style.cursor = 'pointer';
-                path.addEventListener('click', function(e) { self._onGroupedLineClick(e); });
+                path.addEventListener('dblclick', function(e) { self._onGroupedLineDblClick(e); });
                 svg.appendChild(path);
                 if (g.arrowD) {
                     var arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -474,9 +503,9 @@ function whiteboardConnectionsMixin() {
             }
         },
 
-        _onGroupedLineClick(e) {
+        _findNearestConn(e) {
             var vp = this.$refs.viewport;
-            if (!vp) return;
+            if (!vp) return null;
             var rect = vp.getBoundingClientRect();
             var cx = (e.clientX - rect.left - this.panX) / this.zoom;
             var cy = (e.clientY - rect.top - this.panY) / this.zoom;
@@ -486,8 +515,15 @@ function whiteboardConnectionsMixin() {
                 var d = this._pointToSegmentDist(cx, cy, g.sx, g.sy, g.tx, g.ty);
                 if (d < bestDist) { bestDist = d; best = g; }
             }
-            if (best && bestDist < 20 / this.zoom) {
-                if (confirm('刪除此連線?')) this.deleteConnection(best.connId);
+            if (best && bestDist < 20 / this.zoom) return best;
+            return null;
+        },
+
+        _onGroupedLineDblClick(e) {
+            e.stopPropagation();
+            var best = this._findNearestConn(e);
+            if (best) {
+                this.showConnTypeChangeModal(best.connId, best.relType);
             }
         },
 

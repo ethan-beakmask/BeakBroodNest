@@ -139,7 +139,7 @@ def get_atom(atom_id):
             .first()
         )
         if not atom:
-            return jsonify({'error': '原子不存在'}), 404
+            return jsonify({'error': '卡片不存在'}), 404
 
         # 更新存取紀錄
         atom.last_accessed_at = datetime.datetime.now()
@@ -150,8 +150,8 @@ def get_atom(atom_id):
         # 附加關係
         outgoing = rel_service.get_relations_from(s, atom_id)
         incoming = rel_service.get_relations_to(s, atom_id)
-        result['relations_from'] = [r.to_dict(include_atoms=True) for r in outgoing]
-        result['relations_to'] = [r.to_dict(include_atoms=True) for r in incoming]
+        result['relations_from'] = [r.to_dict(include_endpoints=True) for r in outgoing]
+        result['relations_to'] = [r.to_dict(include_endpoints=True) for r in incoming]
 
         # 附加阻塞資訊
         blockers = rel_service.get_blockers(s, atom_id)
@@ -173,7 +173,7 @@ def update_atom(atom_id):
             KnowledgeAtom.id == atom_id, KnowledgeAtom.is_deleted == False
         ).first()
         if not atom:
-            return jsonify({'error': '原子不存在'}), 404
+            return jsonify({'error': '卡片不存在'}), 404
 
         # Owner 保護：UI 預設身份 ethan，非本人原子拒絕寫入
         if atom.owner != 'ethan' and not data.get('force_owner_override'):
@@ -207,7 +207,7 @@ def delete_atom(atom_id):
     with session_scope() as s:
         atom = s.query(KnowledgeAtom).filter(KnowledgeAtom.id == atom_id).first()
         if not atom:
-            return jsonify({'error': '原子不存在'}), 404
+            return jsonify({'error': '卡片不存在'}), 404
         atom.is_deleted = True
         # 清理白板上的殘留卡片
         s.query(CanvasAtom).filter(CanvasAtom.atom_id == atom_id).delete()
