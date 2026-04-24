@@ -271,6 +271,7 @@ class AtomRelation(Base):
     )
 
     VALID_TYPES = (
+        'freeform',
         'contains',
         'blocks', 'follows', 'enables', 'causes',
         'derives_from', 'supersedes',
@@ -1139,6 +1140,7 @@ class UnifiedRelation(Base):
     )
 
     VALID_TYPES = (
+        'freeform',
         'contains',
         'blocks', 'follows', 'enables', 'causes',
         'derives_from', 'supersedes',

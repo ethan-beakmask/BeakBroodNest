@@ -222,22 +222,23 @@ function whiteboardApp(canvasId) {
         },
 
         relationTypeList: [
-            { value: 'follows',      label: '順序', desc: 'B 在 A 之後',  color: '#3b82f6' },
-            { value: 'blocks',       label: '阻塞', desc: 'A 擋住 B',    color: '#dc2626' },
-            { value: 'contains',     label: '包含', desc: 'A 包含 B',    color: '#6b7280' },
-            { value: 'supports',     label: '支持', desc: 'A 支持 B',    color: '#10b981' },
-            { value: 'contradicts',  label: '矛盾', desc: 'A 與 B 互斥', color: '#f59e0b' },
-            { value: 'derives_from', label: '衍生', desc: 'B 衍生自 A',  color: '#8b5cf6' },
-            { value: 'supersedes',   label: '取代', desc: 'A 取代 B',    color: '#a855f7' },
-            { value: 'causes',       label: '因果', desc: 'A 導致 B',    color: '#ef4444' },
-            { value: 'enables',      label: '啟用', desc: 'A 使 B 可能', color: '#f97316' },
-            { value: 'references',   label: '參考', desc: 'A 參考 B',    color: '#64748b' },
+            { value: 'freeform',     label: '自由',   desc: 'A -> B',         color: '#000000', sched: false, strength: '無約束' },
+            { value: 'contains',     label: '包含',   desc: 'A 包含 B',       color: '#6b7280', sched: false, strength: 'WBS 結構' },
+            { value: 'blocks',       label: '阻塞',   desc: 'A 擋住 B',       color: '#dc2626', sched: true,  strength: '硬約束' },
+            { value: 'follows',      label: '順序',   desc: 'B 在 A 之後',     color: '#f59e0b', sched: true,  strength: '軟約束' },
+            { value: 'enables',      label: '啟用',   desc: 'A 使 B 可能',     color: '#10b981', sched: false, strength: '前提條件' },
+            { value: 'causes',       label: '因果',   desc: 'A 導致 B',       color: '#8b5cf6', sched: false, strength: '事實描述' },
+            { value: 'supports',     label: '支持',   desc: 'A 支持 B',       color: '#3b82f6', sched: false, strength: '論證' },
+            { value: 'contradicts',  label: '矛盾',   desc: 'A 與 B 互斥',     color: '#ef4444', sched: false, strength: '論證' },
+            { value: 'derives_from', label: '衍生',   desc: 'B 衍生自 A',      color: '#6366f1', sched: false, strength: '知識演化' },
+            { value: 'supersedes',   label: '取代',   desc: 'A 取代 B',       color: '#64748b', sched: false, strength: '版本替換' },
+            { value: 'references',   label: '參考',   desc: 'A 參考 B',       color: '#94a3b8', sched: false, strength: '無約束' },
         ],
 
         relationLabelMap: {
-            causes: '因果', enables: '啟用', supports: '支持', contradicts: '矛盾',
-            derives_from: '衍生', supersedes: '取代', follows: '順序',
-            contains: '包含', references: '參考', blocks: '阻塞',
+            freeform: '自由', causes: '因果', enables: '啟用', supports: '支持',
+            contradicts: '矛盾', derives_from: '衍生', supersedes: '取代',
+            follows: '順序', contains: '包含', references: '參考', blocks: '阻塞',
         },
 
         // ============================================

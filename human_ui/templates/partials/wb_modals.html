@@ -311,10 +311,10 @@
         </div>
     </template>
 
-    <!-- 關係類型選擇 -->
+    <!-- 關係類型選擇（Shift+拖拉時） -->
     <template x-if="showRelationModal">
         <div class="modal-overlay">
-            <div class="modal">
+            <div class="modal" style="max-width:560px;">
                 <div class="modal-header">
                     <h3>建立關係</h3>
                     <button class="modal-close" @click="showRelationModal=false; pendingConnection=null; mode='select'">x</button>
@@ -326,17 +326,41 @@
                         <strong x-text="getAtomTitle(pendingConnection ? pendingConnection.targetAtomId : 0)"></strong>
                     </div>
                     <div class="form-group">
-                        <label>關係類型</label>
-                        <template x-for="rt in relationTypeList" :key="rt.value">
-                            <label class="relation-option"
-                                   :class="{ selected: selectedRelationType === rt.value }">
-                                <input type="radio" name="relType" :value="rt.value"
-                                       x-model="selectedRelationType" style="margin-right:8px;">
-                                <span class="relation-color-dot" :style="'background:' + rt.color"></span>
-                                <span x-text="rt.label"></span>
-                                <span class="text-muted text-sm" style="margin-left:4px;" x-text="rt.desc"></span>
-                            </label>
-                        </template>
+                        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                            <thead>
+                                <tr style="border-bottom:1px solid var(--border-light, #dee2e6);text-align:left;">
+                                    <th style="padding:4px 6px;width:30px;"></th>
+                                    <th style="padding:4px 6px;">類型</th>
+                                    <th style="padding:4px 6px;">relation_type</th>
+                                    <th style="padding:4px 6px;">語意</th>
+                                    <th style="padding:4px 6px;">含義</th>
+                                    <th style="padding:4px 6px;text-align:center;">排程</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="rt in relationTypeList" :key="'cr-'+rt.value">
+                                    <tr style="border-bottom:1px solid var(--bg-tertiary, #f1f3f5);cursor:pointer;"
+                                        :style="selectedRelationType === rt.value ? 'background:var(--accent-bg, #eff6ff);' : ''"
+                                        @click="selectedRelationType = rt.value">
+                                        <td style="padding:4px 6px;">
+                                            <input type="radio" name="relType" :value="rt.value"
+                                                   x-model="selectedRelationType">
+                                        </td>
+                                        <td style="padding:4px 6px;white-space:nowrap;">
+                                            <span class="relation-color-dot" :style="'background:' + rt.color"></span>
+                                            <span x-text="rt.label" style="font-weight:600;"></span>
+                                        </td>
+                                        <td style="padding:4px 6px;font-size:11px;color:var(--text-muted, #6c757d);font-family:monospace;" x-text="rt.value"></td>
+                                        <td style="padding:4px 6px;font-size:12px;color:var(--text-secondary, #495057);" x-text="rt.desc"></td>
+                                        <td style="padding:4px 6px;font-size:11px;color:var(--text-muted, #6c757d);" x-text="rt.strength"></td>
+                                        <td style="padding:4px 6px;text-align:center;">
+                                            <span x-show="rt.sched" style="color:#dc2626;font-weight:700;font-size:12px;">V</span>
+                                            <span x-show="!rt.sched" style="color:#adb5bd;font-size:11px;">-</span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
                     </div>
                     <div class="form-group">
                         <label>說明（選填）</label>
@@ -541,24 +565,48 @@
     <!-- 連線編輯（變更類型 + 說明 + 刪除） -->
     <template x-if="showConnTypeModal">
         <div class="modal-overlay">
-            <div class="modal">
+            <div class="modal" style="max-width:560px;">
                 <div class="modal-header">
                     <h3>編輯連線</h3>
                     <button class="modal-close" @click="showConnTypeModal=false; connTypeChangeTarget=null;">x</button>
                 </div>
                 <div class="modal-body">
                     <div class="form-group">
-                        <label>關係類型</label>
-                        <template x-for="rt in relationTypeList" :key="'ct-'+rt.value">
-                            <label class="relation-option"
-                                   :class="{ selected: selectedRelationType === rt.value }">
-                                <input type="radio" name="connRelType" :value="rt.value"
-                                       x-model="selectedRelationType" style="margin-right:8px;">
-                                <span class="relation-color-dot" :style="'background:' + rt.color"></span>
-                                <span x-text="rt.label"></span>
-                                <span class="text-muted text-sm" style="margin-left:4px;" x-text="rt.desc"></span>
-                            </label>
-                        </template>
+                        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                            <thead>
+                                <tr style="border-bottom:1px solid var(--border-light, #dee2e6);text-align:left;">
+                                    <th style="padding:4px 6px;width:30px;"></th>
+                                    <th style="padding:4px 6px;">類型</th>
+                                    <th style="padding:4px 6px;">relation_type</th>
+                                    <th style="padding:4px 6px;">語意</th>
+                                    <th style="padding:4px 6px;">含義</th>
+                                    <th style="padding:4px 6px;text-align:center;">排程</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="rt in relationTypeList" :key="'ct-'+rt.value">
+                                    <tr style="border-bottom:1px solid var(--bg-tertiary, #f1f3f5);cursor:pointer;"
+                                        :style="selectedRelationType === rt.value ? 'background:var(--accent-bg, #eff6ff);' : ''"
+                                        @click="selectedRelationType = rt.value">
+                                        <td style="padding:4px 6px;">
+                                            <input type="radio" name="connRelType" :value="rt.value"
+                                                   x-model="selectedRelationType">
+                                        </td>
+                                        <td style="padding:4px 6px;white-space:nowrap;">
+                                            <span class="relation-color-dot" :style="'background:' + rt.color"></span>
+                                            <span x-text="rt.label" style="font-weight:600;"></span>
+                                        </td>
+                                        <td style="padding:4px 6px;font-size:11px;color:var(--text-muted, #6c757d);font-family:monospace;" x-text="rt.value"></td>
+                                        <td style="padding:4px 6px;font-size:12px;color:var(--text-secondary, #495057);" x-text="rt.desc"></td>
+                                        <td style="padding:4px 6px;font-size:11px;color:var(--text-muted, #6c757d);" x-text="rt.strength"></td>
+                                        <td style="padding:4px 6px;text-align:center;">
+                                            <span x-show="rt.sched" style="color:#dc2626;font-weight:700;font-size:12px;">V</span>
+                                            <span x-show="!rt.sched" style="color:#adb5bd;font-size:11px;">-</span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
                     </div>
                     <div class="form-group">
                         <label>說明（選填）</label>

@@ -394,7 +394,6 @@ function whiteboardConnectionsMixin() {
 
         async deleteConnFromModal() {
             if (!this.connTypeChangeTarget) return;
-            if (!confirm('確定刪除此連線?')) return;
             var connId = this.connTypeChangeTarget;
             // 先完成刪除+重繪，最後才關 modal（避免 Alpine DOM 更新覆蓋 SVG）
             await API.deleteConnection(connId);
