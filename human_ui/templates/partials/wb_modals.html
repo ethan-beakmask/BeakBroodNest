@@ -395,6 +395,14 @@
                         <input type="color" x-model="groupForm.color"
                                style="width:60px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
                     </div>
+                    <div class="form-group">
+                        <label>框線</label>
+                        <select class="form-control" x-model="groupForm.border_style">
+                            <option value="none">無</option>
+                            <option value="dashed">虛線</option>
+                            <option value="solid">實線</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @click="showGroupModal=false">取消</button>
@@ -1035,11 +1043,16 @@
                          @click="if(confirm('刪除此卡片? 所有白板都會移除')) { deleteAtomEntirely(contextMenu.ca); closeContextMenu(); }">刪除卡片</div>
                 </div>
             </template>
-            <template x-if="contextMenu.type === 'group'">
+            <template x-if="contextMenu.type === 'groups'">
                 <div>
-                    <div class="context-menu-item" @click="openGroupEditModal(contextMenu.group); closeContextMenu()">編輯群組</div>
-                    <div class="context-menu-separator"></div>
-                    <div class="context-menu-item" @click="ungroupAtoms(contextMenu.group.id); closeContextMenu()">解散群組</div>
+                    <template x-for="g in contextMenu.groups" :key="g.id">
+                        <div>
+                            <div class="context-menu-header" x-text="g.name" :style="'color:' + g.color"></div>
+                            <div class="context-menu-item" @click="openGroupEditModal(g); closeContextMenu()">編輯</div>
+                            <div class="context-menu-item" @click="ungroupAtoms(g.id); closeContextMenu()">解散</div>
+                            <div class="context-menu-separator"></div>
+                        </div>
+                    </template>
                 </div>
             </template>
         </div>

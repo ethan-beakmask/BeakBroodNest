@@ -437,6 +437,7 @@
 .context-menu-item:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .context-menu-item.danger:hover { background: #fef2f2; color: var(--danger); }
 .context-menu-separator { height: 1px; background: var(--border-light); margin: 4px 0; }
+.context-menu-header { padding: 4px 12px 2px; font-size: 12px; font-weight: 600; }
 
 /* ---- 關係類型選項 ---- */
 .relation-option {
@@ -670,7 +671,6 @@
 /* ---- 群組容器 ---- */
 .wb-group {
     position: absolute;
-    border: 2px dashed #3b82f6;
     border-radius: 8px;
     pointer-events: auto;
     cursor: move;
@@ -678,7 +678,7 @@
 
 .wb-group-label {
     position: absolute;
-    top: 4px; left: 8px;
+    top: 4px; left: 18px;
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;

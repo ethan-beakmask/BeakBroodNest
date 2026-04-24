@@ -74,7 +74,7 @@ function whiteboardUndoMixin() {
                 if (toDelete.length === 0) return;
                 var removedData = toDelete.map(function(ca) {
                     return { id: ca.id, atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y,
-                             width: ca.width, height: ca.height, z_index: ca.z_index, group_id: ca.group_id };
+                             width: ca.width, height: ca.height, z_index: ca.z_index, group_ids: ca.group_ids || [] };
                 });
                 this.pushUndo({
                     type: 'remove_multi',

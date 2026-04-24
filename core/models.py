@@ -383,13 +383,13 @@ class CanvasAtom(Base):
     height: Mapped[float | None] = mapped_column(Float, nullable=True)
     z_index: Mapped[int] = mapped_column(Integer, default=0)
     visual_style: Mapped[str] = mapped_column(Text, default='{}')
+    # deprecated: 舊單一群組 FK，保留向後相容但不再寫入
     group_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('canvas_groups.id', ondelete='SET NULL'), nullable=True
     )
 
     canvas: Mapped["Canvas"] = relationship(back_populates='atoms')
     atom: Mapped["KnowledgeAtom"] = relationship()
-    group: Mapped["CanvasGroup | None"] = relationship(back_populates='atoms')
 
     __table_args__ = (
         UniqueConstraint('canvas_id', 'atom_id', name='uq_canvas_atom'),
@@ -406,7 +406,7 @@ class CanvasAtom(Base):
             'height': self.height,
             'z_index': self.z_index,
             'visual_style': self.visual_style,
-            'group_id': self.group_id,
+            'group_ids': [g.id for g in self.groups] if hasattr(self, 'groups') and self.groups else [],
             'atom': self.atom.to_dict() if self.atom else None,
         }
 
@@ -425,9 +425,13 @@ class CanvasGroup(Base):
     width: Mapped[float] = mapped_column(Float, nullable=False, default=300)
     height: Mapped[float] = mapped_column(Float, nullable=False, default=200)
     z_index: Mapped[int] = mapped_column(Integer, default=1)
+    border_style: Mapped[str] = mapped_column(String(20), default='none')
 
     canvas: Mapped["Canvas"] = relationship(back_populates='groups')
-    atoms: Mapped[list["CanvasAtom"]] = relationship(back_populates='group')
+    # 多對多：透過 canvas_group_members junction table
+    canvas_atoms: Mapped[list["CanvasAtom"]] = relationship(
+        secondary='canvas_group_members', backref='groups', viewonly=False,
+    )
 
     def to_dict(self):
         return {
@@ -440,7 +444,8 @@ class CanvasGroup(Base):
             'width': self.width,
             'height': self.height,
             'z_index': self.z_index,
-            'atom_ids': [ca.atom_id for ca in self.atoms],
+            'border_style': self.border_style,
+            'atom_ids': [ca.atom_id for ca in self.canvas_atoms],
         }
 
 
@@ -579,6 +584,13 @@ tag_category_members = Table(
     'tag_category_members', Base.metadata,
     Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True),
     Column('category_id', Integer, ForeignKey('tag_categories.id', ondelete='CASCADE'), primary_key=True),
+)
+
+canvas_group_members = Table(
+    'canvas_group_members', Base.metadata,
+    Column('id', Integer, primary_key=True),
+    Column('canvas_atom_id', Integer, ForeignKey('canvas_atoms.id', ondelete='CASCADE'), nullable=False),
+    Column('group_id', Integer, ForeignKey('canvas_groups.id', ondelete='CASCADE'), nullable=False),
 )
 
 

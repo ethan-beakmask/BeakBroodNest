@@ -8,7 +8,7 @@ from core.db import session_scope
 from core.models import (
     KnowledgeAtom, UnifiedRelation, RelationTypeRegistry,
     Canvas, CanvasAtom, CanvasConnection,
-    CanvasGroup, Tag, atom_tags,
+    CanvasGroup, Tag, atom_tags, canvas_group_members,
     AtomEntry, EntrySchema,
 )
 from core import relations as rel_service
@@ -94,11 +94,12 @@ def _build_canvas_snapshot(s, canvas_id):
             'is_blocked': ca.atom_id in blocked_ids,
         })
 
-    # 群組
+    # 群組（多對多 via junction table）
     groups = s.query(CanvasGroup).filter(CanvasGroup.canvas_id == canvas_id).all()
     group_member_rows = (
-        s.query(CanvasAtom.group_id, CanvasAtom.atom_id)
-        .filter(CanvasAtom.canvas_id == canvas_id, CanvasAtom.group_id.isnot(None))
+        s.query(canvas_group_members.c.group_id, CanvasAtom.atom_id)
+        .join(CanvasAtom, CanvasAtom.id == canvas_group_members.c.canvas_atom_id)
+        .filter(CanvasAtom.canvas_id == canvas_id)
         .all()
     )
     group_members = {}
@@ -108,7 +109,8 @@ def _build_canvas_snapshot(s, canvas_id):
     snap_groups = [{
         'id': g.id, 'canvas_id': g.canvas_id, 'name': g.name, 'color': g.color,
         'pos_x': g.pos_x, 'pos_y': g.pos_y, 'width': g.width, 'height': g.height,
-        'z_index': g.z_index, 'atom_ids': group_members.get(g.id, []),
+        'z_index': g.z_index, 'border_style': g.border_style,
+        'atom_ids': group_members.get(g.id, []),
     } for g in groups]
 
     # 連線（unified_relations）
@@ -211,7 +213,6 @@ def get_canvas(slug):
                 CanvasAtom.height,
                 CanvasAtom.z_index,
                 CanvasAtom.visual_style,
-                CanvasAtom.group_id,
                 KnowledgeAtom.id.label('ka_id'),
                 KnowledgeAtom.title,
                 func.left(KnowledgeAtom.content, CONTENT_PREVIEW_LEN).label('content_preview'),
@@ -297,6 +298,21 @@ def get_canvas(slug):
             )
             blocked_ids = {r[0] for r in blocking_rels}
 
+        # --- 3b. 批次載入群組歸屬（多對多）---
+        ca_ids = [r.id for r in ca_rows]
+        group_ids_map = {}
+        if ca_ids:
+            gm_rows = (
+                s.query(
+                    canvas_group_members.c.canvas_atom_id,
+                    canvas_group_members.c.group_id,
+                )
+                .filter(canvas_group_members.c.canvas_atom_id.in_(ca_ids))
+                .all()
+            )
+            for ca_id, gid in gm_rows:
+                group_ids_map.setdefault(ca_id, []).append(gid)
+
         # --- 組裝原子列表 ---
         result['atoms'] = []
         for r in ca_rows:
@@ -310,7 +326,7 @@ def get_canvas(slug):
                 'height': r.height,
                 'z_index': r.z_index,
                 'visual_style': r.visual_style,
-                'group_id': r.group_id,
+                'group_ids': group_ids_map.get(r.id, []),
                 'atom': {
                     'id': r.ka_id,
                     'title': r.title,
@@ -328,14 +344,15 @@ def get_canvas(slug):
                 'is_blocked': r.atom_id in blocked_ids,
             })
 
-        # --- 4. 群組：輕量查詢 ---
+        # --- 4. 群組：輕量查詢（多對多 via junction table）---
         groups = s.query(CanvasGroup).filter(CanvasGroup.canvas_id == canvas_id).all()
         group_member_rows = (
-            s.query(CanvasAtom.group_id, CanvasAtom.atom_id)
-            .filter(
-                CanvasAtom.canvas_id == canvas_id,
-                CanvasAtom.group_id.isnot(None),
+            s.query(
+                canvas_group_members.c.group_id,
+                CanvasAtom.atom_id,
             )
+            .join(CanvasAtom, CanvasAtom.id == canvas_group_members.c.canvas_atom_id)
+            .filter(CanvasAtom.canvas_id == canvas_id)
             .all()
         )
         group_members = {}
@@ -352,6 +369,7 @@ def get_canvas(slug):
             'width': g.width,
             'height': g.height,
             'z_index': g.z_index,
+            'border_style': g.border_style,
             'atom_ids': group_members.get(g.id, []),
         } for g in groups]
 
@@ -468,7 +486,7 @@ def update_canvas_atom(ca_id):
         ca = s.get(CanvasAtom, ca_id)
         if not ca:
             return jsonify({'error': '不存在'}), 404
-        for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style', 'group_id'):
+        for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style'):
             if field in data:
                 setattr(ca, field, data[field])
         s.flush()
@@ -490,6 +508,25 @@ def remove_atom_from_canvas(ca_id):
 # Canvas Groups
 # ============================================================
 
+def _group_to_dict(s, g):
+    """群組序列化（含 junction table 成員查詢）"""
+    member_rows = (
+        s.query(CanvasAtom.atom_id)
+        .join(canvas_group_members, canvas_group_members.c.canvas_atom_id == CanvasAtom.id)
+        .filter(canvas_group_members.c.group_id == g.id)
+        .all()
+    )
+    return {
+        'id': g.id, 'canvas_id': g.canvas_id,
+        'name': g.name, 'color': g.color,
+        'pos_x': g.pos_x, 'pos_y': g.pos_y,
+        'width': g.width, 'height': g.height,
+        'z_index': g.z_index,
+        'border_style': g.border_style,
+        'atom_ids': [r[0] for r in member_rows],
+    }
+
+
 @bp.route('/api/canvases/<slug>/groups', methods=['POST'])
 def create_canvas_group(slug):
     """建立群組"""
@@ -508,18 +545,24 @@ def create_canvas_group(slug):
             width=data.get('width', 300),
             height=data.get('height', 200),
             z_index=data.get('z_index', 1),
+            border_style=data.get('border_style', 'none'),
         )
         s.add(g)
         s.flush()
         atom_ids = data.get('atom_ids', [])
         if atom_ids:
-            s.query(CanvasAtom).filter(
-                CanvasAtom.canvas_id == canvas.id,
-                CanvasAtom.atom_id.in_(atom_ids),
-            ).update({CanvasAtom.group_id: g.id}, synchronize_session='fetch')
+            # 多對多：新增 membership（不移除現有群組歸屬）
+            ca_rows = (
+                s.query(CanvasAtom.id)
+                .filter(CanvasAtom.canvas_id == canvas.id, CanvasAtom.atom_id.in_(atom_ids))
+                .all()
+            )
+            for (ca_id,) in ca_rows:
+                s.execute(
+                    canvas_group_members.insert().values(canvas_atom_id=ca_id, group_id=g.id)
+                )
             s.flush()
-        s.refresh(g)
-        return jsonify(g.to_dict()), 201
+        return jsonify(_group_to_dict(s, g)), 201
 
 
 @bp.route('/api/canvas-groups/<int:group_id>', methods=['PUT'])
@@ -530,21 +573,31 @@ def update_canvas_group(group_id):
         g = s.get(CanvasGroup, group_id)
         if not g:
             return jsonify({'error': '群組不存在'}), 404
-        for field in ('name', 'color', 'pos_x', 'pos_y', 'width', 'height', 'z_index'):
+        for field in ('name', 'color', 'pos_x', 'pos_y', 'width', 'height', 'z_index', 'border_style'):
             if field in data:
                 setattr(g, field, data[field])
         if 'atom_ids' in data:
-            s.query(CanvasAtom).filter(
-                CanvasAtom.group_id == g.id,
-            ).update({CanvasAtom.group_id: None}, synchronize_session='fetch')
+            # 多對多：清除此群組的舊 membership，重建
+            s.execute(
+                canvas_group_members.delete().where(
+                    canvas_group_members.c.group_id == g.id
+                )
+            )
             if data['atom_ids']:
-                s.query(CanvasAtom).filter(
-                    CanvasAtom.canvas_id == g.canvas_id,
-                    CanvasAtom.atom_id.in_(data['atom_ids']),
-                ).update({CanvasAtom.group_id: g.id}, synchronize_session='fetch')
+                ca_rows = (
+                    s.query(CanvasAtom.id)
+                    .filter(CanvasAtom.canvas_id == g.canvas_id,
+                            CanvasAtom.atom_id.in_(data['atom_ids']))
+                    .all()
+                )
+                for (ca_id,) in ca_rows:
+                    s.execute(
+                        canvas_group_members.insert().values(
+                            canvas_atom_id=ca_id, group_id=g.id
+                        )
+                    )
         s.flush()
-        s.refresh(g)
-        return jsonify(g.to_dict())
+        return jsonify(_group_to_dict(s, g))
 
 
 @bp.route('/api/canvas-groups/<int:group_id>', methods=['DELETE'])

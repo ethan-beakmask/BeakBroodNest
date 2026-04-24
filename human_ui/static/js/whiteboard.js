@@ -162,7 +162,7 @@ function whiteboardApp(canvasId) {
         resizeGroupStartW: 0, resizeGroupStartH: 0,
         showGroupModal: false,
         editingGroup: null,
-        groupForm: { name: '', color: '#3b82f6' },
+        groupForm: { name: '', color: '#3b82f6', border_style: 'none' },
 
         // Card Editor (state managed by whiteboard-card-editor.js mixin)
 
@@ -259,6 +259,9 @@ function whiteboardApp(canvasId) {
             this.initMarked();
             await this.loadData();
             this.$nextTick(() => {
+                // 重算所有群組邊框（含巢狀偏移）
+                var self0 = this;
+                this.groups.forEach(function(g) { self0.recalcGroupBounds(g.id); });
                 this.renderConnections();
                 this.setupWheelZoom();
                 if (this.atoms.length > 0) this.fitView();
@@ -381,14 +384,25 @@ function whiteboardApp(canvasId) {
                 var gdx = (e.clientX - this.groupDragStartX) / this.zoom, gdy = (e.clientY - this.groupDragStartY) / this.zoom;
                 this.dragGroup.pos_x = this.groupDragStartPos.x + gdx; this.dragGroup.pos_y = this.groupDragStartPos.y + gdy;
                 var self = this;
-                this.atoms.forEach(function(a) { if (self.groupDragMemberStarts[a.atom_id]) { a.pos_x = self.groupDragMemberStarts[a.atom_id].x + gdx; a.pos_y = self.groupDragMemberStarts[a.atom_id].y + gdy; } });
+                var otherGroups = new Set();
+                this.atoms.forEach(function(a) {
+                    if (self.groupDragMemberStarts[a.atom_id]) {
+                        a.pos_x = self.groupDragMemberStarts[a.atom_id].x + gdx;
+                        a.pos_y = self.groupDragMemberStarts[a.atom_id].y + gdy;
+                        // 成員所屬的其他群組也需要重繪
+                        if (a.group_ids) a.group_ids.forEach(function(gid) {
+                            if (gid !== self.dragGroup.id) otherGroups.add(gid);
+                        });
+                    }
+                });
+                otherGroups.forEach(function(gid) { self.recalcGroupBounds(gid); });
                 this.renderConnections(); return;
             }
             if (this.resizeGroup) { this.resizeGroup.width = Math.max(160, this.resizeGroupStartW + (e.clientX - this.resizeGroupStartX) / this.zoom); this.resizeGroup.height = Math.max(80, this.resizeGroupStartH + (e.clientY - this.resizeGroupStartY) / this.zoom); return; }
             if (this.resizeCard) {
                 this.resizeCard.width = Math.max(160, this.resizeStartW + (e.clientX - this.resizeStartX) / this.zoom);
                 this.resizeCard.height = Math.max(80, this.resizeStartH + (e.clientY - this.resizeStartY) / this.zoom);
-                if (this.resizeCard.group_id) this.recalcGroupBounds(this.resizeCard.group_id);
+                if (this.resizeCard.group_ids) this.resizeCard.group_ids.forEach(gid => this.recalcGroupBounds(gid));
                 this.renderConnections(); return;
             }
             if (this.dragCard) {
@@ -396,10 +410,10 @@ function whiteboardApp(canvasId) {
                 var affectedGroups = new Set();
                 if (this.multiDragStarts) {
                     var self = this;
-                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { a.pos_x = self.multiDragStarts[a.atom_id].x + dx; a.pos_y = self.multiDragStarts[a.atom_id].y + dy; if (a.group_id) affectedGroups.add(a.group_id); } });
+                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { a.pos_x = self.multiDragStarts[a.atom_id].x + dx; a.pos_y = self.multiDragStarts[a.atom_id].y + dy; if (a.group_ids) a.group_ids.forEach(function(gid) { affectedGroups.add(gid); }); } });
                 } else {
                     this.dragCard.pos_x = this.cardStartX + dx; this.dragCard.pos_y = this.cardStartY + dy;
-                    if (this.dragCard.group_id) affectedGroups.add(this.dragCard.group_id);
+                    if (this.dragCard.group_ids) this.dragCard.group_ids.forEach(function(gid) { affectedGroups.add(gid); });
                 }
                 var self2 = this; affectedGroups.forEach(function(gid) { self2.recalcGroupBounds(gid); });
                 this.renderConnections();
@@ -409,9 +423,21 @@ function whiteboardApp(canvasId) {
         onViewportMouseUp(e) {
             if (this.rightDragPending) {
                 this.rightDragPending = false; var tgt = this.rightDragTarget; this.rightDragTarget = null;
-                if (tgt && tgt._isGroup) this.contextMenu = { x: e.clientX, y: e.clientY, type: 'group', group: tgt.group };
-                else if (tgt) this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: tgt };
-                else this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' };
+                if (tgt && !tgt._isGroup) {
+                    this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: tgt };
+                } else {
+                    // 找出座標下所有群組
+                    var cp = this.screenToCanvas(e.clientX, e.clientY);
+                    var hitGroups = this.groups.filter(function(g) {
+                        return cp.x >= g.pos_x && cp.x <= g.pos_x + g.width &&
+                               cp.y >= g.pos_y && cp.y <= g.pos_y + g.height;
+                    });
+                    if (hitGroups.length > 0) {
+                        this.contextMenu = { x: e.clientX, y: e.clientY, type: 'groups', groups: hitGroups };
+                    } else {
+                        this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' };
+                    }
+                }
                 return;
             }
             if (this.isBoxSelecting) { this.isBoxSelecting = false; this.boxSelectPending = false; if (this.selectedAtomIds.length >= 2) { this.batchBarX = e.clientX; this.batchBarY = e.clientY - 10; } return; }
@@ -426,18 +452,18 @@ function whiteboardApp(canvasId) {
                 this.dragGroup = null; this.groupDragMemberStarts = null;
             }
             if (this.resizeGroup) { API.updateGroup(this.resizeGroup.id, { width: this.resizeGroup.width, height: this.resizeGroup.height }); this.resizeGroup = null; }
-            if (this.resizeCard) { API.updateCanvasAtom(this.resizeCard.id, { width: this.resizeCard.width, height: this.resizeCard.height }); if (this.resizeCard.group_id) this.autoResizeGroup(this.resizeCard.group_id); this.resizeCard = null; }
+            if (this.resizeCard) { API.updateCanvasAtom(this.resizeCard.id, { width: this.resizeCard.width, height: this.resizeCard.height }); if (this.resizeCard.group_ids) this.resizeCard.group_ids.forEach(gid => this.autoResizeGroup(gid)); this.resizeCard = null; }
             if (this.dragCard) {
                 this._justDragged = true;
                 var groupsToResize = new Set(); var movedIds = []; var beforePos = []; var afterPos = [];
                 if (this.multiDragStarts) {
                     var self = this;
-                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { movedIds.push(a.atom_id); beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y }); afterPos.push({ x: a.pos_x, y: a.pos_y }); API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); if (a.group_id) groupsToResize.add(a.group_id); } });
+                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { movedIds.push(a.atom_id); beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y }); afterPos.push({ x: a.pos_x, y: a.pos_y }); API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); if (a.group_ids) a.group_ids.forEach(function(gid) { groupsToResize.add(gid); }); } });
                     this.multiDragStarts = null;
                 } else {
                     movedIds.push(this.dragCard.atom_id); beforePos.push({ x: this.cardStartX, y: this.cardStartY }); afterPos.push({ x: this.dragCard.pos_x, y: this.dragCard.pos_y });
                     API.updateCanvasAtom(this.dragCard.id, { pos_x: this.dragCard.pos_x, pos_y: this.dragCard.pos_y });
-                    if (this.dragCard.group_id) groupsToResize.add(this.dragCard.group_id);
+                    if (this.dragCard.group_ids) this.dragCard.group_ids.forEach(function(gid) { groupsToResize.add(gid); });
                 }
                 if (movedIds.length > 0 && (beforePos[0].x !== afterPos[0].x || beforePos[0].y !== afterPos[0].y)) this.pushMoveUndo(movedIds, beforePos, afterPos);
                 var self2 = this; groupsToResize.forEach(function(gid) { self2.autoResizeGroup(gid); });

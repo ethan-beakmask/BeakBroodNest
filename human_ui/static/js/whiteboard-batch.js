@@ -142,7 +142,7 @@ function whiteboardBatchMixin() {
             if (format === 'json') {
                 var data = {
                     canvas: this.canvas,
-                    atoms: this.atoms.map(function(ca) { return { atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y, width: ca.width, height: ca.height, z_index: ca.z_index, group_id: ca.group_id, atom: ca.atom }; }),
+                    atoms: this.atoms.map(function(ca) { return { atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y, width: ca.width, height: ca.height, z_index: ca.z_index, group_ids: ca.group_ids || [], atom: ca.atom }; }),
                     connections: this.connections, groups: this.groups, exported_at: new Date().toISOString(),
                 };
                 this.exportContent = JSON.stringify(data, null, 2);

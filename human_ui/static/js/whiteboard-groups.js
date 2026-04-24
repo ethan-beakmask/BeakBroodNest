@@ -21,11 +21,21 @@ function whiteboardGroupsMixin() {
                 atom_ids: this.selectedAtomIds,
             });
             this.selectedAtomIds = [];
-            await this.loadData(); this.$nextTick(function() { self.renderConnections(); });
+            await this.loadData();
+            this.$nextTick(function() {
+                // 重繪所有群組邊框（含巢狀偏移）
+                self.groups.forEach(function(g) { self.recalcGroupBounds(g.id); });
+                self.groups.forEach(function(g) {
+                    API.updateGroup(g.id, { pos_x: g.pos_x, pos_y: g.pos_y, width: g.width, height: g.height });
+                });
+                self.renderConnections();
+            });
         },
 
         getGroupStyle(g) {
-            return 'left:' + g.pos_x + 'px; top:' + g.pos_y + 'px; width:' + g.width + 'px; height:' + g.height + 'px; z-index:' + (g.z_index || 1) + '; border-color:' + g.color + '; background:' + g.color + '08;';
+            var bs = g.border_style || 'none';
+            var border = bs === 'none' ? 'border:none;' : 'border:1px ' + bs + ' ' + g.color + ';';
+            return 'left:' + g.pos_x + 'px; top:' + g.pos_y + 'px; width:' + g.width + 'px; height:' + g.height + 'px; z-index:' + (g.z_index || 1) + '; ' + border + ' background:' + g.color + '08;';
         },
 
         getGroupLabelStyle(g) { return 'color:' + g.color + ';'; },
@@ -37,7 +47,7 @@ function whiteboardGroupsMixin() {
             this.groupDragStartX = e.clientX; this.groupDragStartY = e.clientY;
             this.groupDragStartPos = { x: g.pos_x, y: g.pos_y };
             var self = this; this.groupDragMemberStarts = {};
-            this.atoms.forEach(function(ca) { if (ca.group_id === g.id) self.groupDragMemberStarts[ca.atom_id] = { x: ca.pos_x, y: ca.pos_y }; });
+            this.atoms.forEach(function(ca) { if (ca.group_ids && ca.group_ids.includes(g.id)) self.groupDragMemberStarts[ca.atom_id] = { x: ca.pos_x, y: ca.pos_y }; });
         },
 
         onGroupResizeMouseDown(e, g) {
@@ -50,13 +60,13 @@ function whiteboardGroupsMixin() {
 
         openGroupEditModal(g) {
             this.editingGroup = g;
-            this.groupForm = { name: g.name, color: g.color };
+            this.groupForm = { name: g.name, color: g.color, border_style: g.border_style || 'none' };
             this.showGroupModal = true;
         },
 
         async saveGroupEdit() {
             if (!this.editingGroup) return;
-            await API.updateGroup(this.editingGroup.id, { name: this.groupForm.name, color: this.groupForm.color });
+            await API.updateGroup(this.editingGroup.id, { name: this.groupForm.name, color: this.groupForm.color, border_style: this.groupForm.border_style });
             this.showGroupModal = false; this.editingGroup = null;
             await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
@@ -71,12 +81,37 @@ function whiteboardGroupsMixin() {
             await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
+        // 計算群組的巢狀層級（用於邊框向外遞增）
+        // 成員越多 = 框越大 = padding 越大 = level 越高
+        _getGroupNestLevel(groupId) {
+            var group = this.groups.find(function(g) { return g.id === groupId; });
+            if (!group) return 0;
+            var myCount = group.atom_ids ? group.atom_ids.length : 0;
+            var level = 0;
+            this.groups.forEach(function(other) {
+                if (other.id === groupId) return;
+                var otherCount = other.atom_ids ? other.atom_ids.length : 0;
+                var hasOverlap = (group.atom_ids || []).some(function(aid) {
+                    return (other.atom_ids || []).includes(aid);
+                });
+                if (hasOverlap) {
+                    // 比我小的重疊群組越多，我的 level 越高
+                    if (otherCount < myCount || (otherCount === myCount && other.id > groupId)) {
+                        level++;
+                    }
+                }
+            });
+            return level;
+        },
+
         recalcGroupBounds(groupId) {
             var group = this.groups.find(function(g) { return g.id === groupId; });
             if (!group) return;
-            var members = this.atoms.filter(function(ca) { return ca.group_id === groupId; });
+            var members = this.atoms.filter(function(ca) { return ca.group_ids && ca.group_ids.includes(groupId); });
             if (members.length === 0) return;
-            var pad = 20, labelH = 24;
+            var nestLevel = this._getGroupNestLevel(groupId);
+            var pad = 20 + nestLevel * 10;
+            var labelH = 24 + nestLevel * 10;  // 外層群組名稱區域加大，避免被內層框線遮住
             var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             members.forEach(function(ca) {
                 var el = document.getElementById('card-' + ca.atom_id);
