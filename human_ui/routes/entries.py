@@ -73,6 +73,27 @@ def _save_field_values(s, entry, field_values_dict, changed_by='user'):
             _write_typed_value(fv, sf.field_type, fval)
             s.add(fv)
 
+    # 進度退回邏輯：從 100% 退回時清空 actual_end
+    if 'progress' in field_values_dict or 'status' in field_values_dict:
+        progress_val = field_values_dict.get('progress', '')
+        status_val = field_values_dict.get('status', '')
+        try:
+            pct = int(float(progress_val)) if progress_val else -1
+        except (ValueError, TypeError):
+            pct = -1
+        is_done = (pct >= 100) or (status_val == 'done')
+        if not is_done and 'actual_end' in field_map:
+            ae_field = field_map['actual_end']
+            ae_existing = (
+                s.query(EntryFieldValue)
+                .filter_by(entry_id=entry.id, field_id=ae_field.id)
+                .first()
+            )
+            if ae_existing and ae_existing.value:
+                log_field_change(s, entry.id, ae_field.id, ae_existing.value, None, changed_by)
+                ae_existing.value = None
+                ae_existing.value_datetime = None
+
 
 def _entry_to_dict(entry, s):
     """轉換 entry 為 dict，含 field_values。"""
@@ -201,6 +222,10 @@ def update_entry(entry_id):
 
         if data.get('field_values'):
             _save_field_values(s, entry, data['field_values'])
+            # 觸發所屬 atom 的 updated_at 更新，讓 polling 偵測到變更
+            atom = s.get(KnowledgeAtom, entry.atom_id)
+            if atom:
+                atom.updated_at = datetime.datetime.now()
 
         s.flush()
         return jsonify(_entry_to_dict(entry, s))

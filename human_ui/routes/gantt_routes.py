@@ -365,7 +365,7 @@ def patch_gantt_task(slug, entry_id):
 def _write_field(s, entry_id, field_id, value, changed_by='gantt:mvp'):
     """寫入或更新單一欄位值。"""
     from core.audit import log_field_change
-    new_val = str(value) if value is not None else None
+    new_val = str(value) if value is not None and str(value).strip() != '' else None
     existing = (
         s.query(EntryFieldValue)
         .filter_by(entry_id=entry_id, field_id=field_id)

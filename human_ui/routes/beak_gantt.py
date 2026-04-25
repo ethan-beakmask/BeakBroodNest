@@ -98,12 +98,14 @@ def get_beak_gantt(slug):
                 for idx, entry in enumerate(entries):
                     entry_id = entry.get('entry_id')
                     fv = entry_fv_map.get(entry_id, {}) if entry_id else {}
-                    # fallback: actual_start -> planned_start -> offset
-                    start_raw = fv.get('actual_start', '') or fv.get('planned_start', '')
-                    start = start_raw[:10] if start_raw else _add_n_days(today, day_offset)
-                    # duration: 從日期區間計算，否則預設 1 天
-                    end_raw = fv.get('actual_end', '') or fv.get('planned_end', '')
-                    duration = _calc_duration(start_raw, end_raw)
+                    # 粗 bar = planned（排程），拖拉改的是 planned
+                    ps = fv.get('planned_start', '')
+                    pe = fv.get('planned_end', '')
+                    start = ps[:10] if ps else _add_n_days(today, day_offset)
+                    duration = _calc_duration(ps, pe) if ps else 1
+                    # actual 另外傳，前端用於繪製進度細 bar
+                    a_start = fv.get('actual_start', '')
+                    a_end = fv.get('actual_end', '')
                     tasks.append({
                         'id': 'e{}_{}'.format(atom.id, idx),
                         'text': entry['text'],
@@ -115,22 +117,32 @@ def get_beak_gantt(slug):
                         '_entry_id': entry_id,
                         '_status': fv.get('status', 'pending'),
                         '_urgency': fv.get('urgency', 'M'),
+                        '_actual_start': a_start[:10] if a_start else '',
+                        '_actual_end': a_end[:10] if a_end else '',
                     })
                     day_offset += 1
             else:
-                # 葉子 Task（Card 無 Items）
-                start = _add_n_days(today, day_offset)
+                # 葉子 Task（Card 無 Items） -- 查 atom_entries 取欄位值
+                leaf_fv = _get_leaf_fv(entry_fv_map, atom.id, s)
+                ps = leaf_fv.get('planned_start', '')
+                pe = leaf_fv.get('planned_end', '')
+                start = ps[:10] if ps else _add_n_days(today, day_offset)
+                duration = _calc_duration(ps, pe) if ps else 1
+                a_start = leaf_fv.get('actual_start', '')
+                a_end = leaf_fv.get('actual_end', '')
                 tasks.append({
                     'id': atom.id,
                     'text': atom.title,
                     'parent': 0,
                     '_isSummary': False,
                     'start_date': start,
-                    'duration': 1,
-                    'progress': 0,
+                    'duration': duration,
+                    'progress': _resolve_progress(leaf_fv),
                     'open': True,
-                    '_status': 'pending',
-                    '_urgency': 'M',
+                    '_status': leaf_fv.get('status', 'pending'),
+                    '_urgency': leaf_fv.get('urgency', 'M'),
+                    '_actual_start': a_start[:10] if a_start else '',
+                    '_actual_end': a_end[:10] if a_end else '',
                 })
                 day_offset += 1
 
@@ -223,9 +235,46 @@ def create_beak_gantt_task(slug):
         return jsonify({'ok': True, 'tid': atom.id, 'entry_id': entry.id})
 
 
+@bp.route('/api/project/<slug>/beak-gantt/entry/<int:entry_id>', methods=['PATCH'])
+def patch_beak_gantt_entry(slug, entry_id):
+    """更新任務欄位（以 entry_id 為鍵，供 Item 級拖拉使用）。"""
+    body = request.get_json()
+    if not body:
+        return jsonify({'error': 'need JSON body'}), 400
+
+    with session_scope() as s:
+        entry = s.get(AtomEntry, entry_id)
+        if not entry:
+            return jsonify({'error': 'entry not found'}), 404
+
+        field_map = {
+            f.name: f for f in
+            s.query(EntrySchemaField).filter_by(schema_id=entry.schema_id).all()
+        }
+        allowed = {'actual_start', 'actual_end', 'planned_start', 'planned_end', 'progress', 'status'}
+        updated = {}
+        for fname, fval in body.items():
+            if fname not in allowed:
+                continue
+            sf = field_map.get(fname)
+            if not sf:
+                continue
+            _upsert_field(s, entry.id, sf.id, fval)
+            updated[fname] = fval
+
+        # 觸發所屬 atom 的 updated_at 更新，讓 polling 偵測到變更
+        if updated:
+            atom = s.get(KnowledgeAtom, entry.atom_id)
+            if atom:
+                atom.updated_at = datetime.now()
+
+        s.flush()
+        return jsonify({'ok': True, 'entry_id': entry.id, 'updated': updated})
+
+
 @bp.route('/api/project/<slug>/beak-gantt/<int:atom_id>', methods=['PATCH'])
 def patch_beak_gantt_task(slug, atom_id):
-    """更新任務欄位（拖拉儲存）。"""
+    """更新任務欄位（以 atom_id 為鍵，供葉子 Card 級拖拉使用）。"""
     body = request.get_json()
     if not body:
         return jsonify({'error': 'need JSON body'}), 400
@@ -253,6 +302,12 @@ def patch_beak_gantt_task(slug, atom_id):
                 continue
             _upsert_field(s, entry.id, sf.id, fval)
             updated[fname] = fval
+
+        # 觸發所屬 atom 的 updated_at 更新，讓 polling 偵測到變更
+        if updated:
+            atom = s.get(KnowledgeAtom, atom_id)
+            if atom:
+                atom.updated_at = datetime.now()
 
         s.flush()
         return jsonify({'ok': True, 'entry_id': entry.id, 'updated': updated})
@@ -430,6 +485,17 @@ def put_gantt_colors():
 #  Helpers
 # ============================================================
 
+def _get_leaf_fv(entry_fv_map, atom_id, s):
+    """取得葉子 Card（無 content_json items）的第一筆 task entry 欄位值。"""
+    # entry_fv_map 已按 entry_id 索引，需從 atom_id 反查
+    entries = s.query(AtomEntry).filter_by(atom_id=atom_id).all()
+    for e in entries:
+        fv = entry_fv_map.get(e.id, {})
+        if fv:
+            return fv
+    return {}
+
+
 def _extract_structured_entries(content_json):
     """從 content_json 中提取 structuredEntry 項目。
 
@@ -510,11 +576,14 @@ def _add_n_days(date_str, n):
 def _upsert_field(s, entry_id, field_id, value, changed_by='gantt:drag'):
     from core.audit import log_field_change
     existing = s.query(EntryFieldValue).filter_by(entry_id=entry_id, field_id=field_id).first()
-    new_val = str(value) if value is not None else None
+    # 空字串視同 None（清除語意）
+    new_val = str(value) if value is not None and str(value).strip() != '' else None
     if existing:
         log_field_change(s, entry_id, field_id, existing.value, new_val, changed_by)
         existing.value = new_val
     else:
+        if new_val is None:
+            return  # 值為空且不存在，不需要建立記錄
         log_field_change(s, entry_id, field_id, None, new_val, changed_by)
         s.add(EntryFieldValue(entry_id=entry_id, field_id=field_id, value=new_val))
 

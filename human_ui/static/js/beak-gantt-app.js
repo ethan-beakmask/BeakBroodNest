@@ -10,6 +10,10 @@
 
     var SLUG = '';
     var _gantt = null;
+    var _entryIdMap = {};  // task.id -> entry_id 對照表
+    var _ganttPollTimer = null;
+    var _lastGanttPollAt = null;
+    var _ganttAtomTs = {};  // atom_id -> updated_at 快取
 
     function _toast(msg, isError) {
         var area = document.getElementById('toast-area');
@@ -32,8 +36,8 @@
         return d.toISOString().slice(0, 10);
     }
 
-    function _pushUndo(taskId, changes, oldValues) {
-        if (_gantt) _gantt.pushUndo({ type: 'task', taskId: taskId, changes: changes, oldValues: oldValues });
+    function _pushUndo(taskId, changes, oldValues, entryId) {
+        if (_gantt) _gantt.pushUndo({ type: 'task', taskId: taskId, entryId: entryId, changes: changes, oldValues: oldValues });
         _updateUndoBtn();
     }
 
@@ -46,8 +50,15 @@
         }
     }
 
-    function _patchTask(taskId, body) {
-        return fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt/' + taskId, {
+    function _patchTask(taskId, body, entryId) {
+        // Item 有 entry_id 時用 entry 路由，葉子 Card 用 atom_id 路由
+        var url;
+        if (entryId) {
+            url = '/beakcortex/api/project/' + SLUG + '/beak-gantt/entry/' + entryId;
+        } else {
+            url = '/beakcortex/api/project/' + SLUG + '/beak-gantt/' + taskId;
+        }
+        return fetch(url, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -61,6 +72,29 @@
         .catch(function() { _toast('Network error', true); });
     }
 
+    function _ganttPoll() {
+        if (!SLUG) return;
+        fetch('/beakcortex/api/canvases/' + SLUG + '/poll' +
+              (_lastGanttPollAt ? '?since=' + encodeURIComponent(_lastGanttPollAt) : ''))
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (!data || !data.atoms) return;
+                var changed = false;
+                for (var i = 0; i < data.atoms.length; i++) {
+                    var a = data.atoms[i];
+                    var prev = _ganttAtomTs[a.atom_id];
+                    if (prev && a.updated_at > prev) { changed = true; }
+                    _ganttAtomTs[a.atom_id] = a.updated_at;
+                }
+                if (changed) {
+                    _toast('Gantt data updated');
+                    _loadData();
+                }
+                _lastGanttPollAt = new Date().toISOString();
+            })
+            .catch(function() { /* ignore */ });
+    }
+
     function _loadData() {
         fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt')
             .then(function(r) {
@@ -70,7 +104,7 @@
             .then(function(data) {
                 _gantt.clearAll();
                 _gantt.parse(data);
-                _toast('Loaded ' + (data.tasks || []).length + ' tasks');
+                _lastGanttPollAt = new Date().toISOString();
             })
             .catch(function(e) {
                 console.error('BeakGantt load error:', e);
@@ -96,28 +130,45 @@
                 customData: {},
 
                 onTaskUpdate: function(task, changes) {
-                    if (!task._entry_id) return;
+                    var eid = _entryIdMap[task.id] || task._entry_id;
+                    if (!eid) return;
                     var oldValues = {};
                     var body = {};
+                    // 粗 bar 拖拉 = 修改 planned（排程）時間
                     if (changes.start_date !== undefined) {
-                        oldValues.actual_start = task._prev_start || '';
-                        body.actual_start = changes.start_date + 'T00:00';
+                        oldValues.planned_start = task._prev_start || '';
+                        body.planned_start = changes.start_date + 'T00:00';
                     }
                     if (changes.end_date !== undefined) {
-                        oldValues.actual_end = task._prev_end || '';
-                        body.actual_end = _endDateForDb(changes.end_date) + 'T00:00';
+                        oldValues.planned_end = task._prev_end || '';
+                        body.planned_end = _endDateForDb(changes.end_date) + 'T00:00';
                     }
+                    // 進度條拖拉 = 修改進度 + 狀態 + 自動填入/清除 actual 時間
                     if (changes.progress !== undefined) {
                         oldValues.progress = task._prev_progress || '0';
-                        body.progress = String(Math.round(changes.progress * 100));
-                        if (changes.progress >= 1) body.status = 'done';
-                        else if (changes.progress > 0) body.status = 'in_progress';
-                        else body.status = 'pending';
+                        var pct = Math.round(changes.progress * 100);
+                        body.progress = String(pct);
+                        if (pct >= 100) {
+                            body.status = 'done';
+                            body.actual_end = new Date().toISOString().slice(0, 16);
+                            if (!task._actual_start) {
+                                body.actual_start = task.start_date + 'T00:00';
+                            }
+                        } else if (pct > 0) {
+                            body.status = 'in_progress';
+                            body.actual_end = '';  // 未完成 -> 清除實際結束
+                            if (!task._actual_start) {
+                                body.actual_start = task.start_date + 'T00:00';
+                            }
+                        } else {
+                            body.status = 'pending';
+                            body.actual_end = '';  // 未開始 -> 清除實際結束
+                        }
                     }
-                    _pushUndo(task.id, body, oldValues);
-                    _patchTask(task.id, body);
-                    task._prev_start = body.actual_start || task._prev_start;
-                    task._prev_end = body.actual_end || task._prev_end;
+                    _pushUndo(task.id, body, oldValues, eid);
+                    _patchTask(task.id, body, eid);
+                    task._prev_start = body.planned_start || task._prev_start;
+                    task._prev_end = body.planned_end || task._prev_end;
                     task._prev_progress = body.progress || task._prev_progress;
                 },
 
@@ -188,17 +239,30 @@
         var origParse = _gantt.parse.bind(_gantt);
         _gantt.parse = function(data) {
             var tasks = data.tasks || data.data || [];
+            _entryIdMap = {};
             for (var i = 0; i < tasks.length; i++) {
                 var t = tasks[i];
                 t._prev_start = t.start_date || '';
                 t._prev_end = t.end_date || '';
                 t._prev_progress = String(Math.round((t.progress || 0) * 100));
+                t._actual_start = t._actual_start || '';
+                t._actual_end = t._actual_end || '';
+                if (t._entry_id) _entryIdMap[t.id] = t._entry_id;
+                // 建立 atom 時間快取（用於 polling 比對）
+                var atomId = typeof t.id === 'number' ? t.id : (t.parent || 0);
+                if (atomId && !_ganttAtomTs[atomId]) _ganttAtomTs[atomId] = new Date().toISOString();
             }
             origParse(data);
         };
 
         _loadData();
         _updateUndoBtn();
+
+        // Gantt polling -- 偵測遠端變更後 reload
+        if (!_ganttPollTimer) {
+            _lastGanttPollAt = new Date().toISOString();
+            _ganttPollTimer = setInterval(_ganttPoll, 5000);
+        }
     };
 
     window.beakGanttUndo = function() {
@@ -207,7 +271,7 @@
         if (!result) return;
         _updateUndoBtn();
         if (result.type === 'task' && result.oldValues) {
-            _patchTask(result.taskId, result.oldValues).then(function() {
+            _patchTask(result.taskId, result.oldValues, result.entryId).then(function() {
                 _toast('Undo');
                 _loadData();
             });
