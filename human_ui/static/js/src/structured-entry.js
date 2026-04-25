@@ -255,35 +255,93 @@ class StructuredEntryView {
         if (!schema || !schema.fields || schema.fields.length === 0) return
 
         const fv = this.node.attrs.fieldValues || {}
+        const code = this.node.attrs.schemaCode || 'freetext'
+
+        // task / 行事曆使用固定排版（4 欄 grid + 備註佔整列且 textarea）
+        if (code === 'task') {
+            this._renderTaskGrid(schema, fv)
+            return
+        }
+
         const table = document.createElement('div')
         table.className = 'se-fields-grid'
 
         for (const field of schema.fields.sort((a, b) => a.sort_order - b.sort_order)) {
-            const row = document.createElement('div')
-            row.className = 'se-field-row'
-
-            const label = document.createElement('span')
-            label.className = 'se-field-label'
-            label.textContent = field.label
-            if (field.dimension) {
-                const dim = document.createElement('span')
-                dim.className = 'se-field-dim'
-                dim.textContent = field.dimension
-                label.appendChild(dim)
-            }
-            row.appendChild(label)
-
-            const input = this._createFieldInput(field, fv[field.name] || '')
-            row.appendChild(input)
-
-            table.appendChild(row)
+            table.appendChild(this._buildFieldCell(field, fv[field.name] || ''))
         }
         this.fieldsPanel.appendChild(table)
     }
 
-    _createFieldInput(field, currentValue) {
+    _buildFieldCell(field, currentValue, opts = {}) {
+        const row = document.createElement('div')
+        row.className = 'se-field-row'
+
+        const label = document.createElement('span')
+        label.className = 'se-field-label'
+        label.textContent = field.label
+        if (field.dimension) {
+            const dim = document.createElement('span')
+            dim.className = 'se-field-dim'
+            dim.textContent = field.dimension
+            label.appendChild(dim)
+        }
+        row.appendChild(label)
+
+        const input = this._createFieldInput(field, currentValue, opts)
+        row.appendChild(input)
+        return row
+    }
+
+    _renderTaskGrid(schema, fv) {
+        const table = document.createElement('div')
+        table.className = 'se-fields-grid se-task-grid'
+
+        const fmap = {}
+        for (const f of schema.fields) fmap[f.name] = f
+
+        // 用戶指定的 5 列佈局（每列 4 欄；缺項留空格）
+        const layout = [
+            ['category', 'urgency', 'location', 'attendees'],
+            ['note'],
+            ['baseline_start', 'baseline_end'],
+            ['planned_start', 'planned_end', 'planned_duration'],
+            ['actual_start', 'actual_end', 'progress', 'status'],
+        ]
+
+        for (const row of layout) {
+            for (const name of row) {
+                const field = fmap[name]
+                if (!field) continue
+                const isNote = name === 'note'
+                const cell = this._buildFieldCell(
+                    field,
+                    fv[field.name] || '',
+                    { multiline: isNote }
+                )
+                if (isNote) cell.classList.add('se-task-note')
+                table.appendChild(cell)
+            }
+            // 補空格 cell 對齊 grid 欄數（避免下一列從上一列留下的空隙開始）
+            const remain = 4 - row.length
+            if (remain > 0 && row[0] !== 'note') {
+                for (let i = 0; i < remain; i++) {
+                    const filler = document.createElement('div')
+                    filler.className = 'se-field-row se-task-filler'
+                    table.appendChild(filler)
+                }
+            }
+        }
+        this.fieldsPanel.appendChild(table)
+    }
+
+    _createFieldInput(field, currentValue, opts = {}) {
         let el
-        if (field.field_type === 'select' || field.field_type === 'multiselect') {
+        if (opts.multiline) {
+            el = document.createElement('textarea')
+            el.className = 'se-field-input se-field-textarea'
+            el.rows = 3
+            el.value = currentValue
+        } else if (field.field_type === 'select' || field.field_type === 'multiselect') {
             el = document.createElement('select')
             el.className = 'se-field-input'
             // Add empty option

@@ -77,6 +77,10 @@ class CardEditor {
                         json: editor.getJSON(),
                     })
                 }
+                if (this.onStateChangeCallback) this.onStateChangeCallback()
+            },
+            onSelectionUpdate: () => {
+                if (this.onStateChangeCallback) this.onStateChangeCallback()
             },
         }
 
@@ -95,6 +99,7 @@ class CardEditor {
 
         this.editor = new Editor(editorConfig)
         this.onChangeCallback = options.onChange || null
+        this.onStateChangeCallback = options.onStateChange || null
 
         return this
     }
@@ -188,6 +193,111 @@ class CardEditor {
     }
 
     /**
+     * 將文件中所有 structuredEntry 統一設為展開或收合。
+     * @param {boolean} collapsed - true=全收合, false=全展開
+     */
+    setAllEntriesCollapsed(collapsed) {
+        if (!this.editor) return 0
+        const view = this.editor.view
+        const state = view.state
+        const tr = state.tr
+        let touched = 0
+        state.doc.descendants((node, pos) => {
+            if (node.type.name !== 'structuredEntry') return
+            if (!!node.attrs.collapsed === !!collapsed) return
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, collapsed: !!collapsed })
+            touched += 1
+        })
+        if (touched > 0) view.dispatch(tr)
+        return touched
+    }
+
+    /** 回傳目前展開（collapsed=false）且有 entryId 的所有 entryId，供 reload 後恢復 */
+    getExpandedEntryIds() {
+        if (!this.editor) return []
+        const ids = []
+        this.editor.state.doc.descendants(node => {
+            if (node.type.name !== 'structuredEntry') return
+            if (!node.attrs.collapsed && node.attrs.entryId) {
+                ids.push(node.attrs.entryId)
+            }
+        })
+        return ids
+    }
+
+    /**
+     * 從 DB entries 同步最新 fieldValues 到對應的 structuredEntry node。
+     * 不重建文件、不動結構、不動其他 attrs（entryId/collapsed/schemaCode 全保留）。
+     *
+     * 用途：Gantt 拖拉時間或外部修改 entry_field_values 後，卡片重新開啟時
+     * 把 DB 最新欄位值補進 content_json 重建出的編輯器 -- 而 content_json 本身
+     * 只在 saveEditor 時才會更新，無法反映後續的外部變動。
+     */
+    syncFieldValuesFromEntries(entries) {
+        if (!this.editor || !entries || entries.length === 0) return 0
+        const fvByEntryId = {}
+        for (const e of entries) {
+            if (e.id) fvByEntryId[e.id] = e.field_values || {}
+        }
+        if (Object.keys(fvByEntryId).length === 0) return 0
+
+        const view = this.editor.view
+        const state = view.state
+        const tr = state.tr
+        let mutated = 0
+        state.doc.descendants((node, pos) => {
+            if (node.type.name !== 'structuredEntry') return
+            const eid = node.attrs.entryId
+            if (!eid || !(eid in fvByEntryId)) return
+            const fresh = fvByEntryId[eid]
+            const current = node.attrs.fieldValues || {}
+            // 鍵集合或值任一不同就更新
+            const keys = new Set([...Object.keys(current), ...Object.keys(fresh)])
+            let changed = false
+            for (const k of keys) {
+                if ((current[k] || '') !== (fresh[k] || '')) { changed = true; break }
+            }
+            if (!changed) return
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, fieldValues: fresh })
+            mutated += 1
+        })
+        if (mutated > 0) view.dispatch(tr)
+        return mutated
+    }
+
+    /** 將指定 entryId 集合對應的 structuredEntry 設為展開 */
+    expandEntriesByIds(entryIds) {
+        if (!this.editor || !entryIds || entryIds.length === 0) return
+        const set = new Set(entryIds)
+        const view = this.editor.view
+        const state = view.state
+        const tr = state.tr
+        let mutated = false
+        state.doc.descendants((node, pos) => {
+            if (node.type.name !== 'structuredEntry') return
+            if (!set.has(node.attrs.entryId)) return
+            if (!node.attrs.collapsed) return
+            tr.setNodeMarkup(pos, undefined, { ...node.attrs, collapsed: false })
+            mutated = true
+        })
+        if (mutated) view.dispatch(tr)
+    }
+
+    /** 回傳「是否仍有任一 structuredEntry 處於收合」-- 供 toolbar 判斷下次動作 */
+    hasCollapsedEntry() {
+        if (!this.editor) return false
+        let found = false
+        this.editor.state.doc.descendants(node => {
+            if (found) return false
+            if (node.type.name === 'structuredEntry' && node.attrs.collapsed) {
+                found = true
+                return false
+            }
+        })
+        return found
+    }
+
+    /**
      * 擷取選取文字並可選地刪除（單一原子操作）
      * @param {boolean} shouldDelete - true 時刪除選取範圍（移動模式）
      * @returns {{ from, to, markdown, contentJson }} | null
@@ -252,6 +362,38 @@ class CardEditor {
             }
         })
         return entries
+    }
+
+    /**
+     * 將 sync 回傳的 entries 中新賦予的 id 寫回對應的 structuredEntry node，
+     * 而不重建整份文件（避免 reload 時遺失表格/清單/標題等非 entry 結構）。
+     *
+     * 對應規則：syncEntries 的順序與 extractEntries() 產生的順序一致，
+     * 後者用 doc.forEach 過濾「空 paragraph」後依序輸出。
+     */
+    writeBackEntryIds(syncEntries) {
+        if (!this.editor || !syncEntries || syncEntries.length === 0) return
+        const view = this.editor.view
+        const state = view.state
+        const tr = state.tr
+        let idx = 0
+        let mutated = false
+        state.doc.forEach((node, offset) => {
+            // 與 extractEntries 同樣的「空 paragraph」過濾，保持索引對齊
+            if (node.type.name !== 'structuredEntry') {
+                const text = node.textContent
+                if (!text.trim() && node.type.name === 'paragraph') return
+            }
+            const sched = syncEntries[idx]
+            idx += 1
+            if (!sched) return
+            if (node.type.name !== 'structuredEntry') return
+            if (!sched.id || sched.schema_code === 'freetext') return
+            if (node.attrs.entryId === sched.id) return
+            tr.setNodeMarkup(offset, undefined, { ...node.attrs, entryId: sched.id })
+            mutated = true
+        })
+        if (mutated) view.dispatch(tr)
     }
 
     /**

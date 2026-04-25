@@ -518,7 +518,24 @@
                             <button @click="ceCmd('hr', ed.id)" title="分隔線">--</button>
                             <span class="tb-sep"></span>
                             <button @click="ceInsertLink(ed.id)" title="連結">Lk</button>
-                            <button @click="ceCmd('table', ed.id)" title="表格">Tb</button>
+                            <button @click="ceInsertImage(ed.id)" title="插入圖片 (URL)">Img</button>
+                            <button @click="ceCmd('table', ed.id)" title="插入表格 3x3">Tb</button>
+                            <template x-if="ceTableActive[ed.id]">
+                                <span style="display:inline-flex;gap:2px;">
+                                    <span class="tb-sep"></span>
+                                    <button @click="ceCmd('addRowBefore', ed.id)" title="表格：上方插入列">+列&uarr;</button>
+                                    <button @click="ceCmd('addRowAfter', ed.id)" title="表格：下方插入列">+列&darr;</button>
+                                    <button @click="ceCmd('addColBefore', ed.id)" title="表格：左方插入欄">+欄&larr;</button>
+                                    <button @click="ceCmd('addColAfter', ed.id)" title="表格：右方插入欄">+欄&rarr;</button>
+                                    <button @click="ceCmd('deleteRow', ed.id)" title="表格：刪除目前列">-列</button>
+                                    <button @click="ceCmd('deleteCol', ed.id)" title="表格：刪除目前欄">-欄</button>
+                                    <button @click="ceCmd('deleteTable', ed.id)" title="表格：刪除整張表">-表</button>
+                                </span>
+                            </template>
+                            <span class="tb-sep"></span>
+                            <button @click="ceToggleAllEntries(ed.id)"
+                                    :title="ceHasCollapsed[ed.id] ? '展開所有 ;; 物件' : '收合所有 ;; 物件'"
+                                    x-text="ceHasCollapsed[ed.id] ? '[+]全展' : '[-]全收'"></button>
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('undo', ed.id)" title="復原">&#8630;</button>
                             <button @click="ceCmd('redo', ed.id)" title="重做">&#8631;</button>

@@ -262,6 +262,8 @@ def patch_beak_gantt_entry(slug, entry_id):
             _upsert_field(s, entry.id, sf.id, fval)
             updated[fname] = fval
 
+        _apply_progress_consistency(s, entry.id, body, field_map, updated)
+
         # 觸發所屬 atom 的 updated_at 更新，讓 polling 偵測到變更
         if updated:
             atom = s.get(KnowledgeAtom, entry.atom_id)
@@ -302,6 +304,8 @@ def patch_beak_gantt_task(slug, atom_id):
                 continue
             _upsert_field(s, entry.id, sf.id, fval)
             updated[fname] = fval
+
+        _apply_progress_consistency(s, entry.id, body, field_map, updated)
 
         # 觸發所屬 atom 的 updated_at 更新，讓 polling 偵測到變更
         if updated:
@@ -613,3 +617,57 @@ def _resolve_progress(fv):
     if status == 'in_progress':
         return 0.5
     return 0.0
+
+
+def _apply_progress_consistency(s, entry_id, body, field_map, updated):
+    """確保 actual_end 與進度/狀態語意一致。
+
+    僅在 body 顯式帶入 progress 或 status 時才介入，避免影響純拖拉時間欄位的請求。
+    - 進度 < 100 且 status != done -> 清空 actual_end
+    - 進度 >= 100 或 status == done -> 若 actual_end 為空，補當下時間
+    """
+    if 'progress' not in body and 'status' not in body:
+        return
+
+    progress_raw = body.get('progress', '')
+    status_raw = body.get('status', '')
+
+    pct = None
+    if progress_raw not in (None, ''):
+        try:
+            pct = int(float(progress_raw))
+        except (ValueError, TypeError):
+            pct = None
+
+    if pct is not None:
+        is_done = pct >= 100
+    elif status_raw:
+        is_done = status_raw == 'done'
+    else:
+        return
+
+    ae_field = field_map.get('actual_end')
+    if not ae_field:
+        return
+
+    ae_existing = (
+        s.query(EntryFieldValue)
+        .filter_by(entry_id=entry_id, field_id=ae_field.id)
+        .first()
+    )
+
+    if not is_done:
+        # 進度退回 -> 清空 actual_end（前端可能沒主動送，後端兜底）
+        if ae_existing and ae_existing.value:
+            _upsert_field(s, entry_id, ae_field.id, '', changed_by='gantt:auto-clear')
+            updated['actual_end'] = ''
+    else:
+        # 已完成 -> 若 actual_end 空，自動補當下時間（避免漏寫）
+        already_set_in_body = body.get('actual_end') not in (None, '')
+        if already_set_in_body:
+            return
+        if ae_existing and ae_existing.value:
+            return
+        now_str = datetime.now().strftime('%Y-%m-%dT%H:%M')
+        _upsert_field(s, entry_id, ae_field.id, now_str, changed_by='gantt:auto-fill')
+        updated['actual_end'] = now_str

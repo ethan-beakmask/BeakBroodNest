@@ -948,6 +948,43 @@ input[type="checkbox"].se-field-input {
     height: 14px;
 }
 
+/* task / 行事曆 專用 grid 排版（4 欄；備註佔整列且為 textarea） */
+.se-fields-grid.se-task-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px 8px;
+    align-items: center;
+}
+.se-task-grid .se-field-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+.se-task-grid .se-field-input {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+}
+.se-task-grid .se-task-filler {
+    visibility: hidden;
+}
+.se-task-grid .se-task-note {
+    grid-column: 1 / -1;
+    align-items: stretch;
+}
+.se-task-grid .se-task-note .se-field-label {
+    align-self: flex-start;
+    padding-top: 4px;
+}
+.se-task-grid textarea.se-field-textarea {
+    width: 100%;
+    min-height: 56px;       /* 約 3 列字高 */
+    resize: vertical;
+    font-family: inherit;
+    line-height: 1.4;
+}
+
 /* ============================================
    Slash Command Menu
    ============================================ */

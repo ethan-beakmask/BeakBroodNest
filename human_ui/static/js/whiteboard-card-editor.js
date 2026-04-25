@@ -16,6 +16,10 @@ function whiteboardCardEditorMixin() {
         cardEditorOpen: false, // 是否有任何卡片編輯器開啟
         ceSidebarOpen: false,  // 左側卡片選擇面板
 
+        // Toolbar reactive 狀態 (per editorId)
+        ceTableActive: {},     // { editorId: 游標是否在表格內 }
+        ceHasCollapsed: {},    // { editorId: 是否仍有收合中的 ;; 物件 }
+
         // 右側抓重點
         ceStagingOpen: false,
         stagingMode: 'copy',     // 'copy' or 'move'
@@ -106,21 +110,66 @@ function whiteboardCardEditorMixin() {
                     contentJson: atom.content_json || null,
                     content: atom.content || '',
                     onChange: function() { if (!initializing) self._markEditorDirty(editorId); },
+                    onStateChange: function() { self._refreshToolbarState(editorId); },
                     editable: (atom.owner || 'ethan') === 'ethan',
                 });
 
-                // Load existing entries from DB if any
+                // content_json 是文件結構唯一真實來源（保留表格/清單等結構）；
+                // 但 entry_field_values 可能因 Gantt 拖拉等外部變動而比 content_json 內的 fieldValues 新，
+                // 需用 entries 同步最新 fieldValues 進對應 structuredEntry node（不重建文件）。
                 try {
                     var entries = await API.getEntries(atomId);
                     if (entries && entries.length > 0) {
-                        ce.loadEntries(entries);
+                        if (atom.content_json) {
+                            ce.syncFieldValuesFromEntries(entries);
+                        } else {
+                            // 舊資料無 content_json，退回原有重建路徑
+                            ce.loadEntries(entries);
+                        }
                     }
                 } catch (e) { /* no entries yet, use content as-is */ }
 
                 _ceStore[atomId] = ce;
-                self.$nextTick(function() { initializing = false; });
+                self.$nextTick(function() {
+                    initializing = false;
+                    self._refreshToolbarState(editorId);
+                });
                 self._focusEditor(editorId);
             });
+        },
+
+        _refreshToolbarState(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce || !ce.editor) return;
+            this.ceTableActive[editorId] = ce.isActive('table');
+            this.ceHasCollapsed[editorId] = ce.hasCollapsedEntry();
+        },
+
+        ceInsertImage(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var url = prompt('輸入圖片 URL:');
+            if (!url) return;
+            var ce = _ceStore[ed.atomId];
+            if (ce) ce.cmd('image', url);
+        },
+
+        ceToggleAllEntries(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce) return;
+            // 有任一收合 -> 全展開；否則 -> 全收合
+            var collapse = !ce.hasCollapsedEntry();
+            var n = ce.setAllEntriesCollapsed(collapse);
+            this._refreshToolbarState(editorId);
+            if (n === 0) {
+                this.showToast('沒有 ;; 物件可切換', 'warning');
+            } else {
+                this.showToast((collapse ? '已全部收合 ' : '已全部展開 ') + n + ' 個 ;; 物件', 'success');
+            }
         },
 
         _markEditorDirty(editorId) {
@@ -155,14 +204,14 @@ function whiteboardCardEditorMixin() {
             if (hasStructuredEntries || entries.length > 0) {
                 try {
                     var syncResult = await API.syncEntries(ed.atomId, entries);
-                    // Use the content snapshot from sync as the canonical content
+                    // 用後端回傳的 raw_text 串接作為搜尋用 content（atom.content 只供關鍵字檢索）
                     md = syncResult.content_snapshot || md;
 
-                    // Update entryId attributes in the editor from sync result
+                    // 只把 DB 新賦予的 entryId 寫回對應節點，不重建文件 -- 避免遺失表格/清單/標題結構
                     if (syncResult.entries) {
-                        var syncEntries = syncResult.entries;
-                        // Reload entries to get IDs assigned by DB
-                        ce.loadEntries(syncEntries);
+                        ce.writeBackEntryIds(syncResult.entries);
+                        // entryId 寫回後 doc 變動，重新取一次 JSON 才能存到 atom.content_json
+                        json = ce.getJSON();
                     }
                 } catch (e) {
                     console.warn('Entry sync failed, falling back to content save:', e);
@@ -564,7 +613,7 @@ function whiteboardCardEditorMixin() {
                 detailHtml +
                 '</div>' +
                 '<span style="white-space:nowrap;">' +
-                '<button class="btn btn-sm btn-outline-danger ce-conflict-save">儲存覆蓋</button> ' +
+                '<button class="btn btn-sm btn-outline-danger ce-conflict-save">覆蓋遠端</button> ' +
                 '<button class="btn btn-sm btn-outline-secondary ce-conflict-reload">載入遠端</button>' +
                 '</span>';
             header.insertAdjacentElement('afterend', banner);
@@ -587,12 +636,28 @@ function whiteboardCardEditorMixin() {
                 if (atom && !atom.error) {
                     var ce = _ceStore[ed.atomId];
                     if (ce) {
-                        if (atom.content_json) ce.setContentJSON(atom.content_json);
-                        else ce.setContent(atom.content || '');
-                        try {
-                            var entries = await API.getEntries(ed.atomId);
-                            if (entries && entries.length > 0) ce.loadEntries(entries);
-                        } catch (e) { /* ignore */ }
+                        // 保留 reload 前用戶展開的 entryId，reload 後若仍存在則恢復展開
+                        var expandedIds = ce.getExpandedEntryIds();
+
+                        if (atom.content_json) {
+                            // content_json 已含完整結構（包含每個 entry 的 collapsed），不再呼叫 loadEntries
+                            // -- loadEntries 會 hardcode collapsed=true，違反「保持原本狀態」
+                            ce.setContentJSON(atom.content_json);
+                            // 但 entry_field_values 可能比 content_json 內的 fieldValues 新（如 Gantt 拖拉），
+                            // 需用 entries 同步最新欄位值進對應節點。
+                            try {
+                                var rEntries = await API.getEntries(ed.atomId);
+                                if (rEntries && rEntries.length > 0) ce.syncFieldValuesFromEntries(rEntries);
+                            } catch (e) { /* ignore */ }
+                        } else {
+                            ce.setContent(atom.content || '');
+                            try {
+                                var entries = await API.getEntries(ed.atomId);
+                                if (entries && entries.length > 0) ce.loadEntries(entries);
+                            } catch (e) { /* ignore */ }
+                        }
+
+                        if (expandedIds.length > 0) ce.expandEntriesByIds(expandedIds);
                     }
                     ed.title = atom.title;
                     ed.dirty = false;
