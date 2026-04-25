@@ -51,8 +51,12 @@ BG.Core = {
      * 將 API task 轉為 Frappe Gantt task 格式
      * 處理 actual 為 null 時的 fallback（用 baseline 代入 + 標記 bar-not-started）
      */
+    /**
+     * fallback 鏈: actual -> planned -> baseline -> today
+     */
     _toFrappeTask: function(t) {
         var hasActual = !!(t.start || t.end);
+        var planned = t._planned;
         var baseline = t._baseline;
 
         var start, end, customClass;
@@ -61,6 +65,10 @@ BG.Core = {
             start = t.start || t.end;
             end = t.end || t.start;
             customClass = t.custom_class || 'bar-urgency-M';
+        } else if (planned && (planned.start || planned.end)) {
+            start = planned.start || planned.end;
+            end = planned.end || planned.start;
+            customClass = 'bar-planned';
         } else if (baseline && (baseline.start || baseline.end)) {
             start = baseline.start || baseline.end;
             end = baseline.end || baseline.start;

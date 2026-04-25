@@ -40,8 +40,9 @@ def _write_typed_value(fv, field_type, raw_value):
         pass  # 保留 value 文字版，型別欄位留 None
 
 
-def _save_field_values(s, entry, field_values_dict):
+def _save_field_values(s, entry, field_values_dict, changed_by='user'):
     """批次寫入 entry 的欄位值。field_values_dict: {field_name: raw_value}"""
+    from core.audit import log_field_change
     if not field_values_dict or not entry.schema_id:
         return
 
@@ -56,6 +57,7 @@ def _save_field_values(s, entry, field_values_dict):
         if fname not in field_map:
             continue
         sf = field_map[fname]
+        new_val = str(fval) if fval is not None else None
 
         existing = (
             s.query(EntryFieldValue)
@@ -63,8 +65,10 @@ def _save_field_values(s, entry, field_values_dict):
             .first()
         )
         if existing:
+            log_field_change(s, entry.id, sf.id, existing.value, new_val, changed_by)
             _write_typed_value(existing, sf.field_type, fval)
         else:
+            log_field_change(s, entry.id, sf.id, None, new_val, changed_by)
             fv = EntryFieldValue(entry_id=entry.id, field_id=sf.id)
             _write_typed_value(fv, sf.field_type, fval)
             s.add(fv)

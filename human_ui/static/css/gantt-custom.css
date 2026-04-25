@@ -17,6 +17,17 @@
 .bar-done .bar-progress { fill: #198754; }
 .bar-done .bar { fill: #a3cfbb; stroke: #198754; stroke-width: 0.5; }
 
+/* ========== 預計日期（planned fallback, 行事曆模式） ========== */
+
+.bar-planned .bar {
+    fill: #fff7ed;
+    stroke: #f97316;
+    stroke-width: 1;
+    stroke-dasharray: 6 3;
+}
+.bar-planned .bar-progress { fill: #fdba74; }
+.bar-planned .bar-label { fill: #c2410c; }
+
 /* ========== 尚未開始（baseline fallback） ========== */
 
 .bar-not-started .bar {

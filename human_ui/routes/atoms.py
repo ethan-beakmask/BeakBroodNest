@@ -4,7 +4,7 @@ import datetime
 import logging
 
 from flask import Blueprint, request, jsonify
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
@@ -141,9 +141,12 @@ def get_atom(atom_id):
         if not atom:
             return jsonify({'error': '卡片不存在'}), 404
 
-        # 更新存取紀錄
-        atom.last_accessed_at = datetime.datetime.now()
-        atom.access_count += 1
+        # 更新存取紀錄（用原生 SQL 避免觸發 ORM onupdate 改變 updated_at）
+        s.execute(
+            text('UPDATE knowledge_atoms SET last_accessed_at = :now, access_count = access_count + 1 WHERE id = :id'),
+            {'now': datetime.datetime.now(), 'id': atom_id}
+        )
+        s.expire(atom, ['last_accessed_at', 'access_count'])
 
         result = atom.to_dict(include_tags=True, include_values=True)
 

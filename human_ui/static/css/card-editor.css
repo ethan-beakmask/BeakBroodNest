@@ -113,6 +113,39 @@
     animation: ce-flash 0.8s ease-out;
 }
 
+/* 衝突提示特效（紅色持續閃動） */
+@keyframes ce-conflict-flash {
+    0%, 100% { box-shadow: inset 0 0 0 2px #dc3545; }
+    50%      { box-shadow: inset 0 0 0 2px transparent; }
+}
+.ce-pane-conflict {
+    animation: ce-conflict-flash 1s ease-in-out infinite;
+}
+.ce-conflict-banner {
+    background: #fff5f5;
+    border-bottom: 1px solid #fca5a5;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: #dc3545;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.ce-conflict-banner .ce-conflict-msg {
+    font-weight: 600;
+}
+.ce-conflict-banner button {
+    font-size: 11px;
+    padding: 1px 8px;
+}
+.ce-conflict-detail {
+    font-size: 10px;
+    color: #6c757d;
+    margin-top: 2px;
+    line-height: 1.4;
+}
+
 .card-editor-maximize {
     width: 28px;
     height: 28px;

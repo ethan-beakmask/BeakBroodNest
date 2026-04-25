@@ -37,7 +37,7 @@ def gantt_page(slug):
 
 @bp.route('/gantt-mvp/api/gantt/<slug>')
 def get_gantt(slug):
-    """讀取白板的 todo entries，轉為 Frappe Gantt 格式。"""
+    """讀取白板的 task entries，轉為 Frappe Gantt 格式。"""
     with session_scope() as s:
         canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
         if not canvas:
@@ -57,7 +57,7 @@ def get_gantt(slug):
 
 
 def _fetch_tasks(s, canvas_id):
-    """從 atom_entries + entry_field_values 讀出白板上所有 todo 任務。"""
+    """從 atom_entries + entry_field_values 讀出白板上所有 task 任務。"""
     atom_ids = [
         row[0] for row in
         s.query(CanvasAtom.atom_id)
@@ -67,8 +67,8 @@ def _fetch_tasks(s, canvas_id):
     if not atom_ids:
         return []
 
-    todo_schema = s.query(EntrySchema).filter_by(code='task').first()
-    if not todo_schema:
+    task_schema = s.query(EntrySchema).filter_by(code='task').first()
+    if not task_schema:
         return []
 
     entries = (
@@ -76,7 +76,7 @@ def _fetch_tasks(s, canvas_id):
         .options(joinedload(AtomEntry.atom))
         .filter(
             AtomEntry.atom_id.in_(atom_ids),
-            AtomEntry.schema_id == todo_schema.id,
+            AtomEntry.schema_id == task_schema.id,
         )
         .all()
     )
@@ -95,6 +95,7 @@ def _fetch_tasks(s, canvas_id):
             'urgency': fv.get('urgency', 'M'),
             'category': fv.get('category', ''),
             'planned_start': fv.get('planned_start', ''),
+            'planned_end': fv.get('planned_end', ''),
             'actual_end': fv.get('actual_end', ''),
             'actual_start': fv.get('actual_start', ''),
             'baseline_start': fv.get('baseline_start', ''),
@@ -117,15 +118,15 @@ def _fetch_deps(s, canvas_id):
         return []
 
     # 建 atom_id -> entry_id 對照表
-    todo_schema = s.query(EntrySchema).filter_by(code='task').first()
-    if not todo_schema:
+    task_schema = s.query(EntrySchema).filter_by(code='task').first()
+    if not task_schema:
         return []
 
     entries = (
         s.query(AtomEntry)
         .filter(
             AtomEntry.atom_id.in_(atom_ids),
-            AtomEntry.schema_id == todo_schema.id,
+            AtomEntry.schema_id == task_schema.id,
         )
         .all()
     )
@@ -190,6 +191,7 @@ def _transform_to_frappe(tasks_raw, deps_raw):
         actual_start = _date_only(t.get('actual_start')) or None
         actual_end = _date_only(t.get('actual_end')) or None
         progress = _resolve_progress(t)
+        planned = _resolve_planned(t)
         baseline = _resolve_baseline(t)
         delta = _calc_delta_days(baseline, actual_end)
         status = _resolve_gantt_status(t, actual_start, progress)
@@ -203,6 +205,7 @@ def _transform_to_frappe(tasks_raw, deps_raw):
             'dependencies': ', '.join(dep_map.get(task_id, [])),
             'custom_class': _resolve_bar_class(t),
             '_entry_id': t['entry_id'],
+            '_planned': planned,
             '_baseline': baseline,
             '_delta_days': delta,
             '_status': status,
@@ -251,6 +254,15 @@ def _resolve_progress(task):
     if status == 'in_progress':
         return 50
     return 0
+
+
+def _resolve_planned(task):
+    """取出預計日期，回傳 dict 或 None。"""
+    ps = _date_only(task.get('planned_start'))
+    pe = _date_only(task.get('planned_end'))
+    if not ps and not pe:
+        return None
+    return {'start': ps or '', 'end': pe or ''}
 
 
 def _resolve_baseline(task):
@@ -350,20 +362,24 @@ def patch_gantt_task(slug, entry_id):
         return jsonify(result)
 
 
-def _write_field(s, entry_id, field_id, value):
+def _write_field(s, entry_id, field_id, value, changed_by='gantt:mvp'):
     """寫入或更新單一欄位值。"""
+    from core.audit import log_field_change
+    new_val = str(value) if value is not None else None
     existing = (
         s.query(EntryFieldValue)
         .filter_by(entry_id=entry_id, field_id=field_id)
         .first()
     )
     if existing:
-        existing.value = str(value) if value is not None else None
+        log_field_change(s, entry_id, field_id, existing.value, new_val, changed_by)
+        existing.value = new_val
     else:
+        log_field_change(s, entry_id, field_id, None, new_val, changed_by)
         fv = EntryFieldValue(
             entry_id=entry_id,
             field_id=field_id,
-            value=str(value) if value is not None else None,
+            value=new_val,
         )
         s.add(fv)
 

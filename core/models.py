@@ -1211,3 +1211,40 @@ class UnifiedRelation(Base):
             if self.to_atom:
                 d['to_atom'] = {'id': self.to_atom.id, 'title': self.to_atom.title}
         return d
+
+
+# ============================================================
+# 7.0 欄位變更歷史（Audit Log）
+# ============================================================
+
+class EntryFieldChangeLog(Base):
+    """Entry 欄位值的變更歷史。
+
+    每次 entry_field_values 被 UPDATE 時記錄一筆，
+    用於 L2 衝突提示（顯示具體欄位變更）和專案管理風險追蹤。
+    """
+    __tablename__ = 'entry_field_change_log'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entry_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('atom_entries.id', ondelete='CASCADE'), nullable=False
+    )
+    field_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('entry_schema_fields.id', ondelete='CASCADE'), nullable=False
+    )
+    old_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    changed_by: Mapped[str] = mapped_column(
+        String(50), nullable=False, default='user'
+    )  # 'user:ethan' / 'gantt:drag' / 'api' / 'system'
+    changed_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, nullable=False
+    )
+
+    entry: Mapped["AtomEntry"] = relationship()
+    field: Mapped["EntrySchemaField"] = relationship()
+
+    __table_args__ = (
+        Index('idx_efcl_entry', 'entry_id'),
+        Index('idx_efcl_changed_at', 'changed_at'),
+    )

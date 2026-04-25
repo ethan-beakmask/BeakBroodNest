@@ -270,6 +270,8 @@ function whiteboardApp(canvasId) {
                 this.setupWheelZoom();
                 if (this.atoms.length > 0) this.fitView();
                 this.renderMinimap();
+                // 啟動遠端變更偵測
+                this.startPolling();
             });
             const self = this;
             document.addEventListener('keydown', function(e) { self.handleKeyDown(e); });

@@ -417,6 +417,82 @@ def get_canvas(slug):
         return jsonify(result)
 
 
+@bp.route('/api/canvases/<slug>/poll')
+def poll_canvas(slug):
+    """輕量 polling：回傳白板上所有原子的 atom_id + updated_at。
+
+    前端定期呼叫，比對本地快取的 updated_at，
+    只對有差異的原子做進一步處理（靜默更新或衝突提示）。
+
+    可選 ?since=ISO_TIMESTAMP，回傳該時間之後的欄位變更明細（L2 衝突提示）。
+    """
+    from core.models import AtomEntry, EntryFieldChangeLog, EntrySchemaField
+
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        rows = (
+            s.query(CanvasAtom.atom_id, KnowledgeAtom.updated_at)
+            .join(KnowledgeAtom, KnowledgeAtom.id == CanvasAtom.atom_id)
+            .filter(CanvasAtom.canvas_id == canvas.id)
+            .all()
+        )
+        result = {
+            'atoms': [
+                {'atom_id': r.atom_id, 'updated_at': r.updated_at.isoformat()}
+                for r in rows
+            ],
+        }
+
+        # L2: 具體欄位變更明細
+        since = request.args.get('since', '')
+        if since:
+            import datetime as dt
+            try:
+                since_dt = dt.datetime.fromisoformat(since)
+            except (ValueError, TypeError):
+                since_dt = None
+
+            if since_dt:
+                atom_ids = [r.atom_id for r in rows]
+                changes = (
+                    s.query(
+                        AtomEntry.atom_id,
+                        EntrySchemaField.name.label('field_name'),
+                        EntrySchemaField.label.label('field_label'),
+                        EntryFieldChangeLog.old_value,
+                        EntryFieldChangeLog.new_value,
+                        EntryFieldChangeLog.changed_by,
+                        EntryFieldChangeLog.changed_at,
+                    )
+                    .join(AtomEntry, AtomEntry.id == EntryFieldChangeLog.entry_id)
+                    .join(EntrySchemaField, EntrySchemaField.id == EntryFieldChangeLog.field_id)
+                    .filter(
+                        AtomEntry.atom_id.in_(atom_ids),
+                        EntryFieldChangeLog.changed_at > since_dt,
+                    )
+                    .order_by(EntryFieldChangeLog.changed_at.desc())
+                    .limit(100)
+                    .all()
+                )
+                result['changes'] = [
+                    {
+                        'atom_id': c.atom_id,
+                        'field': c.field_name,
+                        'label': c.field_label,
+                        'old': c.old_value,
+                        'new': c.new_value,
+                        'by': c.changed_by,
+                        'at': c.changed_at.isoformat(),
+                    }
+                    for c in changes
+                ]
+
+        return jsonify(result)
+
+
 @bp.route('/api/canvases/<slug>', methods=['PUT'])
 def update_canvas(slug):
     data = request.get_json()

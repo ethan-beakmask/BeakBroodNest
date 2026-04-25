@@ -3,7 +3,7 @@
 """
 一次性腳本：將 BeakCortex 公開前盤點清單灌入資料庫。
 
-建立「Cortex專案」白板，灌入 todo 原子 + blocks 依賴關係。
+建立「Cortex專案」白板，灌入 task 原子 + blocks 依賴關係。
 冪等：重複執行不會重複建立（以白板名稱 + 原子標題判斷）。
 
 用法:
@@ -31,7 +31,7 @@ from core.models import (
 
 CANVAS_NAME = 'Cortex專案'
 
-# category 選項（將寫入 todo schema 的 category field）
+# category 選項（將寫入 task schema 的 category field）
 CATEGORIES = ['安全性', '文件', '測試', '功能', '復盤Pipeline', '基建']
 
 # 每筆 todo: (title, category, urgency, description)
@@ -107,15 +107,15 @@ def seed(dry_run=False):
     init_engine(str(cfg_path))
 
     with session_scope() as s:
-        # 1. 確保 todo schema 存在並取得 field mapping
-        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
-        if not todo_schema:
-            print('ERROR: todo schema 不存在，請先執行 app.py --init-db --seed')
+        # 1. 確保 task schema 存在並取得 field mapping
+        task_schema = s.query(EntrySchema).filter_by(code='task').first()
+        if not task_schema:
+            print('ERROR: task schema 不存在，請先執行 app.py --init-db --seed')
             return
 
         fields = {
             f.name: f for f in
-            s.query(EntrySchemaField).filter_by(schema_id=todo_schema.id).all()
+            s.query(EntrySchemaField).filter_by(schema_id=task_schema.id).all()
         }
 
         # 2. 更新 category 選項
@@ -140,7 +140,7 @@ def seed(dry_run=False):
             else:
                 print(f'  [dry-run] 將建立白板: {CANVAS_NAME}')
 
-        # 4. 建立 todo 原子（冪等）
+        # 4. 建立 task 原子（冪等）
         title_to_atom = {}  # title -> KnowledgeAtom
         category_counter = {}  # category -> count (for layout)
 
@@ -172,10 +172,10 @@ def seed(dry_run=False):
             s.add(atom)
             s.flush()
 
-            # 建立 entry (todo)
+            # 建立 entry (task)
             entry = AtomEntry(
                 atom_id=atom.id,
-                schema_id=todo_schema.id,
+                schema_id=task_schema.id,
                 sort_order=0,
                 raw_text=description,
                 summary=title,

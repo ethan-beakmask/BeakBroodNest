@@ -68,6 +68,12 @@ function whiteboardCardEditorMixin() {
             var ca = (this.canvasAtoms || []).find(function(c) { return c.atom_id === atomId; });
             var isBlocked = ca ? !!ca.is_blocked : false;
 
+            // 同步白板本地快取的 updated_at（避免 polling 誤判）
+            var ca2 = this.atoms.find(function(a) { return a.atom_id === atomId; });
+            if (ca2 && ca2.atom && atom.updated_at) {
+                ca2.atom.updated_at = atom.updated_at;
+            }
+
             this.openEditors.push({
                 id: editorId,
                 atomId: atom.id,
@@ -78,6 +84,7 @@ function whiteboardCardEditorMixin() {
                 readonly: this.isSnapshot || (atom.owner || 'ethan') !== 'ethan',
                 _contentJson: atom.content_json || null,
                 _content: atom.content || '',
+                _knownServerTs: atom.updated_at || '',
             });
             if (!this.cardEditorOpen) {
                 this.ceSidebarOpen = true;
@@ -162,14 +169,16 @@ function whiteboardCardEditorMixin() {
                 }
             }
 
-            await API.updateAtom(ed.atomId, { title: title, content: md, content_json: json });
+            var saveResp = await API.updateAtom(ed.atomId, { title: title, content: md, content_json: json });
 
+            // 用伺服器回傳的 updated_at，避免 polling 誤判
+            var serverTs = (saveResp && saveResp.updated_at) || new Date().toISOString();
             var ca = this.atoms.find(a => a.atom_id === ed.atomId);
             if (ca && ca.atom) {
                 ca.atom.title = title; ca.atom.content = md; ca.atom.content_json = json;
-                var now = new Date();
-                ca.atom.updated_at = now.toISOString();
+                ca.atom.updated_at = serverTs;
             }
+            ed._knownServerTs = serverTs;
             if (this.selectedAtomDetails && this.selectedAtomDetails.id === ed.atomId) {
                 this.selectedAtomDetails.title = title; this.selectedAtomDetails.content = md;
             }
@@ -422,6 +431,197 @@ function whiteboardCardEditorMixin() {
             } catch (e) {
                 this.showToast('建立失敗: ' + e.message, 'error');
             }
+        },
+
+        // ============================================================
+        //  Polling: 偵測遠端變更 + 衝突提示
+        // ============================================================
+
+        _pollTimer: null,
+        _lastPollAt: null,
+
+        startPolling() {
+            if (this._pollTimer) return;
+            this._lastPollAt = new Date().toISOString();
+            var self = this;
+            this._pollTimer = setInterval(function() { self._pollOnce(); }, 5000);
+        },
+
+        stopPolling() {
+            if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+        },
+
+        async _pollOnce() {
+            if (!this.canvasId) return;
+            try {
+                var resp = await API.pollCanvas(this.canvasId, this._lastPollAt);
+                if (!resp || !resp.atoms) return;
+                this._lastPollAt = new Date().toISOString();
+                this._handlePollResult(resp.atoms, resp.changes || []);
+            } catch (e) { /* polling 失敗不打擾用戶 */ }
+        },
+
+        _handlePollResult(remoteAtoms, changes) {
+            var remoteMap = {};
+            for (var i = 0; i < remoteAtoms.length; i++) {
+                remoteMap[remoteAtoms[i].atom_id] = remoteAtoms[i].updated_at;
+            }
+
+            // 按 atom_id 分組變更明細
+            var changesByAtom = {};
+            for (var ci = 0; ci < changes.length; ci++) {
+                var c = changes[ci];
+                if (!changesByAtom[c.atom_id]) changesByAtom[c.atom_id] = [];
+                changesByAtom[c.atom_id].push(c);
+            }
+
+            var self = this;
+            var updatedIds = [];
+
+            for (var j = 0; j < this.atoms.length; j++) {
+                var ca = this.atoms[j];
+                if (!ca.atom) continue;
+                var remoteTs = remoteMap[ca.atom_id];
+                if (!remoteTs) continue;
+
+                var localTs = ca.atom.updated_at || '';
+                if (remoteTs <= localTs) continue;
+
+                // 遠端有更新 -- 檢查是否正在編輯
+                var ed = self.openEditors.find(function(e) { return e.atomId === ca.atom_id; });
+                if (ed) {
+                    // 用 _knownServerTs 比對，避免開啟時 getAtom 造成的時間差誤判
+                    var knownTs = ed._knownServerTs || '';
+                    if (remoteTs <= knownTs) continue;
+                    // 已在衝突中 -> 跳過
+                    if (ed._conflict) continue;
+                    ed._conflict = true;
+                    ed._conflictTs = remoteTs;
+                    ed._conflictChanges = changesByAtom[ca.atom_id] || [];
+                    self._showConflictUI(ed);
+                } else {
+                    // 未編輯 -> 靜默更新
+                    updatedIds.push(ca.atom_id);
+                }
+            }
+
+            if (updatedIds.length > 0) {
+                this._silentUpdateAtoms(updatedIds);
+            }
+        },
+
+        async _silentUpdateAtoms(atomIds) {
+            for (var i = 0; i < atomIds.length; i++) {
+                try {
+                    var atom = await API.getAtom(atomIds[i]);
+                    if (!atom || atom.error) continue;
+                    var ca = this.atoms.find(function(a) { return a.atom_id === atomIds[i]; });
+                    if (ca && ca.atom) {
+                        ca.atom.title = atom.title;
+                        ca.atom.content = atom.content;
+                        ca.atom.content_json = atom.content_json;
+                        ca.atom.updated_at = atom.updated_at;
+                        ca.atom.tags = atom.tags || ca.atom.tags;
+                    }
+                } catch (e) { /* 個別失敗不影響其他 */ }
+            }
+            this.refreshSidebarAtoms();
+        },
+
+        _showConflictUI(ed) {
+            var el = document.querySelector('[data-ce-id="' + ed.id + '"]');
+            if (!el) return;
+            el.classList.add('ce-pane-conflict');
+
+            // 插入衝突提示 banner（如果尚未存在）
+            if (el.querySelector('.ce-conflict-banner')) return;
+            var header = el.querySelector('.ce-pane-header');
+            if (!header) return;
+
+            // 組裝變更明細文字
+            var detailHtml = '';
+            var changes = ed._conflictChanges || [];
+            if (changes.length > 0) {
+                var parts = [];
+                for (var i = 0; i < Math.min(changes.length, 5); i++) {
+                    var c = changes[i];
+                    var old = c.old || '-';
+                    var nv = c['new'] || '-';
+                    // 截斷過長的值
+                    if (old.length > 20) old = old.slice(0, 20) + '...';
+                    if (nv.length > 20) nv = nv.slice(0, 20) + '...';
+                    parts.push('<span style="color:#6c757d;">' + (c.label || c.field) + ':</span> ' + old + ' &rarr; ' + nv);
+                }
+                if (changes.length > 5) parts.push('...(+' + (changes.length - 5) + ')');
+                detailHtml = '<div class="ce-conflict-detail">' + parts.join(' | ') + '</div>';
+            }
+
+            var banner = document.createElement('div');
+            banner.className = 'ce-conflict-banner';
+            banner.innerHTML =
+                '<div>' +
+                '<span class="ce-conflict-msg">遠端已更新</span>' +
+                detailHtml +
+                '</div>' +
+                '<span style="white-space:nowrap;">' +
+                '<button class="btn btn-sm btn-outline-danger ce-conflict-save">儲存覆蓋</button> ' +
+                '<button class="btn btn-sm btn-outline-secondary ce-conflict-reload">載入遠端</button>' +
+                '</span>';
+            header.insertAdjacentElement('afterend', banner);
+
+            var self = this;
+            banner.querySelector('.ce-conflict-save').addEventListener('click', function() {
+                self._resolveConflict(ed, 'save');
+            });
+            banner.querySelector('.ce-conflict-reload').addEventListener('click', function() {
+                self._resolveConflict(ed, 'reload');
+            });
+        },
+
+        async _resolveConflict(ed, action) {
+            if (action === 'save') {
+                await this.saveEditor(ed.id);
+            } else if (action === 'reload') {
+                // 從伺服器重新載入
+                var atom = await API.getAtom(ed.atomId);
+                if (atom && !atom.error) {
+                    var ce = _ceStore[ed.atomId];
+                    if (ce) {
+                        if (atom.content_json) ce.setContentJSON(atom.content_json);
+                        else ce.setContent(atom.content || '');
+                        try {
+                            var entries = await API.getEntries(ed.atomId);
+                            if (entries && entries.length > 0) ce.loadEntries(entries);
+                        } catch (e) { /* ignore */ }
+                    }
+                    ed.title = atom.title;
+                    ed.dirty = false;
+                    ed._contentJson = atom.content_json;
+                    ed._content = atom.content;
+                    ed._knownServerTs = atom.updated_at || '';
+
+                    // 更新白板上的資料
+                    var ca = this.atoms.find(function(a) { return a.atom_id === ed.atomId; });
+                    if (ca && ca.atom) {
+                        ca.atom.title = atom.title;
+                        ca.atom.content = atom.content;
+                        ca.atom.content_json = atom.content_json;
+                        ca.atom.updated_at = atom.updated_at;
+                    }
+                    this.refreshSidebarAtoms();
+                }
+            }
+            this._clearConflictUI(ed);
+        },
+
+        _clearConflictUI(ed) {
+            ed._conflict = false;
+            ed._conflictTs = null;
+            var el = document.querySelector('[data-ce-id="' + ed.id + '"]');
+            if (!el) return;
+            el.classList.remove('ce-pane-conflict');
+            var banner = el.querySelector('.ce-conflict-banner');
+            if (banner) banner.remove();
         },
     };
 }

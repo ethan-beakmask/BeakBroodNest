@@ -38,6 +38,11 @@ const API = {
     createCanvas(data)      { return this.post('/beakcortex/api/canvases', data); },
     updateCanvas(id, data)  { return this.put('/beakcortex/api/canvases/' + id, data); },
     deleteCanvas(id)        { return this.del('/beakcortex/api/canvases/' + id); },
+    pollCanvas(slug, since)  {
+        var url = '/beakcortex/api/canvases/' + slug + '/poll';
+        if (since) url += '?since=' + encodeURIComponent(since);
+        return this.get(url);
+    },
 
     // Canvas Atoms
     addAtomToCanvas(canvasId, data) { return this.post('/beakcortex/api/canvases/' + canvasId + '/atoms', data); },

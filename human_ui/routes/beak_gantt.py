@@ -98,14 +98,19 @@ def get_beak_gantt(slug):
                 for idx, entry in enumerate(entries):
                     entry_id = entry.get('entry_id')
                     fv = entry_fv_map.get(entry_id, {}) if entry_id else {}
-                    start = _add_n_days(today, day_offset)
+                    # fallback: actual_start -> planned_start -> offset
+                    start_raw = fv.get('actual_start', '') or fv.get('planned_start', '')
+                    start = start_raw[:10] if start_raw else _add_n_days(today, day_offset)
+                    # duration: 從日期區間計算，否則預設 1 天
+                    end_raw = fv.get('actual_end', '') or fv.get('planned_end', '')
+                    duration = _calc_duration(start_raw, end_raw)
                     tasks.append({
                         'id': 'e{}_{}'.format(atom.id, idx),
                         'text': entry['text'],
                         'parent': atom.id,
                         '_isSummary': False,
-                        'start_date': fv.get('actual_start', start)[:10] if fv.get('actual_start') else start,
-                        'duration': 1,
+                        'start_date': start,
+                        'duration': duration,
                         'progress': _resolve_progress(fv),
                         '_entry_id': entry_id,
                         '_status': fv.get('status', 'pending'),
@@ -173,9 +178,9 @@ def create_beak_gantt_task(slug):
         if not canvas:
             return jsonify({'error': 'canvas not found'}), 404
 
-        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
-        if not todo_schema:
-            return jsonify({'error': 'todo schema not found'}), 500
+        task_schema = s.query(EntrySchema).filter_by(code='task').first()
+        if not task_schema:
+            return jsonify({'error': 'task schema not found'}), 500
 
         atom = KnowledgeAtom(
             title=text, content='', atom_type='A',
@@ -186,13 +191,13 @@ def create_beak_gantt_task(slug):
 
         s.add(CanvasAtom(canvas_id=canvas.id, atom_id=atom.id, pos_x=0, pos_y=0))
 
-        entry = AtomEntry(atom_id=atom.id, schema_id=todo_schema.id, raw_text='')
+        entry = AtomEntry(atom_id=atom.id, schema_id=task_schema.id, raw_text='')
         s.add(entry)
         s.flush()
 
         field_map = {
             f.name: f for f in
-            s.query(EntrySchemaField).filter_by(schema_id=todo_schema.id).all()
+            s.query(EntrySchemaField).filter_by(schema_id=task_schema.id).all()
         }
         defaults = {'status': 'pending', 'urgency': 'M'}
         if start_date:
@@ -226,19 +231,19 @@ def patch_beak_gantt_task(slug, atom_id):
         return jsonify({'error': 'need JSON body'}), 400
 
     with session_scope() as s:
-        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
-        if not todo_schema:
-            return jsonify({'error': 'todo schema not found'}), 500
+        task_schema = s.query(EntrySchema).filter_by(code='task').first()
+        if not task_schema:
+            return jsonify({'error': 'task schema not found'}), 500
 
-        entry = s.query(AtomEntry).filter_by(atom_id=atom_id, schema_id=todo_schema.id).first()
+        entry = s.query(AtomEntry).filter_by(atom_id=atom_id, schema_id=task_schema.id).first()
         if not entry:
-            return jsonify({'error': 'no todo entry for this atom'}), 404
+            return jsonify({'error': 'no task entry for this atom'}), 404
 
         field_map = {
             f.name: f for f in
             s.query(EntrySchemaField).filter_by(schema_id=entry.schema_id).all()
         }
-        allowed = {'actual_start', 'actual_end', 'planned_start', 'progress', 'status'}
+        allowed = {'actual_start', 'actual_end', 'planned_start', 'planned_end', 'progress', 'status'}
         updated = {}
         for fname, fval in body.items():
             if fname not in allowed:
@@ -439,11 +444,14 @@ def _extract_structured_entries(content_json):
     for node in doc_content:
         if node.get('type') != 'structuredEntry':
             continue
+        attrs = node.get('attrs', {})
+        # 只提取 task 類型的 entries（Gantt 不顯示 diary/expense/health 等）
+        if attrs.get('schemaCode') not in ('task',):
+            continue
         # 遞迴收集文字
         text = _collect_text(node.get('content', []))
         if not text:
             continue
-        attrs = node.get('attrs', {})
         entries.append({
             'text': text,
             'entry_id': attrs.get('entryId'),
@@ -499,13 +507,28 @@ def _add_n_days(date_str, n):
     return (dt + timedelta(days=n)).strftime('%Y-%m-%d')
 
 
-def _upsert_field(s, entry_id, field_id, value):
+def _upsert_field(s, entry_id, field_id, value, changed_by='gantt:drag'):
+    from core.audit import log_field_change
     existing = s.query(EntryFieldValue).filter_by(entry_id=entry_id, field_id=field_id).first()
+    new_val = str(value) if value is not None else None
     if existing:
-        existing.value = str(value) if value is not None else None
+        log_field_change(s, entry_id, field_id, existing.value, new_val, changed_by)
+        existing.value = new_val
     else:
-        s.add(EntryFieldValue(entry_id=entry_id, field_id=field_id,
-                              value=str(value) if value is not None else None))
+        log_field_change(s, entry_id, field_id, None, new_val, changed_by)
+        s.add(EntryFieldValue(entry_id=entry_id, field_id=field_id, value=new_val))
+
+
+def _calc_duration(start_raw, end_raw):
+    """從起訖日期計算天數，無效或無資料時回傳 1。"""
+    if not start_raw or not end_raw:
+        return 1
+    try:
+        s = datetime.strptime(start_raw[:10], '%Y-%m-%d')
+        e = datetime.strptime(end_raw[:10], '%Y-%m-%d')
+        return max(1, (e - s).days + 1)
+    except (ValueError, TypeError):
+        return 1
 
 
 def _resolve_progress(fv):

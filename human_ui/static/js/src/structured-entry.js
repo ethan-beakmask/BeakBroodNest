@@ -6,7 +6,7 @@
  *
  * Attributes:
  *   entryId     - DB id (nullable for unsaved)
- *   schemaCode  - entry schema code ('freetext','todo','expense'...)
+ *   schemaCode  - entry schema code ('freetext','task','expense'...)
  *   schemaId    - entry schema id
  *   rawText     - 主要文字內容
  *   fieldValues - JSON object {field_name: value}

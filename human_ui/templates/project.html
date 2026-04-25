@@ -248,7 +248,7 @@
                                         <span x-text="wbsFormatDate(row.actual_start || row.planned_start)"></span>
                                     </td>
                                     <td class="wbs-date-cell">
-                                        <span x-text="wbsFormatDate(row.actual_end)"></span>
+                                        <span x-text="wbsFormatDate(row.actual_end || row.planned_end)"></span>
                                     </td>
                                     <td class="wbs-pred-cell">
                                         <template x-for="p in row.predecessors" :key="p.atom_id">
@@ -609,6 +609,7 @@ function projectApp() {
                         entry_id: node.entry_id,
                         predecessors: node.predecessors || [],
                         planned_start: node.planned_start || '',
+                        planned_end: node.planned_end || '',
                         actual_start: node.actual_start || '',
                         actual_end: node.actual_end || '',
                         progressPct: pct,

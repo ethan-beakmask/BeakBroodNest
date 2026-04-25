@@ -56,17 +56,17 @@ def project_summary(slug):
                 'blocks': [],
             })
 
-        # 取出這些原子的 todo entries
-        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
-        if not todo_schema:
-            return jsonify({'error': 'todo schema 不存在'}), 500
+        # 取出這些原子的 task entries
+        task_schema = s.query(EntrySchema).filter_by(code='task').first()
+        if not task_schema:
+            return jsonify({'error': 'task schema 不存在'}), 500
 
         entries = (
             s.query(AtomEntry)
             .options(joinedload(AtomEntry.atom))
             .filter(
                 AtomEntry.atom_id.in_(atom_ids),
-                AtomEntry.schema_id == todo_schema.id,
+                AtomEntry.schema_id == task_schema.id,
             )
             .all()
         )
@@ -143,6 +143,7 @@ def project_summary(slug):
                 'urgency': urgency,
                 'category': category,
                 'planned_start': fv.get('planned_start', ''),
+                'planned_end': fv.get('planned_end', ''),
                 'planned_duration': fv.get('planned_duration', ''),
                 'actual_start': fv.get('actual_start', ''),
                 'actual_end': fv.get('actual_end', ''),
@@ -201,7 +202,7 @@ def project_summary(slug):
                         'status': item['status'],
                         'urgency': item['urgency'],
                         'planned_start': item['planned_start'] or None,
-                        'planned_end': item['actual_end'] or item['planned_duration'] or None,
+                        'planned_end': item['planned_end'] or item['actual_end'] or item['planned_duration'] or None,
                         'actual_start': item['actual_start'] or None,
                         'actual_end': item['actual_end'] or None,
                         'blocks': [str(tid) for tid in blocks_by_from.get(item['atom_id'], [])],
@@ -318,15 +319,15 @@ def project_wbs(slug):
             s.query(KnowledgeAtom).filter(KnowledgeAtom.id.in_(atom_ids)).all()
         }
 
-        # todo entries + field values
-        todo_schema = s.query(EntrySchema).filter_by(code='task').first()
+        # task entries + field values
+        task_schema = s.query(EntrySchema).filter_by(code='task').first()
         entries_by_atom = {}
-        if todo_schema:
+        if task_schema:
             entries = (
                 s.query(AtomEntry)
                 .filter(
                     AtomEntry.atom_id.in_(atom_ids),
-                    AtomEntry.schema_id == todo_schema.id,
+                    AtomEntry.schema_id == task_schema.id,
                 )
                 .all()
             )
@@ -339,6 +340,7 @@ def project_wbs(slug):
                     'urgency': fv.get('urgency', 'M'),
                     'category': fv.get('category', ''),
                     'planned_start': fv.get('planned_start', ''),
+                    'planned_end': fv.get('planned_end', ''),
                     'actual_start': fv.get('actual_start', ''),
                     'actual_end': fv.get('actual_end', ''),
                     'planned_duration': fv.get('planned_duration', ''),
@@ -423,6 +425,7 @@ def project_wbs(slug):
                 'category': ed.get('category', ''),
                 'entry_id': ed.get('entry_id'),
                 'planned_start': ed.get('planned_start', ''),
+                'planned_end': ed.get('planned_end', ''),
                 'actual_start': ed.get('actual_start', ''),
                 'actual_end': ed.get('actual_end', ''),
                 'planned_duration': ed.get('planned_duration', ''),

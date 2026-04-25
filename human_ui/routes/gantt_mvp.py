@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Gantt MVP: 免登入的甘特圖展示 + 拖拉回寫 API
 
-固定讀取 Cortex 專案 (slug=vRhORoxV) 的 todo entries。
+固定讀取 Cortex 專案 (slug=vRhORoxV) 的 task entries。
 提供兩個 API：
   GET  /beakcortex/gantt-mvp/api/tasks  -> Frappe Gantt + Mermaid 資料
   PUT  /beakcortex/gantt-mvp/api/tasks/<entry_id> -> 拖拉後回寫日期
@@ -22,7 +22,7 @@ CANVAS_SLUG = 'vRhORoxV'
 
 
 def _fetch_tasks(s):
-    """從 DB 讀取 Cortex 專案的 todo 資料，回傳結構化 list。"""
+    """從 DB 讀取 Cortex 專案的 task 資料，回傳結構化 list。"""
     canvas = s.query(Canvas).filter(Canvas.slug == CANVAS_SLUG).first()
     if not canvas:
         return None, 'canvas not found'
@@ -36,16 +36,16 @@ def _fetch_tasks(s):
     if not atom_ids:
         return [], None
 
-    todo_schema = s.query(EntrySchema).filter_by(code='task').first()
-    if not todo_schema:
-        return None, 'todo schema not found'
+    task_schema = s.query(EntrySchema).filter_by(code='task').first()
+    if not task_schema:
+        return None, 'task schema not found'
 
     entries = (
         s.query(AtomEntry)
         .options(joinedload(AtomEntry.atom))
         .filter(
             AtomEntry.atom_id.in_(atom_ids),
-            AtomEntry.schema_id == todo_schema.id,
+            AtomEntry.schema_id == task_schema.id,
         )
         .all()
     )
