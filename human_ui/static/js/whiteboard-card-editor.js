@@ -295,6 +295,22 @@ function whiteboardCardEditorMixin() {
 
             var saveResp = await API.updateAtom(ed.atomId, { title: title, content: md, content_json: json });
 
+            // pending placement：首次儲存時才擺放到白板（位置為點擊新增卡片時記錄的滑鼠座標）
+            if (ed._pendingCanvasPos) {
+                try {
+                    await API.addAtomToCanvas(this.canvasId, {
+                        atom_id: ed.atomId,
+                        pos_x: ed._pendingCanvasPos.x,
+                        pos_y: ed._pendingCanvasPos.y,
+                    });
+                    ed._pendingCanvasPos = null;
+                    await this.loadData();
+                    this.$nextTick(() => this.renderConnections());
+                } catch (e) {
+                    this.showToast('擺放至白板失敗：' + (e.message || e), 'error');
+                }
+            }
+
             // 用伺服器回傳的 updated_at，避免 polling 誤判
             var serverTs = (saveResp && saveResp.updated_at) || new Date().toISOString();
             // thumbnail_url 由後端從 content_json 萃取後回傳，前端直接同步給白板對應卡片
@@ -354,6 +370,11 @@ function whiteboardCardEditorMixin() {
             var ce = _ceStore[ed.atomId];
             if (ce) { ce.destroy(); delete _ceStore[ed.atomId]; }
 
+            // pending placement 仍未存 -> 該 atom 從未擺上白板，關閉即丟棄
+            if (ed._pendingCanvasPos && ed.atomId) {
+                API.deleteAtom(ed.atomId).catch(function() {});
+            }
+
             this.openEditors.splice(idx, 1);
             if (this.openEditors.length === 0) {
                 this.cardEditorOpen = false;
@@ -367,6 +388,9 @@ function whiteboardCardEditorMixin() {
                 var ed = this.openEditors[i];
                 var ce = _ceStore[ed.atomId];
                 if (ce) { ce.destroy(); delete _ceStore[ed.atomId]; }
+                if (ed._pendingCanvasPos && ed.atomId) {
+                    API.deleteAtom(ed.atomId).catch(function() {});
+                }
             }
             this.openEditors = [];
             this.maximizedEditorId = null;

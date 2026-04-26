@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """Canvases API: CRUD + Canvas Atoms + Groups + Connections"""
 
+import datetime
+
 from flask import Blueprint, request, jsonify
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.db import session_scope
 from core.models import (
     KnowledgeAtom, UnifiedRelation, RelationTypeRegistry,
-    Canvas, CanvasAtom, CanvasConnection,
+    Canvas, CanvasAtom, CanvasConnection, CanvasTrash,
     CanvasGroup, Tag, atom_tags, canvas_group_members,
     AtomEntry, EntrySchema,
 )
@@ -700,6 +703,189 @@ def delete_canvas_group(group_id):
             return jsonify({'error': '群組不存在'}), 404
         s.delete(g)
         return jsonify({'message': '群組已刪除'})
+
+
+# ============================================================
+# Canvas Trash (白板私有字紙簍)
+# 從白板 Delete 的卡片暫存於此，可救回到當前白板
+# atom 本體不動 -- 不影響其他白板的引用
+# ============================================================
+
+def _trash_to_dict_with_atom(s, t: CanvasTrash) -> dict:
+    """字紙簍紀錄序列化，附帶卡片預覽用資料"""
+    d = t.to_dict()
+    if t.atom:
+        a = t.atom
+        d['atom'] = {
+            'id': a.id,
+            'title': a.title,
+            'atom_type': a.atom_type,
+            'lifecycle': a.lifecycle,
+            'thumbnail_url': a.thumbnail_url,
+            'content_type': a.content_type,
+            'content_preview': (a.content or '')[:200],
+        }
+    return d
+
+
+@bp.route('/api/canvases/<slug>/trash', methods=['POST'])
+def add_to_canvas_trash(slug):
+    """把當前白板上選中的卡片送入此白板的字紙簍。
+    body: {atom_ids: [int]}
+    動作：對每張 atom -- 把 canvas_atoms 紀錄複製到 canvas_trash，刪除 canvas_atoms。
+    """
+    data = request.get_json() or {}
+    atom_ids = data.get('atom_ids') or []
+    if not isinstance(atom_ids, list) or not atom_ids:
+        return jsonify({'error': '需要 atom_ids（非空陣列）'}), 400
+
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        cas = s.query(CanvasAtom).filter(
+            CanvasAtom.canvas_id == canvas.id,
+            CanvasAtom.atom_id.in_(atom_ids),
+        ).all()
+        if not cas:
+            return jsonify({'trashed_count': 0, 'items': []}), 200
+
+        # UPSERT 處理並發：若已有 (canvas_id, atom_id) 紀錄，更新位置與時間
+        # 這避免「同一 atom 短時間內兩次 Delete」並發時 race condition 撞 UNIQUE
+        now = datetime.datetime.now()
+        rows = [{
+            'canvas_id': canvas.id,
+            'atom_id': ca.atom_id,
+            'deleted_at': now,
+            'original_pos_x': ca.pos_x,
+            'original_pos_y': ca.pos_y,
+            'original_width': ca.width,
+            'original_height': ca.height,
+            'z_index': ca.z_index,
+            'visual_style': ca.visual_style,
+        } for ca in cas]
+        stmt = pg_insert(CanvasTrash.__table__).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            constraint='uq_canvas_trash',
+            set_={
+                'deleted_at': stmt.excluded.deleted_at,
+                'original_pos_x': stmt.excluded.original_pos_x,
+                'original_pos_y': stmt.excluded.original_pos_y,
+                'original_width': stmt.excluded.original_width,
+                'original_height': stmt.excluded.original_height,
+                'z_index': stmt.excluded.z_index,
+                'visual_style': stmt.excluded.visual_style,
+            },
+        )
+        s.execute(stmt)
+        # 刪除 canvas_atoms 紀錄
+        for ca in cas:
+            s.delete(ca)
+        s.flush()
+
+        # 重查回傳
+        trashed = s.query(CanvasTrash).filter(
+            CanvasTrash.canvas_id == canvas.id,
+            CanvasTrash.atom_id.in_([ca.atom_id for ca in cas]),
+        ).all()
+        return jsonify({
+            'trashed_count': len(trashed),
+            'items': [_trash_to_dict_with_atom(s, t) for t in trashed],
+        }), 201
+
+
+@bp.route('/api/canvases/<slug>/trash', methods=['GET'])
+def list_canvas_trash(slug):
+    """列出當前白板的字紙簍，按 deleted_at desc"""
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        rows = (
+            s.query(CanvasTrash)
+            .filter(CanvasTrash.canvas_id == canvas.id)
+            .order_by(CanvasTrash.deleted_at.desc())
+            .all()
+        )
+        return jsonify({
+            'total': len(rows),
+            'items': [_trash_to_dict_with_atom(s, t) for t in rows],
+        })
+
+
+@bp.route('/api/canvases/<slug>/trash/restore', methods=['POST'])
+def restore_from_canvas_trash(slug):
+    """從當前白板字紙簍救回卡片（單張或多張）。
+    body: {atom_ids: [int]}
+    每張卡片重建 canvas_atoms（用原座標），刪除字紙簍紀錄。
+    若 canvas_atoms 已存在（被外部建出來），更新位置而非新增（idempotent）。
+    """
+    data = request.get_json() or {}
+    atom_ids = data.get('atom_ids') or []
+    if not isinstance(atom_ids, list) or not atom_ids:
+        return jsonify({'error': '需要 atom_ids（非空陣列）'}), 400
+
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        trash_rows = s.query(CanvasTrash).filter(
+            CanvasTrash.canvas_id == canvas.id,
+            CanvasTrash.atom_id.in_(atom_ids),
+        ).all()
+
+        restored_cas = []
+        for t in trash_rows:
+            existing = s.query(CanvasAtom).filter(
+                CanvasAtom.canvas_id == canvas.id,
+                CanvasAtom.atom_id == t.atom_id,
+            ).first()
+            if existing:
+                existing.pos_x = t.original_pos_x
+                existing.pos_y = t.original_pos_y
+                if t.original_width is not None:
+                    existing.width = t.original_width
+                if t.original_height is not None:
+                    existing.height = t.original_height
+                existing.z_index = t.z_index
+                existing.visual_style = t.visual_style
+                ca = existing
+            else:
+                ca = CanvasAtom(
+                    canvas_id=canvas.id,
+                    atom_id=t.atom_id,
+                    pos_x=t.original_pos_x,
+                    pos_y=t.original_pos_y,
+                    width=t.original_width,
+                    height=t.original_height,
+                    z_index=t.z_index,
+                    visual_style=t.visual_style,
+                )
+                s.add(ca)
+            s.delete(t)
+            restored_cas.append(ca)
+        s.flush()
+        return jsonify({
+            'restored_count': len(restored_cas),
+            'canvas_atoms': [ca.to_dict() for ca in restored_cas],
+        })
+
+
+@bp.route('/api/canvases/<slug>/trash', methods=['DELETE'])
+def empty_canvas_trash(slug):
+    """清空當前白板字紙簍（不影響 atom 本體）。"""
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+        deleted = s.query(CanvasTrash).filter(
+            CanvasTrash.canvas_id == canvas.id
+        ).delete(synchronize_session=False)
+        s.flush()
+        return jsonify({'message': f'已清空 {deleted} 筆', 'deleted': deleted})
 
 
 # ============================================================

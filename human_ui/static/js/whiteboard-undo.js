@@ -67,9 +67,11 @@ function whiteboardUndoMixin() {
             if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected(); return; }
         },
 
-        // Delete 鍵 / 工具列「刪除」/ Backspace：軟刪除進字紙簍
-        // 與右鍵「從白板移除」(removeFromCanvas) 是不同動作 -- 那邊只斷開 canvas_atom 連結
-        // 此處同時把 atom 軟刪除：可從字紙簍救回。Undo 走 restore API 重建白板連結。
+        // Delete 鍵 / 工具列「刪除」/ Backspace：送入此白板的字紙簍
+        // 三個破壞層級的中間層：
+        //   - 解除連結 (右鍵)         : 只刪 canvas_atoms，不可救回
+        //   - 白板字紙簍 (本動作)     : 從當前白板移除，可從字紙簍救回，atom 本體與其他白板不受影響
+        //   - 徹底刪除 (右鍵)         : hard delete atom 本體，所有白板連帶清除，不可逆
         async deleteSelected() {
             var self = this;
             var ids = [];
@@ -82,41 +84,26 @@ function whiteboardUndoMixin() {
 
             var toDelete = this.atoms.filter(function(ca) { return ids.includes(ca.atom_id); });
             if (toDelete.length === 0) return;
-            var removedData = toDelete.map(function(ca) {
-                return { atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y,
-                         width: ca.width, height: ca.height };
-            });
+            var atomIds = toDelete.map(function(ca) { return ca.atom_id; });
 
             this.pushUndo({
-                type: 'soft_delete_multi',
-                desc: '刪除 ' + toDelete.length + ' 張卡片',
+                type: 'canvas_trash_multi',
+                desc: '送入字紙簍 ' + toDelete.length + ' 張卡片',
                 undo: async function() {
-                    // 從字紙簍救回：把每張 atom is_deleted=false 並重建當前白板的 canvas_atom
-                    for (var i = 0; i < removedData.length; i++) {
-                        var rd = removedData[i];
-                        try {
-                            await API.restoreAtom(rd.atom_id, {
-                                canvas_id: self.canvasId,
-                                pos_x: rd.pos_x, pos_y: rd.pos_y,
-                                width: rd.width, height: rd.height,
-                            });
-                        } catch (e) { console.warn('restore failed for atom ' + rd.atom_id, e); }
-                    }
+                    try { await API.restoreFromCanvasTrash(self.canvasId, atomIds); }
+                    catch (e) { console.warn('canvas trash restore failed', e); }
                     await self.loadData(); self.$nextTick(function() { self.renderConnections(); });
                 },
                 redo: async function() {
-                    for (var i = 0; i < removedData.length; i++) {
-                        try { await API.deleteAtom(removedData[i].atom_id); }
-                        catch (e) { console.warn('delete failed for atom ' + removedData[i].atom_id, e); }
-                    }
+                    try { await API.addToCanvasTrash(self.canvasId, atomIds); }
+                    catch (e) { console.warn('canvas trash add failed', e); }
                     await self.loadData(); self.$nextTick(function() { self.renderConnections(); });
                 },
             });
 
-            for (var i = 0; i < toDelete.length; i++) {
-                try { await API.deleteAtom(toDelete[i].atom_id); }
-                catch (e) { console.warn('delete failed', e); }
-            }
+            try { await API.addToCanvasTrash(this.canvasId, atomIds); }
+            catch (e) { this.showToast(e.message || '送入字紙簍失敗', 'error'); return; }
+
             this.selectedAtomIds = []; this.deselectCard();
             await this.loadData(); this.$nextTick(function() { self.renderConnections(); });
         },

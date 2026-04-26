@@ -2,7 +2,7 @@
             <div class="wb-toolbar">
                 <button x-show="selectedAtomIds.length >= 2" @click="createGroupFromSelection()">群組</button>
                 <div class="separator" x-show="selectedAtomIds.length >= 2"></div>
-                <button @click="openAddExistingModal()">+ 取回</button>
+                <button @click="openExchangeModal()" title="交換卡片：寄存到交換包，或從交換包取出">交換</button>
                 <button @click="openTrashModal()" title="字紙簍">字紙簍</button>
                 <div class="separator"></div>
                 <button :class="{ active: mode === 'connect' }" @click="toggleConnectMode()">連線</button>
@@ -103,6 +103,7 @@
                 <button class="wb-batch-select" @click="batchTagActiveTab=0; showBatchTagModal=true">標籤...</button>
                 <button class="wb-batch-select" @click="createGroupFromSelection()">群組</button>
                 <button class="wb-batch-select" @click="openSelectedInEditor()">編輯</button>
+                <button class="wb-batch-select" @click="openExchangeModal()" title="寄存到交換包">交換</button>
                 <div style="flex:1;"></div>
                 <button class="btn-ghost btn-sm" style="color:var(--danger);" @click="deleteSelected()">移除</button>
             </div>

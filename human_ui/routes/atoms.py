@@ -345,6 +345,109 @@ def restore_atom(atom_id):
         })
 
 
+@bp.route('/api/atoms/<int:atom_id>/hard', methods=['DELETE'])
+def hard_delete_atom(atom_id):
+    """真 hard delete：直接從 DB 刪除原子，不可逆。
+    用 raw SQL 跳過 ORM 的 cascade 處理（ORM 預設會嘗試 SET NULL 反向關聯，
+    撞 atom_entries.atom_id 等 NOT NULL 欄位）。讓 DB 的 ON DELETE CASCADE 接手即可。
+    用於右鍵「徹底刪除卡片」-- 與 Delete 鍵的「白板私有字紙簍」不同層級。
+    """
+    with session_scope() as s:
+        # 解除 worker_reports 指向（NO ACTION，否則 DELETE 會卡住）
+        s.execute(
+            text('UPDATE worker_reports SET promoted_atom_id = NULL '
+                 'WHERE promoted_atom_id = :aid'),
+            {'aid': atom_id},
+        )
+        result = s.execute(
+            text('DELETE FROM knowledge_atoms WHERE id = :aid'),
+            {'aid': atom_id},
+        )
+        if result.rowcount == 0:
+            return jsonify({'error': '卡片不存在'}), 404
+        logger.info(f'hard_delete_atom: 真刪原子 {atom_id}')
+        return jsonify({'message': f'原子 {atom_id} 已徹底刪除'})
+
+
+@bp.route('/api/atoms/<int:atom_id>/usage', methods=['GET'])
+def atom_usage(atom_id):
+    """列出此 atom 在哪些白板與交換包被引用，含各白板的視覺連線數。
+    用於右鍵「徹底刪除」前的防呆對話框。
+    """
+    with session_scope() as s:
+        atom = s.query(KnowledgeAtom).filter(KnowledgeAtom.id == atom_id).first()
+        if not atom:
+            return jsonify({'error': '卡片不存在'}), 404
+
+        # 此 atom 在哪些白板 (canvas_atoms)
+        rows = s.execute(
+            text('''
+                SELECT ca.id AS canvas_atom_id, ca.canvas_id,
+                       c.slug, c.name,
+                       (SELECT COUNT(*) FROM canvas_connections cc
+                        WHERE cc.canvas_id = c.id
+                          AND (cc.source_atom_id = :aid OR cc.target_atom_id = :aid)
+                       ) AS connection_count
+                FROM canvas_atoms ca
+                JOIN canvases c ON c.id = ca.canvas_id
+                WHERE ca.atom_id = :aid
+                ORDER BY c.name
+            '''),
+            {'aid': atom_id},
+        ).fetchall()
+        canvases = [{
+            'canvas_atom_id': r.canvas_atom_id,
+            'canvas_id': r.canvas_id,
+            'slug': r.slug,
+            'name': r.name,
+            'connection_count': r.connection_count,
+        } for r in rows]
+
+        # 此 atom 在哪些交換包
+        pack_rows = s.execute(
+            text('''
+                SELECT epa.id AS pack_atom_id, ep.id AS pack_id, ep.name
+                FROM exchange_pack_atoms epa
+                JOIN exchange_packs ep ON ep.id = epa.pack_id
+                WHERE epa.atom_id = :aid
+                ORDER BY ep.created_at DESC
+            '''),
+            {'aid': atom_id},
+        ).fetchall()
+        packs = [{
+            'pack_atom_id': r.pack_atom_id,
+            'pack_id': r.pack_id,
+            'name': r.name,
+        } for r in pack_rows]
+
+        # 此 atom 在哪些白板字紙簍
+        trash_rows = s.execute(
+            text('''
+                SELECT ct.id AS trash_id, ct.canvas_id, c.slug, c.name
+                FROM canvas_trash ct
+                JOIN canvases c ON c.id = ct.canvas_id
+                WHERE ct.atom_id = :aid
+                ORDER BY c.name
+            '''),
+            {'aid': atom_id},
+        ).fetchall()
+        trashes = [{
+            'trash_id': r.trash_id,
+            'canvas_id': r.canvas_id,
+            'slug': r.slug,
+            'name': r.name,
+        } for r in trash_rows]
+
+        return jsonify({
+            'atom_id': atom_id,
+            'title': atom.title,
+            'is_deleted': atom.is_deleted,
+            'canvases': canvases,
+            'exchange_packs': packs,
+            'canvas_trashes': trashes,
+        })
+
+
 @bp.route('/api/atoms/trash/empty', methods=['DELETE'])
 def empty_trash():
     """真正刪除所有 is_deleted=true 的原子（不可逆）。

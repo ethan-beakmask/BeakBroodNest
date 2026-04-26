@@ -30,10 +30,18 @@ const API = {
     getBlockChain(id)       { return this.get('/beakcortex/api/atoms/' + id + '/block-chain'); },
     createAtom(data)        { return this.post('/beakcortex/api/atoms', data); },
     updateAtom(id, data)    { return this.put('/beakcortex/api/atoms/' + id, data); },
-    deleteAtom(id)          { return this.del('/beakcortex/api/atoms/' + id); },
-    listTrash()             { return this.get('/beakcortex/api/atoms/trash'); },
+    deleteAtom(id)          { return this.del('/beakcortex/api/atoms/' + id); },          // 軟刪除（舊全域字紙簍，仍保留作 API）
+    hardDeleteAtom(id)      { return this.del('/beakcortex/api/atoms/' + id + '/hard'); },// 真徹底刪除
+    getAtomUsage(id)        { return this.get('/beakcortex/api/atoms/' + id + '/usage'); },// 此 atom 在哪些白板/包/字紙簍
+    listTrash()             { return this.get('/beakcortex/api/atoms/trash'); },           // 全域字紙簍（已不再被白板 UI 使用）
     restoreAtom(id, data)   { return this.post('/beakcortex/api/atoms/' + id + '/restore', data); },
     emptyTrash()            { return this.del('/beakcortex/api/atoms/trash/empty'); },
+
+    // Canvas Trash (白板私有字紙簍)
+    addToCanvasTrash(slug, atomIds) { return this.post('/beakcortex/api/canvases/' + slug + '/trash', { atom_ids: atomIds }); },
+    listCanvasTrash(slug)           { return this.get('/beakcortex/api/canvases/' + slug + '/trash'); },
+    restoreFromCanvasTrash(slug, atomIds) { return this.post('/beakcortex/api/canvases/' + slug + '/trash/restore', { atom_ids: atomIds }); },
+    emptyCanvasTrash(slug)          { return this.del('/beakcortex/api/canvases/' + slug + '/trash'); },
 
     // Canvases
     getCanvases(includeArchived) { return this.get('/beakcortex/api/canvases' + (includeArchived ? '?include_archived=1' : '')); },
@@ -61,6 +69,19 @@ const API = {
     createConnection(data)  { return this.post('/beakcortex/api/canvas-connections', data); },
     updateConnection(id, data) { return this.put('/beakcortex/api/canvas-connections/' + id, data); },
     deleteConnection(id)    { return this.del('/beakcortex/api/canvas-connections/' + id); },
+
+    // Exchange Packs (交換卡片)
+    getExchangePacks()                  { return this.get('/beakcortex/api/exchange-packs'); },
+    createExchangePack(data)            { return this.post('/beakcortex/api/exchange-packs', data); },
+    getExchangePack(packId)             { return this.get('/beakcortex/api/exchange-packs/' + packId); },
+    takeFromExchangePack(packId, data)  { return this.post('/beakcortex/api/exchange-packs/' + packId + '/take', data); },
+    removeAtomsFromPack(packId, atomIds) {
+        return this._fetch('/beakcortex/api/exchange-packs/' + packId + '/atoms', {
+            method: 'DELETE',
+            body: JSON.stringify({ atom_ids: atomIds }),
+        });
+    },
+    deleteExchangePack(packId)          { return this.del('/beakcortex/api/exchange-packs/' + packId); },
 
     // Search
     searchSemantic(q, limit) {

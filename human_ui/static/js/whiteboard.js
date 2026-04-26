@@ -54,9 +54,29 @@ function whiteboardApp(canvasId) {
 
         // Modals
         showNewAtomModal: false,
-        showAddExistingModal: false,
         showTrashModal: false,
         trashItems: [],
+
+        // 徹底刪除防呆 modal
+        showHardDeleteModal: false,
+        hardDeleteAtomId: null,
+        hardDeleteAtomTitle: '',
+        hardDeleteUsage: null,
+        hardDeleteSelectedCanvasIds: [],
+
+        // 交換卡片
+        showExchangeModal: false,
+        exchangeTab: 'take',          // 'stash' | 'take'
+        exchangeView: 'list',         // 'list' | 'detail'（取出 tab 用）
+        exchangePacks: [],
+        exchangePackDetail: null,
+        exchangeSelectedAtomIds: [],
+        exchangeStashName: '',
+        exchangeStashMode: 'copy',    // 'copy' | 'move'
+        exchangeFollowItem: null,     // 單張取用滑鼠跟隨的卡片資料
+        exchangeFollowPackId: null,
+        exchangeFollowMouseX: 0,
+        exchangeFollowMouseY: 0,
         showNewCanvasModal: false,
         showTagModal: false,
         showRelationModal: false,
@@ -106,8 +126,6 @@ function whiteboardApp(canvasId) {
         newCanvasName: '',
         newTagName: '',
         newTagColor: '#6b7280',
-        searchQuery: '',
-        searchResults: [],
         pendingConnection: null,
         selectedRelationType: 'follows',
         relationLabel: '',
@@ -368,6 +386,8 @@ function whiteboardApp(canvasId) {
         },
 
         onViewportMouseDown(e) {
+            // 交換卡片單張取用：滑鼠跟隨中，點空白處放下
+            if (this.exchangeFollowItem && this._tryHandleExchangeFollowDrop && this._tryHandleExchangeFollowDrop(e)) return;
             if (this.editingAtomId && document.activeElement) document.activeElement.blur();
             if (e.button === 1) { this.isPanning = true; this.panStartX = e.clientX - this.panX; this.panStartY = e.clientY - this.panY; e.preventDefault(); return; }
             if (e.button === 2) return;
@@ -383,6 +403,7 @@ function whiteboardApp(canvasId) {
         },
 
         onViewportMouseMove(e) {
+            if (this.exchangeFollowItem && this._updateExchangeFollowPos) { this._updateExchangeFollowPos(e); return; }
             if (this.isConnDragging) { this.connDragMouseX = e.clientX; this.connDragMouseY = e.clientY; this.updatePreviewLine(); return; }
             if (this.rightDragPending) {
                 if (Math.abs(e.clientX - this.rightDragStartX) > 5 || Math.abs(e.clientY - this.rightDragStartY) > 5) {
@@ -651,42 +672,49 @@ function whiteboardApp(canvasId) {
             this._saveShowThumbnailTitle();
         },
 
+        // 清空當前白板字紙簍（不影響 atom 本體；其他白板的引用也不受影響）
         async emptyTrash() {
-            if (!confirm('將永久刪除字紙簍中所有軟刪除的卡片，無法復原。確定？')) return;
+            if (!confirm('清空此白板的字紙簍？\n卡片本體與其他白板的引用不受影響，但本白板將無法救回這些卡片。')) return;
             try {
-                var resp = await API.emptyTrash();
-                this.showToast(resp.message || ('已刪除 ' + (resp.deleted || 0) + ' 張'), 'success');
+                var resp = await API.emptyCanvasTrash(this.canvasId);
+                this.showToast(resp.message || ('已清空 ' + (resp.deleted || 0) + ' 筆'), 'success');
                 this.trashItems = [];
-                if (typeof this.refreshSidebarAtoms === 'function') this.refreshSidebarAtoms();
+                this.showTrashModal = false;
             } catch (e) {
                 this.showToast('清空失敗：' + (e.message || e), 'error');
             }
         },
 
+        // 列出當前白板字紙簍
         async openTrashModal() {
             this.showTrashModal = true;
             try {
-                var resp = await API.listTrash();
-                this.trashItems = resp.items || [];
+                var resp = await API.listCanvasTrash(this.canvasId);
+                // 攤平成 modal 期待的結構：id=atom_id, title/thumbnail_url 從 atom 取，updated_at 用 deleted_at
+                this.trashItems = (resp.items || []).map(function(t) {
+                    return {
+                        id: t.atom_id,
+                        title: t.atom ? t.atom.title : '(無標題)',
+                        thumbnail_url: t.atom ? t.atom.thumbnail_url : null,
+                        atom_type: t.atom ? t.atom.atom_type : 'F',
+                        updated_at: t.deleted_at,
+                    };
+                });
             } catch (e) {
                 this.showToast('讀取字紙簍失敗：' + (e.message || e), 'error');
                 this.trashItems = [];
             }
         },
 
-        // 救回字紙簍卡片到當前白板，落在視口中央
+        // 救回此白板字紙簍中的卡片（用原座標）
         async restoreFromTrash(atomId) {
-            var vp = this.$refs.viewport;
-            var rect = vp ? vp.getBoundingClientRect() : { width: 800, height: 600 };
-            var pos_x = (-this.panX / this.zoom) + (rect.width / 2 / this.zoom) - 130;
-            var pos_y = (-this.panY / this.zoom) + (rect.height / 2 / this.zoom) - 80;
             try {
-                await API.restoreAtom(atomId, { canvas_id: this.canvasId, pos_x: pos_x, pos_y: pos_y });
+                await API.restoreFromCanvasTrash(this.canvasId, [atomId]);
                 this.trashItems = this.trashItems.filter(function(t) { return t.id !== atomId; });
                 await this.loadData();
                 var self = this;
                 this.$nextTick(function() { self.renderConnections(); });
-                this.showToast('已救回到當前白板', 'success');
+                this.showToast('已救回到原位置', 'success');
             } catch (e) {
                 this.showToast('救回失敗：' + (e.message || e), 'error');
             }
@@ -791,25 +819,6 @@ function whiteboardApp(canvasId) {
         },
 
         // ============================================
-        // Add Existing Atom
-        // ============================================
-        async openAddExistingModal() {
-            this.searchQuery = ''; this.searchResults = []; this.showAddExistingModal = true; await this.doSearch();
-        },
-
-        async doSearch() {
-            const existingIds = new Set(this.atoms.map(ca => ca.atom_id));
-            if (this.searchQuery.trim()) { const resp = await API.searchSemantic(this.searchQuery, 20); this.searchResults = (resp.items || []).filter(a => !existingIds.has(a.id)); }
-            else { const resp = await API.getAtoms({ per_page: 20 }); this.searchResults = (resp.items || []).filter(a => !existingIds.has(a.id)); }
-        },
-
-        async addExistingAtom(atomId) {
-            await API.addAtomToCanvas(this.canvasId, { atom_id: atomId, pos_x: (-this.panX / this.zoom) + 200 + Math.random() * 100, pos_y: (-this.panY / this.zoom) + 200 + Math.random() * 100 });
-            this.searchResults = this.searchResults.filter(a => a.id !== atomId);
-            await this.loadData(); this.$nextTick(() => this.renderConnections());
-        },
-
-        // ============================================
         // Update / Remove / Delete
         // ============================================
         async updateAtomField(ca, field, value) {
@@ -844,10 +853,104 @@ function whiteboardApp(canvasId) {
             await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
+        // 開啟「徹底刪除」防呆 modal：列出此卡片在哪些白板/包/字紙簍
+        // 用戶可選擇要刪哪些白板的引用，全選 = 真徹底刪除（hard delete atom 本體）
         async deleteAtomEntirely(ca) {
             if (this.isSnapshot) return;
-            await API.deleteAtom(ca.atom_id); if (this.selectedAtomId === ca.atom_id) this.deselectCard();
-            await this.loadData(); this.$nextTick(() => this.renderConnections());
+            this.hardDeleteAtomId = ca.atom_id;
+            this.hardDeleteAtomTitle = (ca.atom && ca.atom.title) ? ca.atom.title : '';
+            this.hardDeleteUsage = null;
+            this.hardDeleteSelectedCanvasIds = [];
+            this.showHardDeleteModal = true;
+            try {
+                var usage = await API.getAtomUsage(ca.atom_id);
+                this.hardDeleteUsage = usage;
+                // 預設只勾選當前白板
+                var cur = this.canvas ? this.canvas.id : null;
+                if (cur && usage.canvases.some(function(c) { return c.canvas_id === cur; })) {
+                    this.hardDeleteSelectedCanvasIds = [cur];
+                }
+            } catch (e) {
+                this.showToast('載入引用清單失敗：' + (e.message || e), 'error');
+                this.closeHardDeleteModal();
+            }
+        },
+
+        closeHardDeleteModal() {
+            this.showHardDeleteModal = false;
+            this.hardDeleteAtomId = null;
+            this.hardDeleteAtomTitle = '';
+            this.hardDeleteUsage = null;
+            this.hardDeleteSelectedCanvasIds = [];
+        },
+
+        toggleHardDeleteCanvas(canvasId) {
+            var i = this.hardDeleteSelectedCanvasIds.indexOf(canvasId);
+            if (i >= 0) this.hardDeleteSelectedCanvasIds.splice(i, 1);
+            else this.hardDeleteSelectedCanvasIds.push(canvasId);
+        },
+
+        toggleSelectAllHardDeleteCanvases() {
+            if (!this.hardDeleteUsage) return;
+            var all = this.hardDeleteUsage.canvases.map(function(c) { return c.canvas_id; });
+            if (this.hardDeleteSelectedCanvasIds.length === all.length) {
+                this.hardDeleteSelectedCanvasIds = [];
+            } else {
+                this.hardDeleteSelectedCanvasIds = all.slice();
+            }
+        },
+
+        get hardDeleteIsAllSelected() {
+            if (!this.hardDeleteUsage) return false;
+            return this.hardDeleteUsage.canvases.length > 0
+                && this.hardDeleteSelectedCanvasIds.length === this.hardDeleteUsage.canvases.length;
+        },
+
+        async confirmHardDelete() {
+            if (!this.hardDeleteUsage || this.hardDeleteSelectedCanvasIds.length === 0) return;
+            var atomId = this.hardDeleteAtomId;
+            var allSelected = this.hardDeleteIsAllSelected;
+            var selectedIds = this.hardDeleteSelectedCanvasIds.slice();
+
+            if (allSelected) {
+                var msg = '最後確認：將從 DB 徹底刪除這張卡片，以及全部白板、'
+                    + this.hardDeleteUsage.exchange_packs.length + ' 個交換包、'
+                    + this.hardDeleteUsage.canvas_trashes.length + ' 個白板字紙簍的引用。\n\n不可逆，繼續？';
+                if (!confirm(msg)) return;
+                try {
+                    await API.hardDeleteAtom(atomId);
+                    if (this.selectedAtomId === atomId) this.deselectCard();
+                    this.showToast('已從 DB 徹底刪除', 'success');
+                } catch (e) {
+                    this.showToast('刪除失敗：' + (e.message || e), 'error');
+                    return;
+                }
+            } else {
+                // 對選中的白板逐一解除連結
+                var usage = this.hardDeleteUsage;
+                var canvasMap = {};
+                usage.canvases.forEach(function(c) { canvasMap[c.canvas_id] = c; });
+                var failed = 0;
+                for (var i = 0; i < selectedIds.length; i++) {
+                    var c = canvasMap[selectedIds[i]];
+                    if (!c) continue;
+                    try { await API.removeCanvasAtom(c.canvas_atom_id); }
+                    catch (e) { failed++; console.warn('removeCanvasAtom failed', e); }
+                }
+                if (failed > 0) {
+                    this.showToast('完成，' + failed + ' 個白板解除失敗', 'warn');
+                } else {
+                    this.showToast('已從 ' + selectedIds.length + ' 個白板解除連結', 'success');
+                }
+                if (this.selectedAtomId === atomId
+                    && selectedIds.indexOf(this.canvas ? this.canvas.id : -1) >= 0) {
+                    this.deselectCard();
+                }
+            }
+
+            this.closeHardDeleteModal();
+            await this.loadData();
+            this.$nextTick(() => this.renderConnections());
         },
 
         // ============================================
@@ -1159,7 +1262,24 @@ function whiteboardApp(canvasId) {
         onCanvasContextMenu(e) { e.preventDefault(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'canvas' }; },
         onCardContextMenu(e, ca) { e.preventDefault(); e.stopPropagation(); this.contextMenu = { x: e.clientX, y: e.clientY, type: 'card', ca: ca }; },
         closeContextMenu() { this.contextMenu = null; },
-        contextAddAtom() { this.openNewAtomModal({ clientX: this.contextMenu.x, clientY: this.contextMenu.y }); this.closeContextMenu(); },
+        contextAddAtom() {
+            var cx = this.contextMenu.x, cy = this.contextMenu.y;
+            this.closeContextMenu();
+            this.addCardInline(cx, cy);
+        },
+
+        async addCardInline(clientX, clientY) {
+            if (this.isSnapshot) { this.showToast('歸檔白板為唯讀快照', 'warn'); return; }
+            var pos = this.screenToCanvas(clientX, clientY);
+            try {
+                var atom = await API.createAtom({ title: '', content: '', atom_type: 'A', source: 'human' });
+                await this.openCardEditor(atom.id);
+                var ed = this.openEditors.find(function(e) { return e.atomId === atom.id; });
+                if (ed) ed._pendingCanvasPos = { x: pos.x, y: pos.y };
+            } catch (e) {
+                this.showToast('新增卡片失敗：' + (e.message || e), 'error');
+            }
+        },
 
         // ============================================
         // Block Chain & Navigation
@@ -1233,6 +1353,9 @@ function whiteboardApp(canvasId) {
     _mergeInto(app, whiteboardGroupsMixin());
     if (typeof whiteboardMediaMixin === 'function') {
         _mergeInto(app, whiteboardMediaMixin());
+    }
+    if (typeof whiteboardExchangeMixin === 'function') {
+        _mergeInto(app, whiteboardExchangeMixin());
     }
 
     return app;

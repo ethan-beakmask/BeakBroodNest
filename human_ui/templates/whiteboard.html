@@ -14,13 +14,14 @@
 <script src="/beakcortex/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-media.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-exchange.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard.js?v={{ cache_ver }}"></script>
 {% endblock %}
 
 {% block body %}
 <div x-data="whiteboardApp('{{ canvas_slug }}')" x-init="init()"
      @click="closeContextMenu()"
-     @keydown.escape.window="if(cardEditorOpen){ closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showAddExistingModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
+     @keydown.escape.window="if(exchangeFollowItem){ cancelExchangeFollow(); return; } if(showHardDeleteModal){ closeHardDeleteModal(); return; } if(cardEditorOpen){ closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showExchangeModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
 
     <!-- Toast -->
     <div class="toast-container">

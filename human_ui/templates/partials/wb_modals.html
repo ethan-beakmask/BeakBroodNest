@@ -219,42 +219,288 @@
         </div>
     </template>
 
-    <!-- 放置現有卡片 -->
-    <template x-if="showAddExistingModal">
+    <!-- 交換卡片 Modal：寄存 + 取出（兩 tab） -->
+    <template x-if="showExchangeModal">
         <div class="modal-overlay">
-            <div class="modal">
+            <div class="modal" style="max-width:880px;">
                 <div class="modal-header">
-                    <h3>放置現有卡片</h3>
-                    <button class="modal-close" @click="showAddExistingModal=false">x</button>
+                    <h3>交換</h3>
+                    <button class="modal-close" @click="closeExchangeModal()">x</button>
                 </div>
-                <div class="modal-body">
-                    <div class="form-group">
-                        <input class="form-control" x-model="searchQuery" placeholder="搜尋卡片..."
-                               @input.debounce.300ms="doSearch()">
-                    </div>
-                    <div style="max-height:300px; overflow-y:auto;">
-                        <template x-for="a in searchResults" :key="a.id">
-                            <div class="flex items-center justify-between" style="padding:8px; border-bottom:1px solid var(--border-light);">
-                                <div style="flex:1; min-width:0;">
-                                    <div style="font-size:13px; font-weight:500;" x-text="a.title"></div>
-                                    <div class="text-sm text-muted">
-                                        <span x-text="a.atom_type + ' / ' + a.lifecycle"></span>
-                                        <span x-show="a.similarity > 0" x-text="' / sim:' + (a.similarity ? a.similarity.toFixed(2) : '')" style="color:var(--accent);"></span>
-                                        <span x-show="a.match_type === 'text'" style="color:var(--warning);">[text]</span>
+
+                <!-- Tab 切換 -->
+                <div class="ex-tabs">
+                    <button class="ex-tab"
+                            :class="{ active: exchangeTab === 'stash' }"
+                            :disabled="!exchangeStashAvailable"
+                            :title="exchangeStashAvailable ? '' : '需先選取卡片才能寄存'"
+                            @click="if(exchangeStashAvailable){exchangeTab='stash';}">寄存</button>
+                    <button class="ex-tab"
+                            :class="{ active: exchangeTab === 'take' }"
+                            @click="exchangeTab='take'; exchangeView='list';">取出</button>
+                </div>
+
+                <div class="modal-body" style="padding:16px;">
+
+                    <!-- 寄存 tab -->
+                    <template x-if="exchangeTab === 'stash'">
+                        <div>
+                            <div class="form-group">
+                                <label style="display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px;">交換包名稱</label>
+                                <input class="form-control" x-model="exchangeStashName"
+                                       maxlength="300"
+                                       placeholder="輸入名稱（同名允許）">
+                            </div>
+                            <div class="form-group" style="margin-top:12px;">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="radio" x-model="exchangeStashMode" value="copy">
+                                    <span><strong>複製</strong>到交換包（卡片仍留在當前白板）</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:6px;">
+                                    <input type="radio" x-model="exchangeStashMode" value="move">
+                                    <span><strong>移動</strong>到交換包（從當前白板解除連結）</span>
+                                </label>
+                            </div>
+                            <div style="margin-top:12px;font-size:13px;color:var(--text-muted);"
+                                 x-text="'將寄存 ' + (selectedAtomIds.length || (selectedAtomId ? 1 : 0)) + ' 張卡片'"></div>
+                        </div>
+                    </template>
+
+                    <!-- 取出 tab -->
+                    <template x-if="exchangeTab === 'take'">
+                        <div>
+                            <!-- list view：所有交換包 -->
+                            <template x-if="exchangeView === 'list'">
+                                <div>
+                                    <div x-show="exchangePacks.length === 0" class="empty-state"
+                                         style="padding:32px;text-align:center;color:var(--text-muted);">
+                                        尚無交換包
+                                    </div>
+                                    <div x-show="exchangePacks.length > 0" class="ex-pack-grid">
+                                        <template x-for="p in exchangePacks" :key="p.id">
+                                            <div class="ex-pack-card" @click="openExchangePackDetail(p.id)">
+                                                <div class="ex-pack-name" x-text="p.name"></div>
+                                                <div class="ex-pack-meta">
+                                                    <span x-text="p.atom_count + ' 張'"></span>
+                                                    <span x-show="p.source_canvas_name"
+                                                          x-text="' · 來自 ' + p.source_canvas_name"></span>
+                                                </div>
+                                                <div class="ex-pack-time"
+                                                     x-text="(p.created_at || '').replace('T',' ').substring(0,16)"></div>
+                                            </div>
+                                        </template>
                                     </div>
                                 </div>
-                                <button class="btn btn-sm btn-primary" style="margin-left:8px; flex-shrink:0;" @click="addExistingAtom(a.id)">放置</button>
-                            </div>
-                        </template>
-                        <div x-show="searchResults.length === 0" class="empty-state" style="padding:20px;">
-                            <p>沒有可放置的卡片</p>
+                            </template>
+
+                            <!-- detail view：包內卡片清單 -->
+                            <template x-if="exchangeView === 'detail' && exchangePackDetail">
+                                <div>
+                                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                        <button class="btn-ghost btn-sm" @click="exchangeView='list'; exchangePackDetail=null;">&laquo; 返回</button>
+                                        <strong x-text="exchangePackDetail.name"></strong>
+                                        <span class="text-muted" style="font-size:12px;"
+                                              x-text="'（' + (exchangePackDetail.items || []).length + ' 張）'"></span>
+                                    </div>
+
+                                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                                        <button class="btn-ghost btn-sm" @click="toggleSelectAllExchangeAtoms()">
+                                            <span x-text="exchangeSelectedAtomIds.length === (exchangePackDetail.items||[]).length && (exchangePackDetail.items||[]).length > 0 ? '取消全選' : '全選'"></span>
+                                        </button>
+                                        <span style="font-size:12px;color:var(--text-muted);"
+                                              x-text="'已選 ' + exchangeSelectedAtomIds.length + ' 張'"></span>
+                                    </div>
+
+                                    <div x-show="(exchangePackDetail.items || []).length === 0" class="empty-state"
+                                         style="padding:24px;text-align:center;color:var(--text-muted);">
+                                        此包是空的
+                                    </div>
+
+                                    <div class="ex-detail-grid">
+                                        <template x-for="it in (exchangePackDetail.items || [])" :key="it.id">
+                                            <div class="ex-detail-card"
+                                                 :class="{ selected: exchangeSelectedAtomIds.includes(it.id) }"
+                                                 @click="toggleExchangeAtomSelect(it.id)">
+                                                <div class="ex-detail-thumb">
+                                                    <template x-if="it.thumbnail_url">
+                                                        <img :src="it.thumbnail_url" :alt="it.title" draggable="false">
+                                                    </template>
+                                                    <template x-if="!it.thumbnail_url">
+                                                        <div class="ex-detail-thumb-text" x-text="it.title || '(無標題)'"></div>
+                                                    </template>
+                                                </div>
+                                                <div class="ex-detail-meta">
+                                                    <div class="ex-detail-title" :title="it.title" x-text="it.title || '(無標題)'"></div>
+                                                    <div class="ex-detail-sub">
+                                                        <span x-text="it.atom_type + ' / ' + it.lifecycle"></span>
+                                                    </div>
+                                                </div>
+                                                <div class="ex-detail-checkbox">
+                                                    <input type="checkbox"
+                                                           :checked="exchangeSelectedAtomIds.includes(it.id)"
+                                                           @click.stop="toggleExchangeAtomSelect(it.id)">
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
-                    </div>
+                    </template>
                 </div>
+
+                <!-- Footer：依 tab + view 顯示不同按鈕 -->
                 <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showAddExistingModal=false">關閉</button>
+                    <template x-if="exchangeTab === 'stash'">
+                        <div style="display:flex;gap:8px;width:100%;justify-content:flex-end;">
+                            <button class="btn btn-secondary" @click="closeExchangeModal()">取消</button>
+                            <button class="btn btn-primary"
+                                    :disabled="!exchangeStashName.trim()"
+                                    @click="confirmExchangeStash()">確認寄存</button>
+                        </div>
+                    </template>
+                    <template x-if="exchangeTab === 'take' && exchangeView === 'list'">
+                        <div style="display:flex;gap:8px;width:100%;justify-content:flex-end;">
+                            <button class="btn btn-secondary" @click="closeExchangeModal()">關閉</button>
+                        </div>
+                    </template>
+                    <template x-if="exchangeTab === 'take' && exchangeView === 'detail'">
+                        <div style="display:flex;gap:8px;width:100%;justify-content:space-between;">
+                            <button class="btn btn-sm" style="color:var(--danger);"
+                                    @click="confirmDeleteExchangePack()">刪整包</button>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn btn-sm" style="color:var(--danger);"
+                                        :disabled="exchangeSelectedAtomIds.length === 0"
+                                        @click="confirmRemoveAtomsFromPack()">從包刪除選中</button>
+                                <button class="btn btn-primary"
+                                        :disabled="exchangeSelectedAtomIds.length === 0"
+                                        @click="confirmTakeFromExchange()">取用選中</button>
+                                <button class="btn btn-secondary" @click="closeExchangeModal()">關閉</button>
+                            </div>
+                        </div>
+                    </template>
                 </div>
             </div>
+        </div>
+    </template>
+
+    <!-- 徹底刪除卡片防呆 Modal -->
+    <template x-if="showHardDeleteModal">
+        <div class="modal-overlay">
+            <div class="modal" style="max-width:680px;">
+                <div class="modal-header">
+                    <h3 style="color:#dc2626;">徹底刪除卡片 -- 防呆檢查</h3>
+                    <button class="modal-close" @click="closeHardDeleteModal()">x</button>
+                </div>
+                <div class="modal-body" style="padding:16px;">
+
+                    <div style="margin-bottom:12px;padding:10px;background:#fef2f2;border-left:3px solid #dc2626;border-radius:4px;">
+                        <div style="font-size:13px;font-weight:600;color:#7f1d1d;">
+                            卡片：<span x-text="hardDeleteAtomTitle || '(無標題)'"></span>
+                            <span class="text-muted" style="font-weight:normal;font-size:11px;"
+                                  x-text="' (id: ' + hardDeleteAtomId + ')'"></span>
+                        </div>
+                    </div>
+
+                    <template x-if="!hardDeleteUsage">
+                        <div class="empty-state" style="padding:24px;text-align:center;">載入中...</div>
+                    </template>
+
+                    <template x-if="hardDeleteUsage">
+                        <div>
+                            <!-- 白板清單 -->
+                            <div style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+                                <div style="font-size:13px;font-weight:600;">
+                                    出現在 <span x-text="hardDeleteUsage.canvases.length"></span> 個白板上：
+                                </div>
+                                <button class="btn-ghost btn-sm" @click="toggleSelectAllHardDeleteCanvases()">
+                                    <span x-text="hardDeleteSelectedCanvasIds.length === hardDeleteUsage.canvases.length && hardDeleteUsage.canvases.length > 0 ? '取消全選' : '全選'"></span>
+                                </button>
+                            </div>
+
+                            <div x-show="hardDeleteUsage.canvases.length === 0" class="empty-state"
+                                 style="padding:16px;text-align:center;color:var(--text-muted);font-size:12px;">
+                                未在任何白板使用
+                            </div>
+
+                            <div class="hd-canvas-list">
+                                <template x-for="c in hardDeleteUsage.canvases" :key="c.canvas_id">
+                                    <label class="hd-canvas-row"
+                                           :class="{ selected: hardDeleteSelectedCanvasIds.includes(c.canvas_id) }">
+                                        <input type="checkbox"
+                                               :checked="hardDeleteSelectedCanvasIds.includes(c.canvas_id)"
+                                               @change="toggleHardDeleteCanvas(c.canvas_id)">
+                                        <span class="hd-canvas-name" x-text="c.name"></span>
+                                        <span class="hd-canvas-meta" x-text="c.connection_count + ' 條連線'"></span>
+                                    </label>
+                                </template>
+                            </div>
+
+                            <!-- 交換包與白板字紙簍（資訊性，全選刪除時連帶清除） -->
+                            <div x-show="hardDeleteUsage.exchange_packs.length > 0 || hardDeleteUsage.canvas_trashes.length > 0"
+                                 style="margin-top:14px;padding:10px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:4px;font-size:12px;">
+                                <div style="font-weight:600;margin-bottom:6px;color:var(--text-muted);">其他引用（僅在「徹底刪除」時連帶清除）：</div>
+                                <div x-show="hardDeleteUsage.exchange_packs.length > 0" style="margin-bottom:4px;">
+                                    交換包 (<span x-text="hardDeleteUsage.exchange_packs.length"></span>)：
+                                    <template x-for="p in hardDeleteUsage.exchange_packs" :key="p.pack_id">
+                                        <span class="hd-tag" x-text="p.name"></span>
+                                    </template>
+                                </div>
+                                <div x-show="hardDeleteUsage.canvas_trashes.length > 0">
+                                    字紙簍 (<span x-text="hardDeleteUsage.canvas_trashes.length"></span>)：
+                                    <template x-for="t in hardDeleteUsage.canvas_trashes" :key="t.trash_id">
+                                        <span class="hd-tag" x-text="t.name"></span>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <!-- 動作說明（依當前選擇變化） -->
+                            <div style="margin-top:14px;padding:12px;border-radius:4px;font-size:13px;line-height:1.6;"
+                                 :style="hardDeleteIsAllSelected ? 'background:#fee2e2;border:1px solid #dc2626;color:#7f1d1d;' : 'background:#fef9c3;border:1px solid #ca8a04;color:#713f12;'">
+                                <template x-if="hardDeleteIsAllSelected">
+                                    <div>
+                                        <strong>將從 DB 徹底刪除卡片本體</strong>，所有引用連帶清除：所有白板、<span x-text="hardDeleteUsage.exchange_packs.length"></span> 個交換包、<span x-text="hardDeleteUsage.canvas_trashes.length"></span> 個白板字紙簍。<strong>不可逆。</strong>
+                                    </div>
+                                </template>
+                                <template x-if="!hardDeleteIsAllSelected && hardDeleteSelectedCanvasIds.length > 0">
+                                    <div>
+                                        將從 <strong x-text="hardDeleteSelectedCanvasIds.length"></strong> 個白板解除連結（卡片本體保留，其他白板與交換包不受影響）。
+                                    </div>
+                                </template>
+                                <template x-if="hardDeleteSelectedCanvasIds.length === 0">
+                                    <div style="color:var(--text-muted);">請至少勾選一個白板。</div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="closeHardDeleteModal()">取消</button>
+                    <button class="btn"
+                            :class="hardDeleteIsAllSelected ? '' : 'btn-primary'"
+                            :style="hardDeleteIsAllSelected ? 'background:#dc2626;color:#fff;border-color:#dc2626;' : ''"
+                            :disabled="!hardDeleteUsage || hardDeleteSelectedCanvasIds.length === 0"
+                            @click="confirmHardDelete()">
+                        <span x-text="hardDeleteIsAllSelected ? '徹底刪除（不可逆）' : '解除選中白板的連結'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- 單選取出時：滑鼠跟隨的半透明卡片提示 -->
+    <template x-if="exchangeFollowItem">
+        <div class="ex-follow-card"
+             :style="'left:' + (exchangeFollowMouseX + 12) + 'px; top:' + (exchangeFollowMouseY + 12) + 'px;'">
+            <div class="ex-follow-thumb">
+                <template x-if="exchangeFollowItem.thumbnail_url">
+                    <img :src="exchangeFollowItem.thumbnail_url" :alt="exchangeFollowItem.title" draggable="false">
+                </template>
+                <template x-if="!exchangeFollowItem.thumbnail_url">
+                    <div class="ex-follow-thumb-text" x-text="exchangeFollowItem.title || '(無標題)'"></div>
+                </template>
+            </div>
+            <div class="ex-follow-hint">點空白處放下，Esc 取消</div>
         </div>
     </template>
 
@@ -1131,9 +1377,9 @@
                     <div class="context-menu-item" @click="openCardEditor(contextMenu.ca.atom_id); closeContextMenu()">開啟卡片</div>
                     <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">側欄編輯</div>
                     <div class="context-menu-separator"></div>
-                    <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除</div>
+                    <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除（解除連結，不可救回）</div>
                     <div class="context-menu-item danger"
-                         @click="if(confirm('刪除此卡片? 所有白板都會移除')) { deleteAtomEntirely(contextMenu.ca); closeContextMenu(); }">刪除卡片</div>
+                         @click="deleteAtomEntirely(contextMenu.ca); closeContextMenu()">徹底刪除卡片...（彈出防呆對話）</div>
                 </div>
             </template>
             <template x-if="contextMenu.type === 'groups'">

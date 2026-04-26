@@ -189,6 +189,107 @@ body { overflow: auto; }
     border-radius: 4px;
     vertical-align: middle;
 }
+
+/* 三個破壞層級對照圖 */
+.destruct-levels {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 20px 0;
+}
+.destruct-level {
+    border-radius: var(--radius-lg);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.destruct-level.lv-unlink {
+    background: #f1f5f9;
+    border: 2px solid #94a3b8;
+}
+.destruct-level.lv-trash {
+    background: #fef9c3;
+    border: 2px solid #ca8a04;
+}
+.destruct-level.lv-hard {
+    background: #fee2e2;
+    border: 2px solid #dc2626;
+}
+.destruct-level h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+}
+.destruct-level.lv-unlink h3 { color: #475569; }
+.destruct-level.lv-trash h3 { color: #92400e; }
+.destruct-level.lv-hard h3 { color: #991b1b; }
+
+.destruct-level .destruct-trigger {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: monospace;
+    background: rgba(255, 255, 255, 0.6);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+.destruct-level .destruct-effect {
+    font-size: 12px;
+    line-height: 1.6;
+}
+.destruct-level .destruct-effect ul {
+    padding-left: 16px;
+    margin: 4px 0;
+}
+.destruct-level .destruct-effect li {
+    font-size: 12px;
+    margin-bottom: 2px;
+}
+.destruct-level .destruct-recover {
+    font-size: 11px;
+    margin-top: auto;
+    padding: 6px 8px;
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 600;
+}
+.destruct-level.lv-unlink .destruct-recover {
+    background: #cbd5e1;
+    color: #475569;
+}
+.destruct-level.lv-trash .destruct-recover {
+    background: #fde68a;
+    color: #92400e;
+}
+.destruct-level.lv-hard .destruct-recover {
+    background: #fca5a5;
+    color: #7f1d1d;
+}
+
+/* 比較表 */
+.destruct-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13px;
+}
+.destruct-table th, .destruct-table td {
+    padding: 8px 10px;
+    border: 1px solid var(--border-light);
+    text-align: left;
+    vertical-align: top;
+}
+.destruct-table th {
+    background: var(--bg-secondary);
+    font-size: 12px;
+    font-weight: 700;
+}
+.destruct-table .col-q {
+    font-weight: 600;
+    width: 28%;
+}
+.destruct-table .yes-mark { color: #16a34a; font-weight: 700; }
+.destruct-table .no-mark { color: #dc2626; font-weight: 700; }
 </style>
 {% endblock %}
 
@@ -277,6 +378,122 @@ body { overflow: auto; }
     </div>
 
     <p>這確保了你在一張白板上的操作不會意外破壞其他白板上仍在使用的知識關係。</p>
+
+    <!-- ===== 三個破壞層級 ===== -->
+    <h2>三個破壞層級：移除卡片的選擇</h2>
+
+    <p>在白板上「讓一張卡片消失」有三種不同層級的動作，破壞範圍與可救回性不同。
+       選錯了可能影響其他白板，甚至遺失資料。請依需求挑選。</p>
+
+    <div class="destruct-levels">
+        <div class="destruct-level lv-unlink">
+            <h3>1. 解除連結</h3>
+            <div class="destruct-trigger">右鍵 &rarr; 從白板移除</div>
+            <div class="destruct-effect">
+                <strong>影響範圍</strong>
+                <ul>
+                    <li>當前白板：移除</li>
+                    <li>其他白板：不變</li>
+                    <li>卡片本體：保留</li>
+                    <li>交換包：不變</li>
+                </ul>
+            </div>
+            <div class="destruct-recover">不可救回（但卡片本體仍在 DB）</div>
+        </div>
+
+        <div class="destruct-level lv-trash">
+            <h3>2. 白板字紙簍</h3>
+            <div class="destruct-trigger">Delete 鍵 / 工具列「移除」</div>
+            <div class="destruct-effect">
+                <strong>影響範圍</strong>
+                <ul>
+                    <li>當前白板：移除（進此白板字紙簍）</li>
+                    <li>其他白板：不變</li>
+                    <li>卡片本體：保留</li>
+                    <li>交換包：不變</li>
+                </ul>
+            </div>
+            <div class="destruct-recover">可從此白板字紙簍救回（原位置）</div>
+        </div>
+
+        <div class="destruct-level lv-hard">
+            <h3>3. 徹底刪除</h3>
+            <div class="destruct-trigger">右鍵 &rarr; 徹底刪除卡片</div>
+            <div class="destruct-effect">
+                <strong>影響範圍</strong>
+                <ul>
+                    <li>當前白板：移除</li>
+                    <li>其他白板：全部移除</li>
+                    <li>卡片本體：從 DB 刪除</li>
+                    <li>交換包：連帶清除</li>
+                    <li>所有關係：連帶清除</li>
+                </ul>
+            </div>
+            <div class="destruct-recover">不可救回（不會進任何字紙簍）</div>
+        </div>
+    </div>
+
+    <h3 style="font-size:15px;margin-top:24px;">速查表</h3>
+    <table class="destruct-table">
+        <thead>
+            <tr>
+                <th class="col-q">問題</th>
+                <th>1. 解除連結</th>
+                <th>2. 白板字紙簍</th>
+                <th>3. 徹底刪除</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="col-q">會影響其他白板上同一張卡片嗎？</td>
+                <td><span class="no-mark">否</span></td>
+                <td><span class="no-mark">否</span></td>
+                <td><span class="yes-mark">是（全部消失）</span></td>
+            </tr>
+            <tr>
+                <td class="col-q">卡片本體（DB 紀錄）會被刪除嗎？</td>
+                <td><span class="no-mark">否</span></td>
+                <td><span class="no-mark">否</span></td>
+                <td><span class="yes-mark">是（不可逆）</span></td>
+            </tr>
+            <tr>
+                <td class="col-q">事後可救回嗎？</td>
+                <td><span class="no-mark">否</span></td>
+                <td><span class="yes-mark">可（從此白板字紙簍）</span></td>
+                <td><span class="no-mark">否</span></td>
+            </tr>
+            <tr>
+                <td class="col-q">交換包內的引用會受影響嗎？</td>
+                <td><span class="no-mark">否</span></td>
+                <td><span class="no-mark">否</span></td>
+                <td><span class="yes-mark">是（連帶清除）</span></td>
+            </tr>
+            <tr>
+                <td class="col-q">我只是想暫時把卡片從這個白板移開，可能改天再放回來</td>
+                <td>-</td>
+                <td><strong>建議用此</strong></td>
+                <td>-</td>
+            </tr>
+            <tr>
+                <td class="col-q">我整理白板，這張不適合放這裡，但別處可能還用得到</td>
+                <td><strong>建議用此</strong></td>
+                <td>-</td>
+                <td>-</td>
+            </tr>
+            <tr>
+                <td class="col-q">我確定這張卡片不再需要，所有地方都該消失</td>
+                <td>-</td>
+                <td>-</td>
+                <td><strong>建議用此</strong></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p><strong>關於字紙簍是「白板私有」的：</strong>
+       每張白板各自有獨立字紙簍，互不干擾。在白板 A 用 Delete 移除的卡片，只會出現在白板 A 的字紙簍，不會跑到白板 B。這是為了避免與「交換包」（跨白板暫存區）混淆。</p>
+
+    <p><strong>關於與交換包的差別：</strong>
+       字紙簍是「我刪掉了，但留個後悔藥」；交換包是「我主動寄存，準備搬到別的白板」。前者是負面動作的緩衝，後者是正面動作的中介。</p>
 
     <!-- ===== 快捷鍵 ===== -->
     <h2>白板快捷操作</h2>

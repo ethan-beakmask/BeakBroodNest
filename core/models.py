@@ -451,6 +451,51 @@ class CanvasGroup(Base):
         }
 
 
+class CanvasTrash(Base):
+    """白板私有字紙簍：從白板 Delete 的卡片暫存區。
+    救回時用 original_* 欄位重建 canvas_atoms。
+    atom 本體不動 -- 此表純粹是「白板級的刪除歷史」。
+    """
+    __tablename__ = 'canvas_trash'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    canvas_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='CASCADE'), nullable=False
+    )
+    atom_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=False
+    )
+    deleted_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, nullable=False
+    )
+    original_pos_x: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    original_pos_y: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    original_width: Mapped[float | None] = mapped_column(Float, nullable=True)
+    original_height: Mapped[float | None] = mapped_column(Float, nullable=True)
+    z_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    visual_style: Mapped[str] = mapped_column(Text, nullable=False, default='{}')
+
+    atom: Mapped["KnowledgeAtom"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint('canvas_id', 'atom_id', name='uq_canvas_trash'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'canvas_id': self.canvas_id,
+            'atom_id': self.atom_id,
+            'deleted_at': self.deleted_at.isoformat() if self.deleted_at else None,
+            'original_pos_x': self.original_pos_x,
+            'original_pos_y': self.original_pos_y,
+            'original_width': self.original_width,
+            'original_height': self.original_height,
+            'z_index': self.z_index,
+            'visual_style': self.visual_style,
+        }
+
+
 class CanvasConnection(Base):
     __tablename__ = 'canvas_connections'
 
@@ -504,6 +549,83 @@ class CanvasConnection(Base):
             d['graph_family'] = self.unified_relation.graph_family
             d['semantic_layer'] = self.unified_relation.semantic_layer
         return d
+
+
+# ============================================================
+# 5.4b 交換卡片 (Exchange Packs)
+# 寄存與取出的中介倉，不屬於任何白板
+# ============================================================
+
+class ExchangePack(Base):
+    __tablename__ = 'exchange_packs'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    source_canvas_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='SET NULL'), nullable=True
+    )
+    owner: Mapped[str] = mapped_column(String(100), nullable=False, default='ethan')
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    pack_atoms: Mapped[list["ExchangePackAtom"]] = relationship(
+        back_populates='pack',
+        cascade='all, delete-orphan',
+        order_by='ExchangePackAtom.sort_order',
+    )
+
+    def to_dict(self, include_source_name: str | None = None, atom_count: int | None = None):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'source_canvas_id': self.source_canvas_id,
+            'source_canvas_name': include_source_name,
+            'owner': self.owner,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'atom_count': atom_count if atom_count is not None else len(self.pack_atoms),
+        }
+
+
+class ExchangePackAtom(Base):
+    __tablename__ = 'exchange_pack_atoms'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pack_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('exchange_packs.id', ondelete='CASCADE'), nullable=False
+    )
+    atom_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    original_pos_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    original_pos_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    original_width: Mapped[float | None] = mapped_column(Float, nullable=True)
+    original_height: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+
+    pack: Mapped["ExchangePack"] = relationship(back_populates='pack_atoms')
+    atom: Mapped["KnowledgeAtom"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint('pack_id', 'atom_id', name='uq_exchange_pack_atom'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'pack_id': self.pack_id,
+            'atom_id': self.atom_id,
+            'sort_order': self.sort_order,
+            'original_pos_x': self.original_pos_x,
+            'original_pos_y': self.original_pos_y,
+            'original_width': self.original_width,
+            'original_height': self.original_height,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'atom': self.atom.to_dict() if self.atom else None,
+        }
 
 
 # ============================================================
