@@ -284,7 +284,7 @@ function whiteboardMediaMixin() {
 
                     var atom = await API.createAtom({
                         title: rec.original_filename,
-                        content: '[PDF: ' + rec.original_filename + '](' + rec.url + ')',
+                        content: '',
                         content_json: content_json,
                         content_type: 'media',
                         atom_type: 'F',
@@ -312,47 +312,45 @@ function whiteboardMediaMixin() {
             return !!(ca && ca.atom && ca.atom.content_type === 'media');
         },
 
-        // 只剩 PDF 用；圖片改走普通卡片快路徑（_firstRowIsImage + isImageOnlyCard）
-        // 同時識別 pdfThumbnail（舊資料）與 pdfReader（新資料）
-        mediaCardKind(ca) {
+        // 在 content_json 內找第一個 pdfReader/pdfThumbnail node（不假設是 first child）
+        _findPdfNodeInCa(ca) {
             if (!this.isMediaCard(ca)) return null;
             var cj = ca.atom.content_json;
-            if (cj && cj.content && cj.content.length > 0) {
-                var first = cj.content[0];
-                if (first && (first.type === 'pdfThumbnail' || first.type === 'pdfReader')) return 'pdf';
+            if (!cj || !cj.content) return null;
+            for (var i = 0; i < cj.content.length; i++) {
+                var n = cj.content[i];
+                if (n && (n.type === 'pdfReader' || n.type === 'pdfThumbnail')) return { node: n, index: i };
             }
             return null;
         },
 
+        // 只剩 PDF 用；圖片改走普通卡片快路徑（_firstRowIsImage + isImageOnlyCard）
+        mediaCardKind(ca) {
+            return this._findPdfNodeInCa(ca) ? 'pdf' : null;
+        },
+
         mediaCardPdfToken(ca) {
-            if (this.mediaCardKind(ca) !== 'pdf') return '';
-            var cj = ca.atom.content_json;
-            var first = cj.content[0];
-            return (first && first.attrs && first.attrs.token) || '';
+            var hit = this._findPdfNodeInCa(ca);
+            return (hit && hit.node.attrs && hit.node.attrs.token) || '';
         },
 
         // 公開方法：給模板用，回傳該媒體卡的 PDF 縮圖 token（無則 null）
         mediaCardPdfThumbnailToken(ca) {
-            if (this.mediaCardKind(ca) !== 'pdf') return null;
-            var cj = ca.atom.content_json;
-            if (!cj || !cj.content || cj.content.length === 0) return null;
-            var first = cj.content[0];
-            return (first && first.attrs && first.attrs.thumbnailToken) || null;
+            var hit = this._findPdfNodeInCa(ca);
+            return (hit && hit.node.attrs && hit.node.attrs.thumbnailToken) || null;
         },
 
         // 是否為 pdfReader 類型（新版本，編輯器內顯閱讀器）
         isPdfReaderCard(ca) {
-            if (this.mediaCardKind(ca) !== 'pdf') return false;
-            var cj = ca.atom.content_json;
-            var first = cj.content[0];
-            return !!(first && first.type === 'pdfReader');
+            var hit = this._findPdfNodeInCa(ca);
+            return !!(hit && hit.node.type === 'pdfReader');
         },
 
         // 取得 viewMode（pdfReader 用：reader / thumbnail）
         pdfReaderViewMode(ca) {
-            if (!this.isPdfReaderCard(ca)) return null;
-            var first = ca.atom.content_json.content[0];
-            return (first.attrs && first.attrs.viewMode) || 'reader';
+            var hit = this._findPdfNodeInCa(ca);
+            if (!hit || hit.node.type !== 'pdfReader') return null;
+            return (hit.node.attrs && hit.node.attrs.viewMode) || 'reader';
         },
 
         // 白板右鍵切換 PDF reader viewMode（reader ↔ thumbnail）
@@ -367,16 +365,16 @@ function whiteboardMediaMixin() {
                 this.showToast('請先關閉編輯器再切換顯示模式', 'warning');
                 return;
             }
+            var hit = this._findPdfNodeInCa(ca);
+            if (!hit) return;
             var cj = ca.atom.content_json;
-            if (!cj || !cj.content || cj.content.length === 0) return;
-            var first = cj.content[0];
-            var current = (first.attrs && first.attrs.viewMode) || 'reader';
+            var current = (hit.node.attrs && hit.node.attrs.viewMode) || 'reader';
             var next = current === 'reader' ? 'thumbnail' : 'reader';
-            // 不可變更新：建立新 first node，避免 Alpine reactive 路徑混淆
-            var newFirst = Object.assign({}, first, {
-                attrs: Object.assign({}, first.attrs || {}, { viewMode: next }),
+            var newNode = Object.assign({}, hit.node, {
+                attrs: Object.assign({}, hit.node.attrs || {}, { viewMode: next }),
             });
-            var newContent = [newFirst].concat(cj.content.slice(1));
+            var newContent = cj.content.slice();
+            newContent[hit.index] = newNode;
             var newJson = Object.assign({}, cj, { content: newContent });
             try {
                 var resp = await API.updateAtom(ca.atom_id, { content_json: newJson });

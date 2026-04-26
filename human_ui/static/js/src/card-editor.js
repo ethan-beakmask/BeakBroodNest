@@ -455,15 +455,18 @@ class CardEditor {
     detectPdfMediaNode() {
         if (!this.editor) return null
         const doc = this.editor.state.doc
-        if (doc.content.size === 0 || doc.childCount === 0) return null
-        const first = doc.firstChild
-        if (!first) return null
-        const t = first.type.name
-        if (t !== 'pdfReader' && t !== 'pdfThumbnail') return null
+        let found = null
+        doc.forEach((node) => {
+            if (found) return
+            const t = node.type.name
+            if (t === 'pdfReader' || t === 'pdfThumbnail') found = node
+        })
+        if (!found) return null
+        const t = found.type.name
         return {
             kind: t,
-            viewMode: t === 'pdfReader' ? (first.attrs.viewMode || 'reader') : 'thumbnail',
-            attrs: { ...first.attrs },
+            viewMode: t === 'pdfReader' ? (found.attrs.viewMode || 'reader') : 'thumbnail',
+            attrs: { ...found.attrs },
         }
     }
 

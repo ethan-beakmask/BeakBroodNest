@@ -530,26 +530,88 @@ function whiteboardCardEditorMixin() {
             return hadAny;
         },
 
-        // 從 ed reactive 屬性判斷 PDF 卡片類型（避免依賴非 reactive 的 _ceStore）
-        ceIsPdfReaderEditor(editorId) {
-            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
-            return !!(ed && ed._pdfKind === 'pdfReader' && ed._pdfViewMode === 'reader');
+        // 在 doc 內找第一個 pdfReader/pdfThumbnail node（不假設它是 first child）
+        _findPdfNode(contentJson) {
+            if (!contentJson || !contentJson.content) return null;
+            var arr = contentJson.content;
+            for (var i = 0; i < arr.length; i++) {
+                var n = arr[i];
+                if (n && (n.type === 'pdfReader' || n.type === 'pdfThumbnail')) return n;
+            }
+            return null;
         },
         ceIsPdfMediaEditor(editorId) {
             var ed = this.openEditors.find(function(e) { return e.id === editorId; });
-            return !!(ed && ed._pdfKind);
+            if (!ed) return false;
+            return !!this._findPdfNode(ed._contentJson);
+        },
+        ceIsPdfReaderEditor(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return false;
+            var pdf = this._findPdfNode(ed._contentJson);
+            if (!pdf || pdf.type !== 'pdfReader') return false;
+            var vm = ed._pdfViewMode || (pdf.attrs && pdf.attrs.viewMode) || 'reader';
+            return vm === 'reader';
         },
 
-        // openCardEditor 完成後呼叫：依 editor 內首節點，回填 ed 的 PDF reactive 屬性
+        // openCardEditor 完成後呼叫：把 viewMode 從 doc 同步到 ed reactive 變數
         _refreshEditorPdfMeta(editorId) {
             var ed = this.openEditors.find(function(e) { return e.id === editorId; });
             if (!ed) return;
             var ce = _ceStore[ed.atomId];
-            if (!ce) { ed._pdfKind = null; ed._pdfViewMode = null; return; }
+            if (!ce) return;
             var meta = ce.detectPdfMediaNode();
-            if (!meta) { ed._pdfKind = null; ed._pdfViewMode = null; return; }
-            ed._pdfKind = meta.kind;
+            if (!meta) return;
             ed._pdfViewMode = meta.viewMode;
+        },
+
+        // 是否已對 PDF 抽過全文索引（看 atom.content 是否非空）
+        ceIsPdfIndexed(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return false;
+            var ca = (this.atoms || []).find(function(a) { return a.atom_id === ed.atomId; });
+            if (!ca || !ca.atom) return false;
+            return !!(ca.atom.content && ca.atom.content.trim().length > 0);
+        },
+
+        // PDF 全文索引：抽文字寫入 atom.content，使 note_search 能搜到內文
+        async ceIndexPdfText(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var ca = (this.atoms || []).find(function(a) { return a.atom_id === ed.atomId; });
+            if (!ca || !ca.atom || !ca.atom.content_json) {
+                this.showToast('找不到 PDF 卡片資料', 'error');
+                return;
+            }
+            var hit = this._findPdfNodeInCa ? this._findPdfNodeInCa(ca) : null;
+            if (!hit) {
+                this.showToast('此卡片不是 PDF', 'warning');
+                return;
+            }
+            var token = hit.node.attrs && hit.node.attrs.token;
+            if (!token) { this.showToast('PDF 尚未上傳完成', 'warning'); return; }
+            if (!window.PdfUtils) { this.showToast('PDF 工具尚未載入', 'error'); return; }
+
+            this.showToast('索引 PDF 內文中，請稍候...', 'info');
+            try {
+                var url = '/beakcortex/files/' + encodeURIComponent(token);
+                var text = await window.PdfUtils.extractAllText(url);
+                if (!text || !text.trim()) {
+                    this.showToast('PDF 沒有可抽取的文字（可能是純圖檔掃描件）', 'warning');
+                    return;
+                }
+                var resp = await API.updateAtom(ed.atomId, { content: text });
+                ca.atom.content = text;
+                if (resp && resp.updated_at) {
+                    ca.atom.updated_at = resp.updated_at;
+                    ed._knownServerTs = resp.updated_at;
+                }
+                this.refreshSidebarAtoms();
+                this.showToast('已索引 ' + text.length + ' 字', 'success');
+            } catch (e) {
+                console.error('PDF index failed:', e);
+                this.showToast('索引失敗：' + (e.message || e), 'error');
+            }
         },
 
         // 切換 PDF reader 顯示模式（reader ↔ thumbnail），改 viewMode 並標記 dirty

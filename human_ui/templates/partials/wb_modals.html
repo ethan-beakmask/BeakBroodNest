@@ -807,10 +807,12 @@
                             </button>
                             <span class="tb-sep"></span>
                             <button @click="ceTogglePdfViewMode(ed.id)" :disabled="ed.readonly"
-                                    title="reader / thumbnail 切換">
-                                <template x-if="ceIsPdfReaderEditor(ed.id)"><span>切為縮圖</span></template>
-                                <template x-if="!ceIsPdfReaderEditor(ed.id)"><span>切為閱讀器</span></template>
-                            </button>
+                                    title="reader / thumbnail 切換"
+                                    x-text="ceIsPdfReaderEditor(ed.id) ? '切為縮圖' : '切為閱讀器'"></button>
+                            <span class="tb-sep"></span>
+                            <button @click="ceIndexPdfText(ed.id)" :disabled="ed.readonly"
+                                    :title="ceIsPdfIndexed(ed.id) ? '重新抽取全文寫入搜尋索引' : '抽取 PDF 全文存入 atom.content，使 note_search 能命中'"
+                                    x-text="ceIsPdfIndexed(ed.id) ? '已索引（重新索引）' : '索引內文 (OCR)'"></button>
                             <span style="flex:1;"></span>
                             <span style="font-size:11px;color:#94a3b8;">PDF 媒體卡片</span>
                         </div>
