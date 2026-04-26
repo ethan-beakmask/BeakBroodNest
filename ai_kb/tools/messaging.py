@@ -33,7 +33,6 @@ _current_cwd: str = ''
 # 從啟動目錄推斷專案身份的對照表
 _CWD_PROJECT_MAP = {
     '/opt/BeakCortex': 'project:beakcortex',
-    '/opt/BeakCortex-dev': 'project:beakcortex',
     '/opt/BeakPlatform': 'project:beakplatform',
     '/opt/BeakPlatform-dev': 'project:beakplatform',
     '/opt/BeakMeshWall': 'project:beakmeshwall',

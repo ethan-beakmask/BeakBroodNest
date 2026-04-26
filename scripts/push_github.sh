@@ -19,7 +19,6 @@ EXCLUDE_FILES=(
     "CLAUDE.md"
     # scripts - 內部工具
     "scripts/push_github.sh"
-    "scripts/setup_dev.sh"
     "scripts/schedule.json"
 )
 

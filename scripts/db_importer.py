@@ -36,7 +36,6 @@ from parse_conversation import (
 
 # config.ini 搜尋路徑（優先順序）
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakCortex-dev/config.ini',
     '/opt/BeakCortex/config.ini',
 ]
 

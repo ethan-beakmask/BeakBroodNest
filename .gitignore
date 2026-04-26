@@ -28,8 +28,8 @@ scripts/.scheduler_state.json
 # 備份檔
 backups/
 
-# 舊 MVP 資料庫
-OLD/test9_Heptabase/heptabase.db
+# 舊 MVP 參考（合併單目錄前的 prod 殘留，僅本機保留）
+OLD/
 
 # Node.js (Tiptap build)
 node_modules/

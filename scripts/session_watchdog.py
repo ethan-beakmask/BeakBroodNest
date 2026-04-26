@@ -45,7 +45,7 @@ from typing import Dict, List, Optional, Tuple
 CLAUDE_PROJECTS_DIR = os.path.expanduser('~/.claude/projects')
 
 # 狀態檔（記錄上次檢查時的 JSONL 狀態）
-STATE_FILE = '/opt/BeakCortex-dev/data/watchdog_state.json'
+STATE_FILE = '/opt/BeakCortex/data/watchdog_state.json'
 
 # 閾值
 THRESHOLDS = {
@@ -57,7 +57,6 @@ THRESHOLDS = {
 
 # DB 連線
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakCortex-dev/config.ini',
     '/opt/BeakCortex/config.ini',
 ]
 
@@ -577,7 +576,7 @@ def main():
   python session_watchdog.py --import-current      寫入 session_logs
 
 搭配 crontab:
-  * * * * * ethan /opt/BeakCortex/venv/bin/python3 /opt/BeakCortex-dev/scripts/session_watchdog.py --check --alert >> /opt/tmp/BeakCortex-dev-session_watchdog.log 2>&1
+  * * * * * ethan /opt/BeakCortex/venv/bin/python3 /opt/BeakCortex/scripts/session_watchdog.py --check --alert >> /opt/tmp/BeakCortex-session_watchdog.log 2>&1
         """
     )
     group = parser.add_mutually_exclusive_group(required=True)

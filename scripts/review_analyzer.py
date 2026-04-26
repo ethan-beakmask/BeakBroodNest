@@ -32,7 +32,6 @@ from typing import Dict, List, Optional
 # ============================================================
 
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakCortex-dev/config.ini',
     '/opt/BeakCortex/config.ini',
 ]
 
@@ -408,7 +407,7 @@ def save_review_results(conn, conversation_id: str,
 # 結果寫入 JSON（供觀察 UI 讀取）
 # ============================================================
 
-RESULTS_DIR = '/opt/BeakCortex-dev/data/reviews'
+RESULTS_DIR = '/opt/BeakCortex/data/reviews'
 
 
 def save_results_json(conversation_id: str, error_stats: dict,
