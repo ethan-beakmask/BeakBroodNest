@@ -43,7 +43,7 @@
 - 技術棧: Python Flask + PostgreSQL + SQLAlchemy + MCP SDK
 - Port: 5170（對外經 nginx → gunicorn 127.0.0.1:5171，由 systemd 管理）
 - DB: `beak_cortex`（user: `beak_cortex`, pw: `postgres123`）
-- MCP 設定: `/opt/.mcp.json`
+- MCP 設定: `/opt/.mcp.json`（故意置於父目錄讓所有 /opt/* 子專案向上搜尋共用 beak_cortex；`/mcp` 命令 UI 會把路徑誤標為 `/opt/BeakCortex/.mcp.json`，那是 UI 拼接 project 路徑的顯示行為，實檔在父目錄）
 - 規劃文件: `docs/VISION.md`
 - 舊 MVP 參考: `OLD/`（不入版控）
 - 對外發佈: `scripts/push_github.sh`（過濾內部檔案後 force push 到 GitHub `ethan-beakmask/BeakCortex`）
