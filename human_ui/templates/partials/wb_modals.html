@@ -1377,6 +1377,7 @@
                     <div class="context-menu-item" @click="openCardEditor(contextMenu.ca.atom_id); closeContextMenu()">開啟卡片</div>
                     <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">側欄編輯</div>
                     <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="sendToCanvasTrash(contextMenu.ca); closeContextMenu()">丟到字紙簍（可救回）</div>
                     <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除（解除連結，不可救回）</div>
                     <div class="context-menu-item danger"
                          @click="deleteAtomEntirely(contextMenu.ca); closeContextMenu()">徹底刪除卡片...（彈出防呆對話）</div>

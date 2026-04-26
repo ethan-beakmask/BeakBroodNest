@@ -30,6 +30,7 @@ function whiteboardApp(canvasId) {
         panX: 0, panY: 0, zoom: 1,
         isPanning: false,
         panStartX: 0, panStartY: 0,
+        hasStoredViewport: false,
 
         // Drag
         dragCard: null,
@@ -292,7 +293,7 @@ function whiteboardApp(canvasId) {
                 this.groups.forEach(function(g) { self0.recalcGroupBounds(g.id); });
                 this.renderConnections();
                 this.setupWheelZoom();
-                if (this.atoms.length > 0) this.fitView();
+                if (this.atoms.length > 0 && !this.hasStoredViewport) this.fitView();
                 this.renderMinimap();
                 // 啟動遠端變更偵測
                 this.startPolling();
@@ -317,6 +318,21 @@ function whiteboardApp(canvasId) {
                     e.preventDefault();
                 }
             }, true);
+            window.addEventListener('pagehide', function() {
+                if (self.isSnapshot || !self.canvasId) return;
+                try {
+                    fetch('/beakcortex/api/canvases/' + self.canvasId, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            viewport_x: self.panX,
+                            viewport_y: self.panY,
+                            viewport_zoom: self.zoom,
+                        }),
+                        keepalive: true,
+                    });
+                } catch (e) { /* best-effort, ignore */ }
+            });
         },
 
         async loadData() {
@@ -338,6 +354,7 @@ function whiteboardApp(canvasId) {
             if (canvas.viewport_x || canvas.viewport_y || (canvas.viewport_zoom && canvas.viewport_zoom !== 1)) {
                 this.panX = canvas.viewport_x || 0; this.panY = canvas.viewport_y || 0;
                 this.zoom = canvas.viewport_zoom || 1; this.updateTransform();
+                this.hasStoredViewport = true;
             }
             // 還原 RT 設定（URL 參數優先於 DB）
             var urlOverride = new URLSearchParams(window.location.search).get('render');
@@ -850,6 +867,13 @@ function whiteboardApp(canvasId) {
         async removeFromCanvas(ca) {
             if (this.isSnapshot) return;
             await API.removeCanvasAtom(ca.id); if (this.selectedAtomId === ca.atom_id) this.deselectCard();
+            await this.loadData(); this.$nextTick(() => this.renderConnections());
+        },
+
+        async sendToCanvasTrash(ca) {
+            if (this.isSnapshot) return;
+            await API.addToCanvasTrash(this.canvasId, [ca.atom_id]);
+            if (this.selectedAtomId === ca.atom_id) this.deselectCard();
             await this.loadData(); this.$nextTick(() => this.renderConnections());
         },
 
