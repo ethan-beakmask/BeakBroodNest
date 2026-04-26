@@ -5,7 +5,7 @@
 import datetime
 import secrets
 from sqlalchemy import (
-    Integer, String, Text, Float, Boolean, DateTime, Date,
+    Integer, BigInteger, String, Text, Float, Boolean, DateTime, Date,
     ForeignKey, UniqueConstraint, Index, CheckConstraint, Numeric
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -96,6 +96,7 @@ class KnowledgeAtom(Base):
     content_type: Mapped[str] = mapped_column(
         String(50), default='markdown'
     )  # markdown, text, checklist, table, image_ref, url, media_ref, ai_io
+    thumbnail_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
 
     # 分類
     atom_type: Mapped[str] = mapped_column(
@@ -170,6 +171,7 @@ class KnowledgeAtom(Base):
             'content': self.content,
             'content_json': self.content_json,
             'content_type': self.content_type,
+            'thumbnail_url': self.thumbnail_url,
             'atom_type': self.atom_type,
             'schema_id': self.schema_id,
             'lifecycle': self.lifecycle,
@@ -1216,6 +1218,56 @@ class UnifiedRelation(Base):
 # ============================================================
 # 7.0 欄位變更歷史（Audit Log）
 # ============================================================
+
+# ============================================================
+# 7.1 檔案上傳（圖片 / 一般檔案）
+# ============================================================
+
+class UploadedFile(Base):
+    """上傳檔案的中介表。
+
+    token 為公開隨機識別碼，作為 URL 的一部分，但下載 endpoint 仍要登入。
+    stored_path 是磁碟上的實際檔案路徑（檔名 = token），原檔名只記在這裡。
+    kind:
+      image -- 圖片，會用 Tiptap Image node 嵌入
+      file  -- 一般檔案，用 ;;file 結構化 entry 呈現
+    """
+    __tablename__ = 'uploaded_files'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    mime_type: Mapped[str] = mapped_column(
+        String(200), nullable=False, default='application/octet-stream'
+    )
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default='file'
+    )  # image, file
+    uploaded_by: Mapped[str] = mapped_column(String(100), nullable=False, default='ethan')
+    uploaded_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, nullable=False
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        Index('idx_uploaded_files_kind', 'kind'),
+        Index('idx_uploaded_files_uploaded_at', 'uploaded_at'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'token': self.token,
+            'original_filename': self.original_filename,
+            'mime_type': self.mime_type,
+            'size_bytes': self.size_bytes,
+            'kind': self.kind,
+            'uploaded_by': self.uploaded_by,
+            'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None,
+        }
+
 
 class EntryFieldChangeLog(Base):
     """Entry 欄位值的變更歷史。

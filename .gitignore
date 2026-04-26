@@ -16,6 +16,12 @@ config.ini
 # 暫存
 temp/
 
+# 資料目錄（uploads 已含於下；其他如 dump 與執行狀態也不入版控）
+data/
+
+# Signals batch 執行輸出（每次跑都不同）
+scripts/signals_batch_*.json
+
 # Scheduler 執行狀態（每台不同）
 scripts/.scheduler_state.json
 

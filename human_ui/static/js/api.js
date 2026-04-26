@@ -31,6 +31,9 @@ const API = {
     createAtom(data)        { return this.post('/beakcortex/api/atoms', data); },
     updateAtom(id, data)    { return this.put('/beakcortex/api/atoms/' + id, data); },
     deleteAtom(id)          { return this.del('/beakcortex/api/atoms/' + id); },
+    listTrash()             { return this.get('/beakcortex/api/atoms/trash'); },
+    restoreAtom(id, data)   { return this.post('/beakcortex/api/atoms/' + id + '/restore', data); },
+    emptyTrash()            { return this.del('/beakcortex/api/atoms/trash/empty'); },
 
     // Canvases
     getCanvases(includeArchived) { return this.get('/beakcortex/api/canvases' + (includeArchived ? '?include_archived=1' : '')); },
@@ -106,4 +109,24 @@ const API = {
 
     // Promote entry to atom
     promoteEntry(entryId)           { return this.post('/beakcortex/api/entries/' + entryId + '/promote', {}); },
+
+    // File upload (multipart/form-data, 不能用 _fetch)
+    async uploadFile(file, kind) {
+        var fd = new FormData();
+        fd.append('file', file);
+        if (kind) fd.append('kind', kind);
+        var resp = await fetch('/beakcortex/api/files/upload', {
+            method: 'POST',
+            body: fd,
+        });
+        if (resp.status === 401) {
+            window.location.href = '/beakcortex/login';
+            throw new Error('未登入');
+        }
+        if (!resp.ok) {
+            var err = await resp.json().catch(function() { return { error: resp.statusText }; });
+            throw new Error(err.error || resp.statusText);
+        }
+        return resp.json();
+    },
 };

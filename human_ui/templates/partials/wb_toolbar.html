@@ -1,12 +1,12 @@
             <!-- 工具列 -->
             <div class="wb-toolbar">
-                <button @click="openNewAtomModal()">+ 卡片</button>
-                <button @click="openAddExistingModal()">+ 現有</button>
+                <button x-show="selectedAtomIds.length >= 2" @click="createGroupFromSelection()">群組</button>
+                <div class="separator" x-show="selectedAtomIds.length >= 2"></div>
+                <button @click="openAddExistingModal()">+ 取回</button>
+                <button @click="openTrashModal()" title="字紙簍">字紙簍</button>
                 <div class="separator"></div>
                 <button :class="{ active: mode === 'connect' }" @click="toggleConnectMode()">連線</button>
                 <div class="separator"></div>
-                <button x-show="selectedAtomIds.length >= 2" @click="createGroupFromSelection()">群組</button>
-                <div class="separator" x-show="selectedAtomIds.length >= 2"></div>
                 <button x-show="selectedAtomIds.length >= 1 || selectedAtomId"
                         style="color:var(--danger);"
                         @click="deleteSelected()">刪除</button>
@@ -26,6 +26,9 @@
                 <button @click="cycleCardSizeMode()" :title="'卡片高度：' + cardSizeModeLabels[cardSizeMode]"
                         x-text="cardSizeModeLabels[cardSizeMode]"
                         style="min-width:36px;"></button>
+                <button :class="{ active: showThumbnailTitle }"
+                        @click="toggleShowThumbnailTitle()"
+                        :title="showThumbnailTitle ? '隱藏縮圖卡標題（hover 顯示）' : '顯示縮圖卡標題'">標題</button>
                 <div class="separator"></div>
                 <button @click="exportCanvas('json')" title="匯出 JSON">&#8615;</button>
                 <button @click="showImportModal=true" title="匯入">&#8613;</button>
@@ -91,13 +94,14 @@
                     <option value="F">F - 碎片</option>
                 </select>
                 <select class="wb-batch-select" @change="if($event.target.value){batchUpdateLifecycle($event.target.value);$event.target.value=''}">
-                    <option value="">改週期...</option>
-                    <option value="active">active</option>
-                    <option value="aging">aging</option>
-                    <option value="archived">archived</option>
-                    <option value="terminal">terminal</option>
+                    <option value="">知識生命週期...</option>
+                    <option value="active">active 活躍中</option>
+                    <option value="aging">aging 老化中</option>
+                    <option value="archived">archived 已歸檔</option>
+                    <option value="terminal">terminal 終結</option>
                 </select>
                 <button class="wb-batch-select" @click="batchTagActiveTab=0; showBatchTagModal=true">標籤...</button>
+                <button class="wb-batch-select" @click="createGroupFromSelection()">群組</button>
                 <button class="wb-batch-select" @click="openSelectedInEditor()">編輯</button>
                 <div style="flex:1;"></div>
                 <button class="btn-ghost btn-sm" style="color:var(--danger);" @click="deleteSelected()">移除</button>

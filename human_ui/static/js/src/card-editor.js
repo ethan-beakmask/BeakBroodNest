@@ -7,7 +7,8 @@ import StarterKit from '@tiptap/starter-kit'
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { TaskList } from '@tiptap/extension-task-list'
 import { TaskItem } from '@tiptap/extension-task-item'
-import { Image } from '@tiptap/extension-image'
+import { ResizableImage } from './resizable-image.js'
+import { PdfThumbnail } from './pdf-thumbnail.js'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { Typography } from '@tiptap/extension-typography'
 import { Highlight } from '@tiptap/extension-highlight'
@@ -48,7 +49,7 @@ class CardEditor {
                 TableCell,
                 TaskList,
                 TaskItem.configure({ nested: true }),
-                Image.configure({
+                ResizableImage.configure({
                     inline: true,
                 }),
                 Placeholder.configure({
@@ -62,6 +63,7 @@ class CardEditor {
                     transformCopiedText: true,
                 }),
                 StructuredEntry,
+                PdfThumbnail,
                 SlashCommand,
                 SelectionToolbar,
             ],
@@ -320,7 +322,21 @@ class CardEditor {
             const code = state.selection.node.attrs.schemaCode || 'freetext'
             text = '[' + code + '] ' + text
         }
-        if (!text.trim()) return null
+        // 純文字為空但 selection 含非文字 node（例如圖片）時，產出顯示用 placeholder
+        if (!text.trim()) {
+            const tags = []
+            slice.content.descendants(n => {
+                if (n.type.name === 'image') {
+                    const src = (n.attrs && n.attrs.src) ? String(n.attrs.src) : ''
+                    const tail = src ? src.split('/').pop() : ''
+                    tags.push('[圖片' + (tail ? ' ' + tail : '') + ']')
+                    return false
+                }
+                return true
+            })
+            if (tags.length === 0) return null
+            text = tags.join(' ')
+        }
 
         // 刪除必須在同一個 state 上操作
         if (shouldDelete) {

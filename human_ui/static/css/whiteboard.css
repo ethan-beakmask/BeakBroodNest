@@ -248,6 +248,127 @@
     flex-direction: column;
 }
 
+/* ---- 媒體卡片（PDF）：去除 chrome ---- */
+.wb-card.wb-card-media .wb-card-header,
+.wb-card.wb-card-media .wb-card-footer { display: none; }
+.wb-card.wb-card-media .wb-card-body { padding: 0; }
+.wb-card.wb-card-media { background: #ffffff; }
+.wb-card.wb-card-media.selected,
+.wb-card.wb-card-media.multi-selected { outline: 2px solid var(--accent); }
+
+/* 白板上 markdown 渲染的 <img> 一律禁止原生拖拉，避免被拖出建立新卡 */
+.wb-card .wb-markdown img {
+    -webkit-user-drag: none;
+    user-drag: none;
+    pointer-events: none;
+}
+
+/* ---- 縮圖卡片（atom.thumbnail_url 顯式指定）：純縮圖呈現 ---- */
+.wb-card.wb-card--has-thumbnail { background: transparent; border: none; box-shadow: none; }
+.wb-card.wb-card--has-thumbnail .wb-card-footer { display: none; }
+.wb-card.wb-card--has-thumbnail .wb-card-body { padding: 0; }
+
+/* header 預設隱藏，hover 卡片 0.5s 後浮現（半透明覆在圖上） */
+.wb-card.wb-card--has-thumbnail .wb-card-header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 4;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease 0s;
+}
+.wb-card.wb-card--has-thumbnail:hover .wb-card-header {
+    opacity: 1;
+    transition-delay: 0.5s;
+}
+.wb-card.wb-card--has-thumbnail .wb-card-header .wb-card-title { color: #fff; }
+
+/* 工具列「標題」開啟 → 縮圖卡標題列一律顯示，不需 hover */
+.wb-canvas.wb-thumb-show-title .wb-card.wb-card--has-thumbnail .wb-card-header {
+    opacity: 1;
+    pointer-events: auto;
+    transition-delay: 0s;
+}
+
+.wb-thumbnail-image {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: transparent;
+}
+.wb-thumbnail-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+    user-drag: none;
+    pointer-events: none;
+}
+.wb-card.wb-card--has-thumbnail.selected,
+.wb-card.wb-card--has-thumbnail.multi-selected { outline: 2px solid var(--accent); }
+
+.wb-media-pdf {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    color: #334155;
+}
+.wb-media-pdf-thumb {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f1f5f9;
+}
+.wb-media-pdf-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+.wb-media-pdf-error {
+    color: #fca5a5;
+    font-size: 11px;
+    padding: 8px;
+}
+.wb-media-pdf-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    flex-shrink: 0;
+}
+.wb-media-pdf-icon {
+    background: #dc2626;
+    color: #fff;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-weight: 700;
+    font-size: 10px;
+    flex-shrink: 0;
+}
+.wb-media-pdf-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .wb-card-content {
     font-size: 12px;
     color: var(--text-secondary);
@@ -1144,4 +1265,64 @@
     white-space: nowrap;
     flex: 1;
     min-width: 0;
+}
+
+/* ---- 字紙簍 modal ---- */
+.trash-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+.trash-card {
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    padding: 8px;
+    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.trash-thumb {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #f1f5f9;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.trash-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    user-select: none;
+}
+.trash-thumb-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 8px;
+    text-align: center;
+    word-break: break-all;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+}
+.trash-meta {
+    flex: 1;
+    min-width: 0;
+}
+.trash-title {
+    font-size: 12px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.trash-time {
+    font-size: 10px;
+    color: var(--text-muted);
 }

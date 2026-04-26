@@ -258,6 +258,48 @@
         </div>
     </template>
 
+    <!-- 字紙簍：列軟刪除卡片，可救回到當前白板，可清空 -->
+    <template x-if="showTrashModal">
+        <div class="modal-overlay">
+            <div class="modal" style="max-width:720px;">
+                <div class="modal-header">
+                    <h3>字紙簍 <span class="text-muted" style="font-size:12px;font-weight:normal;" x-text="'（' + trashItems.length + ' 張）'"></span></h3>
+                    <button class="modal-close" @click="showTrashModal=false">x</button>
+                </div>
+                <div class="modal-body" style="padding:12px;">
+                    <div x-show="trashItems.length === 0" class="empty-state" style="padding:32px;text-align:center;color:var(--text-muted);">
+                        字紙簍是空的
+                    </div>
+                    <div x-show="trashItems.length > 0" class="trash-grid">
+                        <template x-for="t in trashItems" :key="t.id">
+                            <div class="trash-card">
+                                <div class="trash-thumb">
+                                    <template x-if="t.thumbnail_url">
+                                        <img :src="t.thumbnail_url" :alt="t.title" draggable="false">
+                                    </template>
+                                    <template x-if="!t.thumbnail_url">
+                                        <div class="trash-thumb-text" x-text="t.title || '(無標題)'"></div>
+                                    </template>
+                                </div>
+                                <div class="trash-meta">
+                                    <div class="trash-title" :title="t.title" x-text="t.title || '(無標題)'"></div>
+                                    <div class="trash-time" x-text="(t.updated_at || '').replace('T',' ').substring(0,16)"></div>
+                                </div>
+                                <button class="btn btn-sm btn-primary" @click="restoreFromTrash(t.id)">救回</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="showTrashModal=false">關閉</button>
+                    <button class="btn btn-sm" style="color:var(--danger);"
+                            x-show="trashItems.length > 0"
+                            @click="emptyTrash()">清空字紙簍</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <!-- 新增白板 -->
     <template x-if="showNewCanvasModal">
         <div class="modal-overlay">
@@ -442,6 +484,13 @@
                     </div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;">
+                    <label class="ce-topbar-transcribe"
+                           :class="{ disabled: openEditors.length !== 2 }"
+                           :title="openEditors.length !== 2 ? '需開啟 2 個文件' : '選取文字直接謄寫到另一文件'">
+                        <input type="checkbox" x-model="transcribeMode"
+                               :disabled="openEditors.length !== 2">
+                        <span>謄寫</span>
+                    </label>
                     <button class="btn btn-sm"
                             :style="ceStagingOpen ? 'background:#1e40af;color:#93c5fd;border:1px solid #3b82f6;' : 'background:rgba(255,255,255,0.1);color:#94a3b8;border:1px solid rgba(255,255,255,0.15);'"
                             @click="toggleStaging()"
@@ -519,26 +568,31 @@
                             <span class="tb-sep"></span>
                             <button @click="ceInsertLink(ed.id)" title="連結">Lk</button>
                             <button @click="ceInsertImage(ed.id)" title="插入圖片 (URL)">Img</button>
-                            <button @click="ceCmd('table', ed.id)" title="插入表格 3x3">Tb</button>
-                            <template x-if="ceTableActive[ed.id]">
-                                <span style="display:inline-flex;gap:2px;">
-                                    <span class="tb-sep"></span>
-                                    <button @click="ceCmd('addRowBefore', ed.id)" title="表格：上方插入列">+列&uarr;</button>
-                                    <button @click="ceCmd('addRowAfter', ed.id)" title="表格：下方插入列">+列&darr;</button>
-                                    <button @click="ceCmd('addColBefore', ed.id)" title="表格：左方插入欄">+欄&larr;</button>
-                                    <button @click="ceCmd('addColAfter', ed.id)" title="表格：右方插入欄">+欄&rarr;</button>
-                                    <button @click="ceCmd('deleteRow', ed.id)" title="表格：刪除目前列">-列</button>
-                                    <button @click="ceCmd('deleteCol', ed.id)" title="表格：刪除目前欄">-欄</button>
-                                    <button @click="ceCmd('deleteTable', ed.id)" title="表格：刪除整張表">-表</button>
-                                </span>
-                            </template>
-                            <span class="tb-sep"></span>
-                            <button @click="ceToggleAllEntries(ed.id)"
-                                    :title="ceHasCollapsed[ed.id] ? '展開所有 ;; 物件' : '收合所有 ;; 物件'"
-                                    x-text="ceHasCollapsed[ed.id] ? '[+]全展' : '[-]全收'"></button>
+                            <button @click="ceUploadImage(ed.id)" title="上傳圖片">Img&uarr;</button>
+                            <button @click="ceUploadFile(ed.id)" title="上傳檔案附件">&#128206;</button>
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('undo', ed.id)" title="復原">&#8630;</button>
                             <button @click="ceCmd('redo', ed.id)" title="重做">&#8631;</button>
+                            <span style="flex:1;"></span>
+                            <span class="tb-sep-strong"></span>
+                            <span class="tb-table-zone">
+                                <button @click="ceCmd('table', ed.id)" title="插入表格 3x3">Tb</button>
+                                <template x-if="ceTableActive[ed.id]">
+                                    <span style="display:inline-flex;gap:2px;">
+                                        <button @click="ceCmd('addRowBefore', ed.id)" title="表格：上方插入列">+列&uarr;</button>
+                                        <button @click="ceCmd('addRowAfter', ed.id)" title="表格：下方插入列">+列&darr;</button>
+                                        <button @click="ceCmd('addColBefore', ed.id)" title="表格：左方插入欄">+欄&larr;</button>
+                                        <button @click="ceCmd('addColAfter', ed.id)" title="表格：右方插入欄">+欄&rarr;</button>
+                                        <button @click="ceCmd('deleteRow', ed.id)" title="表格：刪除目前列">-列</button>
+                                        <button @click="ceCmd('deleteCol', ed.id)" title="表格：刪除目前欄">-欄</button>
+                                        <button @click="ceCmd('deleteTable', ed.id)" title="表格：刪除整張表">-表</button>
+                                    </span>
+                                </template>
+                            </span>
+                            <span class="tb-sep-strong"></span>
+                            <button @click="ceToggleAllEntries(ed.id)"
+                                    :title="ceHasCollapsed[ed.id] ? '展開所有 ;; 物件' : '收合所有 ;; 物件'"
+                                    x-text="ceHasCollapsed[ed.id] ? '[+]全展' : '[-]全收'"></button>
                         </div>
                         <!-- Pane Body (Tiptap mount point) -->
                         <div class="ce-pane-body"></div>
@@ -569,13 +623,6 @@
                 </div>
 
                 <div class="ce-staging-mode-bar">
-                    <label class="ce-transcribe-label"
-                           :class="{ disabled: openEditors.length !== 2 }"
-                           :title="openEditors.length !== 2 ? '需開啟 2 個文件' : '選取文字直接謄寫到另一文件'">
-                        <input type="checkbox" x-model="transcribeMode"
-                               :disabled="openEditors.length !== 2">
-                        <span>謄寫</span>
-                    </label>
                     <button class="ce-staging-mode-btn active"
                             @click="stagingMode = stagingMode === 'copy' ? 'move' : 'copy'"
                             x-text="stagingMode === 'copy' ? '複製' : '移動'"

@@ -6,12 +6,14 @@
 {% endblock %}
 {% block extra_js %}
 <script src="/beakcortex/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/pdf-utils.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-connections.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-minimap.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-card-editor.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-media.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard.js?v={{ cache_ver }}"></script>
 {% endblock %}
 
@@ -52,12 +54,14 @@
              @mousedown="onViewportMouseDown($event)"
              @mousemove="onViewportMouseMove($event)"
              @mouseup="onViewportMouseUp($event)"
+             @dragover.prevent="onCanvasDragOver($event)"
+             @drop.prevent="onCanvasDrop($event)"
              @contextmenu.prevent>
 
             {% include 'partials/wb_toolbar.html' %}
 
             <!-- 畫布 -->
-            <div class="wb-canvas" x-ref="canvas" @contextmenu.prevent>
+            <div class="wb-canvas" :class="{ 'wb-thumb-show-title': showThumbnailTitle }" x-ref="canvas" @contextmenu.prevent>
                 <svg class="wb-connections" x-ref="connSvg"></svg>
                 <!-- 連線預覽 -->
                 <svg class="wb-connections wb-preview-layer" x-ref="previewSvg">
@@ -102,6 +106,8 @@
                              'card-mode-min': cardSizeMode === 'min',
                              'card-mode-default': cardSizeMode === 'default',
                              'card-mode-full': cardSizeMode === 'full',
+                             'wb-card-media': isMediaCard(ca),
+                             'wb-card--has-thumbnail': hasThumbnail(ca),
                          }"
                          :style="getCardStyle(ca)"
                          @click.stop="mode === 'connect' ? onCardClickForConnect($event, ca) : onCardClick(ca)"
@@ -126,9 +132,38 @@
 
                         <div class="wb-card-body"
                              @mousedown.stop="editingAtomId !== ca.atom_id && onCardBodyMouseDown($event, ca)">
-                            <!-- 結構化 entry 行列（有 entries 時） -->
+                            <!-- 縮圖卡：直接顯示 thumbnail_url，隱藏其他內容 -->
+                            <template x-if="hasThumbnail(ca)">
+                                <div class="wb-thumbnail-image">
+                                    <img :src="ca.atom.thumbnail_url" :alt="ca.atom ? ca.atom.title : ''" draggable="false">
+                                </div>
+                            </template>
+                            <!-- 媒體卡片：PDF（第一頁縮圖 + 檔名） -->
+                            <template x-if="isMediaCard(ca) && mediaCardKind(ca) === 'pdf'">
+                                <div class="wb-media-pdf">
+                                    <div class="wb-media-pdf-thumb">
+                                        <!-- 已快取的縮圖：直接 <img>，瀏覽器接管 -->
+                                        <template x-if="mediaCardPdfThumbnailToken(ca)">
+                                            <img :src="'/beakcortex/files/' + mediaCardPdfThumbnailToken(ca)"
+                                                 :alt="ca.atom ? ca.atom.title : ''" draggable="false">
+                                        </template>
+                                        <!-- 沒快取（舊資料）：client side 即時渲染 -->
+                                        <template x-if="!mediaCardPdfThumbnailToken(ca)">
+                                            <div class="wb-media-pdf-thumb-fallback"
+                                                 x-init="$nextTick(() => renderPdfThumbFallback(ca, $el))">
+                                                <span style="color:#94a3b8;font-size:11px;">載入縮圖...</span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <div class="wb-media-pdf-label">
+                                        <span class="wb-media-pdf-icon">PDF</span>
+                                        <span class="wb-media-pdf-name" x-text="ca.atom ? ca.atom.title : ''"></span>
+                                    </div>
+                                </div>
+                            </template>
+                            <!-- 結構化 entry 行列（有 entries 且非 media、非縮圖卡） -->
                             <div class="wb-card-entries"
-                                 x-show="editingAtomId !== ca.atom_id && ca.atom && ca.atom.entries && ca.atom.entries.length > 0">
+                                 x-show="!isMediaCard(ca) && !hasThumbnail(ca) && editingAtomId !== ca.atom_id && ca.atom && ca.atom.entries && ca.atom.entries.length > 0">
                                 <template x-for="entry in (ca.atom && ca.atom.entries ? ca.atom.entries : [])" :key="entry.id">
                                     <div class="wb-entry-row"
                                          :id="'entry-' + ca.atom_id + '-' + entry.id"
@@ -141,9 +176,9 @@
                                     </div>
                                 </template>
                             </div>
-                            <!-- 純文字 markdown（無 entries 時） -->
+                            <!-- 純文字 markdown（無 entries 且非 media、非縮圖卡） -->
                             <div class="wb-card-content wb-markdown"
-                                 x-show="editingAtomId !== ca.atom_id && !(ca.atom && ca.atom.entries && ca.atom.entries.length > 0)"
+                                 x-show="!isMediaCard(ca) && !hasThumbnail(ca) && editingAtomId !== ca.atom_id && !(ca.atom && ca.atom.entries && ca.atom.entries.length > 0)"
                                  x-html="renderMarkdown(ca.atom ? ca.atom.content : '', 800)"></div>
                             <template x-if="editingAtomId === ca.atom_id">
                                 <textarea :id="'edit-' + ca.atom_id"

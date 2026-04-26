@@ -8,7 +8,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
-from core.models import KnowledgeAtom, Tag, CanvasAtom
+from core.models import KnowledgeAtom, Tag, CanvasAtom, Canvas
 from core import relations as rel_service
 from core import embeddings as embed_service
 
@@ -92,6 +92,30 @@ def list_atoms():
         })
 
 
+def _extract_thumbnail_url(content_json):
+    """從 Tiptap doc 中找出 attrs.thumbnail=true 的 image src。
+    深度遞迴整棵 doc tree（table/listItem/blockquote 內的 image 也能命中）。
+    多張被標時取第一個（編輯器端應維持單選紀律）。
+    """
+    if not isinstance(content_json, dict):
+        return None
+
+    def walk(node):
+        if not isinstance(node, dict):
+            return None
+        if node.get('type') == 'image':
+            attrs = node.get('attrs') or {}
+            if attrs.get('thumbnail') and attrs.get('src'):
+                return attrs['src']
+        for child in node.get('content') or []:
+            found = walk(child)
+            if found:
+                return found
+        return None
+
+    return walk(content_json)
+
+
 @bp.route('/api/atoms', methods=['POST'])
 def create_atom():
     """建立知識原子"""
@@ -99,12 +123,20 @@ def create_atom():
     if not data:
         return jsonify({'error': '需要 JSON body'}), 400
 
+    content_json = data.get('content_json')
+    # thumbnail_url：呼叫端顯式給定優先；否則從 content_json image attrs.thumbnail 萃取
+    if 'thumbnail_url' in data:
+        thumbnail_url = data['thumbnail_url']
+    else:
+        thumbnail_url = _extract_thumbnail_url(content_json)
+
     with session_scope() as s:
         atom = KnowledgeAtom(
             title=data.get('title', ''),
             content=data.get('content', ''),
-            content_json=data.get('content_json'),
+            content_json=content_json,
             content_type=data.get('content_type', 'markdown'),
+            thumbnail_url=thumbnail_url,
             atom_type=data.get('atom_type', 'F'),
             schema_id=data.get('schema_id'),
             lifecycle=data.get('lifecycle', 'active'),
@@ -192,6 +224,14 @@ def update_atom(atom_id):
             if field in data:
                 setattr(atom, field, data[field])
 
+        # thumbnail_url 同步邏輯：
+        #   - 呼叫端顯式給 thumbnail_url（包含 None）→ 直接以該值為準
+        #   - 沒給 thumbnail_url 但 content_json 有變更 → 從 content_json 重新萃取
+        if 'thumbnail_url' in data:
+            atom.thumbnail_url = data['thumbnail_url']
+        elif 'content_json' in data:
+            atom.thumbnail_url = _extract_thumbnail_url(data['content_json'])
+
         if 'tag_ids' in data:
             tags = s.query(Tag).filter(Tag.id.in_(data['tag_ids'])).all()
             atom.tags = tags
@@ -215,6 +255,120 @@ def delete_atom(atom_id):
         # 清理白板上的殘留卡片
         s.query(CanvasAtom).filter(CanvasAtom.atom_id == atom_id).delete()
         return jsonify({'message': f'原子 {atom_id} 已刪除'})
+
+
+@bp.route('/api/atoms/trash', methods=['GET'])
+def list_trash():
+    """列出字紙簍（is_deleted=true）的卡片，按 updated_at desc。
+    回傳輕量摘要：id / title / content preview / thumbnail_url / updated_at。
+    """
+    PREVIEW = 200
+    with session_scope() as s:
+        rows = (
+            s.query(
+                KnowledgeAtom.id,
+                KnowledgeAtom.title,
+                func.left(KnowledgeAtom.content, PREVIEW).label('content_preview'),
+                KnowledgeAtom.thumbnail_url,
+                KnowledgeAtom.atom_type,
+                KnowledgeAtom.updated_at,
+            )
+            .filter(KnowledgeAtom.is_deleted == True)
+            .order_by(KnowledgeAtom.updated_at.desc())
+            .all()
+        )
+        return jsonify({
+            'total': len(rows),
+            'items': [{
+                'id': r.id,
+                'title': r.title,
+                'content': r.content_preview or '',
+                'thumbnail_url': r.thumbnail_url,
+                'atom_type': r.atom_type,
+                'updated_at': r.updated_at.isoformat() if r.updated_at else None,
+            } for r in rows],
+        })
+
+
+@bp.route('/api/atoms/<int:atom_id>/restore', methods=['POST'])
+def restore_atom(atom_id):
+    """從字紙簍救回卡片到指定白板。
+    body: {canvas_id, pos_x, pos_y, width?, height?}
+    """
+    data = request.get_json() or {}
+    canvas_id = data.get('canvas_id')
+    if not canvas_id:
+        return jsonify({'error': '需要 canvas_id'}), 400
+    pos_x = float(data.get('pos_x', 100))
+    pos_y = float(data.get('pos_y', 100))
+    width = data.get('width')
+    height = data.get('height')
+
+    with session_scope() as s:
+        atom = s.query(KnowledgeAtom).filter(KnowledgeAtom.id == atom_id).first()
+        if not atom:
+            return jsonify({'error': '卡片不存在'}), 404
+        if not atom.is_deleted:
+            return jsonify({'error': '此卡片不在字紙簍中'}), 400
+        canvas = s.query(Canvas).filter(Canvas.id == canvas_id).first()
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        atom.is_deleted = False
+
+        ca_kwargs = {
+            'canvas_id': canvas_id,
+            'atom_id': atom_id,
+            'pos_x': pos_x,
+            'pos_y': pos_y,
+        }
+        if width is not None:
+            ca_kwargs['width'] = float(width)
+        if height is not None:
+            ca_kwargs['height'] = float(height)
+        ca = CanvasAtom(**ca_kwargs)
+        s.add(ca)
+        s.flush()
+
+        return jsonify({
+            'message': '已救回',
+            'canvas_atom': {
+                'id': ca.id,
+                'canvas_id': ca.canvas_id,
+                'atom_id': ca.atom_id,
+                'pos_x': ca.pos_x,
+                'pos_y': ca.pos_y,
+                'width': ca.width,
+                'height': ca.height,
+                'z_index': ca.z_index,
+            },
+        })
+
+
+@bp.route('/api/atoms/trash/empty', methods=['DELETE'])
+def empty_trash():
+    """真正刪除所有 is_deleted=true 的原子（不可逆）。
+    透過 FK ON DELETE CASCADE 自動清掉 atom_tags / canvas_atoms /
+    atom_entries / unified_relations / atom_field_values / atom_embeddings。
+    worker_reports.promoted_atom_id 為 NO ACTION，先解除指向避免阻擋。
+    """
+    with session_scope() as s:
+        ids = [r[0] for r in s.query(KnowledgeAtom.id).filter(
+            KnowledgeAtom.is_deleted == True
+        ).all()]
+        if not ids:
+            return jsonify({'deleted': 0, 'message': '字紙簍已是空的'})
+        # 解除 worker_reports 指向（NO ACTION，否則 DELETE 會卡住）
+        s.execute(
+            text('UPDATE worker_reports SET promoted_atom_id = NULL '
+                 'WHERE promoted_atom_id = ANY(:ids)'),
+            {'ids': ids},
+        )
+        deleted = s.query(KnowledgeAtom).filter(
+            KnowledgeAtom.id.in_(ids)
+        ).delete(synchronize_session=False)
+        logger.info(f'empty_trash: 真刪 {deleted} 個原子')
+        return jsonify({'deleted': deleted, 'message': f'已永久刪除 {deleted} 張卡片'})
 
 
 # ============================================================

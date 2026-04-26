@@ -83,6 +83,7 @@ def _build_canvas_snapshot(s, canvas_id):
                 'title': ka.title,
                 'content': ka.content or '',
                 'content_type': ka.content_type,
+                'thumbnail_url': ka.thumbnail_url,
                 'atom_type': ka.atom_type,
                 'lifecycle': ka.lifecycle,
                 'vitality_score': ka.vitality_score,
@@ -217,6 +218,7 @@ def get_canvas(slug):
                 KnowledgeAtom.title,
                 func.left(KnowledgeAtom.content, CONTENT_PREVIEW_LEN).label('content_preview'),
                 KnowledgeAtom.content_type,
+                KnowledgeAtom.thumbnail_url,
                 KnowledgeAtom.atom_type,
                 KnowledgeAtom.lifecycle,
                 KnowledgeAtom.vitality_score,
@@ -332,6 +334,7 @@ def get_canvas(slug):
                     'title': r.title,
                     'content': r.content_preview or '',
                     'content_type': r.content_type,
+                    'thumbnail_url': r.thumbnail_url,
                     'atom_type': r.atom_type,
                     'lifecycle': r.lifecycle,
                     'vitality_score': r.vitality_score,
@@ -529,7 +532,8 @@ def delete_canvas(slug):
 
 @bp.route('/api/canvases/<slug>/atoms', methods=['POST'])
 def add_atom_to_canvas(slug):
-    """在白板上放置原子"""
+    """在白板上放置原子（idempotent：已存在則更新位置/尺寸而非報錯，
+    支援 undo/redo 重新放置同一張卡時不踩 uq_canvas_atom）"""
     data = request.get_json()
     if not data or 'atom_id' not in data:
         return jsonify({'error': '需要 atom_id'}), 400
@@ -538,6 +542,17 @@ def add_atom_to_canvas(slug):
         canvas = _get_canvas_by_slug(s, slug)
         if not canvas:
             return jsonify({'error': '白板不存在'}), 404
+
+        existing = s.query(CanvasAtom).filter(
+            CanvasAtom.canvas_id == canvas.id,
+            CanvasAtom.atom_id == data['atom_id'],
+        ).first()
+        if existing:
+            for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style'):
+                if field in data:
+                    setattr(existing, field, data[field])
+            s.flush()
+            return jsonify(existing.to_dict()), 200
 
         ca = CanvasAtom(
             canvas_id=canvas.id,

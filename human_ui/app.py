@@ -83,6 +83,8 @@ except Exception:
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=365)
+# 上傳上限 50 MB（routes/files.py 內另有應用層檢查）
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 _migrations_done = False
 
@@ -544,6 +546,22 @@ def ensure_entry_schemas():
                  'options': '["1","2","3","4","5"]',
                  'required': False, 'sort_order': 2, 'dimension': None},
                 {'name': 'body', 'label': '內容', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 3, 'dimension': None},
+            ],
+        },
+        {
+            'code': 'file', 'name': '檔案', 'icon': 'bi-paperclip',
+            'color': '#64748b', 'slash_alias': 'file', 'sort_order': 6,
+            'fields': [
+                # 描述（說明）直接以 raw_text 呈現（inline 可編輯），
+                # 此處只保留識別檔案實體所需的不可變欄位
+                {'name': 'filename', 'label': '檔名', 'field_type': 'text',
+                 'options': '', 'required': True, 'sort_order': 0, 'dimension': 'H'},
+                {'name': 'file_token', 'label': '識別碼', 'field_type': 'text',
+                 'options': '', 'required': True, 'sort_order': 1, 'dimension': None},
+                {'name': 'mime_type', 'label': '類型', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 2, 'dimension': None},
+                {'name': 'size_bytes', 'label': '大小(B)', 'field_type': 'number',
                  'options': '', 'required': False, 'sort_order': 3, 'dimension': None},
             ],
         },

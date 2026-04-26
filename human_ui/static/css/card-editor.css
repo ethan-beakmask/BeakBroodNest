@@ -187,6 +187,21 @@
 .ce-pane-toolbar .tb-sep {
     width: 1px; height: 16px; background: #e2e8f0; margin: 0 3px;
 }
+.ce-pane-toolbar .tb-sep-strong {
+    width: 3px; height: 22px; background: #0f172a; margin: 0 4px;
+    border-radius: 1px; flex-shrink: 0;
+}
+.ce-pane-toolbar .tb-table-zone {
+    display: inline-flex; align-items: center; gap: 1px;
+    background: #f1f5f9;
+    padding: 2px 4px;
+    border-radius: 3px;
+    border: 1px solid #cbd5e1;
+}
+.ce-pane-toolbar .tb-table-zone button {
+    background: transparent;
+}
+.ce-pane-toolbar .tb-table-zone button:hover { background: #e2e8f0; }
 .ce-pane-toolbar button {
     padding: 2px 6px; border: none; background: none; font-size: 12px;
     color: #475569; cursor: pointer; border-radius: 2px;
@@ -345,6 +360,29 @@
 .ce-transcribe-label:hover { background: rgba(255,255,255,0.05); }
 .ce-transcribe-label.disabled { color: #475569; cursor: not-allowed; }
 .ce-transcribe-label input { margin: 0; }
+
+/* topbar 版謄寫 checkbox（深色背景 topbar 用） */
+.ce-topbar-transcribe {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #93c5fd;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 3px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05);
+    white-space: nowrap;
+    user-select: none;
+}
+.ce-topbar-transcribe:hover { background: rgba(255,255,255,0.1); }
+.ce-topbar-transcribe.disabled {
+    color: #475569;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+.ce-topbar-transcribe input { margin: 0; }
 
 .ce-staging-mode-bar {
     display: flex;
@@ -725,6 +763,126 @@
     margin: 8px 0;
 }
 
+/* ResizableImage NodeView -- 拖拉縮放把手 */
+.tt-img-wrap {
+    line-height: 0;
+}
+.tt-img-wrap img {
+    display: inline-block;
+    max-width: 100%;
+    height: auto;
+}
+.tt-img-handle {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 12px;
+    height: 12px;
+    background: #2563eb;
+    border: 2px solid #fff;
+    border-radius: 2px;
+    box-shadow: 0 0 2px rgba(0,0,0,0.4);
+    cursor: nwse-resize;
+    opacity: 0;
+    transition: opacity 0.15s;
+    user-select: none;
+    z-index: 5;
+}
+.tt-img-wrap:hover .tt-img-handle,
+.tt-img-wrap.tt-img-selected .tt-img-handle {
+    opacity: 1;
+}
+.tt-img-wrap.tt-img-selected img {
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+}
+
+/* 「★/☆」設為卡片縮圖按鈕（hover 顯示，已選中時常駐） */
+.tt-img-thumb-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    text-align: center;
+    font-size: 14px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #facc15;
+    border-radius: 11px;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0;
+    transition: opacity 0.15s, background 0.15s;
+    z-index: 6;
+}
+.tt-img-wrap:hover .tt-img-thumb-btn,
+.tt-img-wrap.tt-img-selected .tt-img-thumb-btn,
+.tt-img-thumb-btn.on { opacity: 1; }
+.tt-img-thumb-btn.on { background: rgba(202, 138, 4, 0.85); color: #fff; }
+.tt-img-thumb-btn:hover { background: rgba(0, 0, 0, 0.85); }
+.tt-img-wrap.tt-img-is-thumbnail img {
+    box-shadow: 0 0 0 2px #facc15;
+}
+
+/* PDF Thumbnail Tiptap node */
+.pdf-thumb-block {
+    display: block;
+    margin: 8px 0;
+    padding: 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+}
+.pdf-thumb-img {
+    max-width: 100%;
+    max-height: 480px;
+    overflow: hidden;
+    background: #f1f5f9;
+    border-radius: 3px;
+    text-align: center;
+    margin-bottom: 6px;
+}
+.pdf-thumb-img img {
+    max-width: 100%;
+    max-height: 480px;
+    height: auto;
+    display: inline-block;
+}
+.pdf-thumb-loading,
+.pdf-thumb-error {
+    padding: 24px;
+    color: #94a3b8;
+    font-size: 13px;
+    font-style: italic;
+}
+.pdf-thumb-error { color: #dc2626; font-style: normal; }
+.pdf-thumb-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
+.pdf-thumb-icon {
+    font-size: 11px;
+    background: #dc2626;
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+}
+.pdf-thumb-name { flex: 1; color: #334155; font-weight: 500; word-break: break-all; }
+.pdf-thumb-pages { color: #64748b; font-size: 11px; }
+.pdf-thumb-link {
+    color: #2563eb;
+    text-decoration: none;
+    padding: 2px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    font-size: 11px;
+}
+.pdf-thumb-link:hover { background: #eff6ff; }
+
 /* Placeholder */
 .card-editor-content p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);
@@ -782,6 +940,48 @@
 .se-block.se-diary     { border-left-color: #a855f7; background: rgba(168,85,247,0.04); }
 .se-block.se-health    { border-left-color: #ef4444; background: rgba(239,68,68,0.04); }
 .se-block.se-freetext  { border-left-color: transparent; background: transparent; padding-left: 8px; }
+.se-block.se-file      { border-left-color: #64748b; background: rgba(100,116,139,0.05); }
+
+/* 檔案附件：上方檔名 / 下載連結列 */
+.se-file-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    margin: 2px 0 4px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    user-select: none;
+}
+.se-file-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+.se-file-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 500;
+    word-break: break-all;
+}
+.se-file-link:hover { text-decoration: underline; }
+.se-file-meta {
+    color: #64748b;
+    font-size: 11px;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.se-file-desc {
+    min-height: 24px;
+    color: #334155;
+    font-size: 13px;
+}
+.se-file-desc:empty::before {
+    content: attr(data-placeholder);
+    color: #94a3b8;
+    font-style: italic;
+    pointer-events: none;
+}
 
 /* Tag row */
 .se-tag-row {

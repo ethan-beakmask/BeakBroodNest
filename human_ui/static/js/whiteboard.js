@@ -55,6 +55,8 @@ function whiteboardApp(canvasId) {
         // Modals
         showNewAtomModal: false,
         showAddExistingModal: false,
+        showTrashModal: false,
+        trashItems: [],
         showNewCanvasModal: false,
         showTagModal: false,
         showRelationModal: false,
@@ -219,6 +221,10 @@ function whiteboardApp(canvasId) {
         cardSizeMode: 'default',  // 'min' | 'default' | 'full'
         cardSizeModeLabels: { min: '精簡', 'default': '標準', full: '展開' },
 
+        // -- 縮圖卡標題顯示模式 --
+        // false (預設) = hover 0.5s 後浮現；true = 一律顯示
+        showThumbnailTitle: false,
+
         // -- Config --
         atomTypeConfig: {
             A: { label: '萬用', bg: '#f3f4f6', color: '#6b7280', border: '#9ca3af' },
@@ -326,6 +332,9 @@ function whiteboardApp(canvasId) {
                         if (rt.rtLineStyle) this.rtLineStyle = rt.rtLineStyle;
                         if (rt.rtOptEnabled !== undefined) this.rtOptEnabled = rt.rtOptEnabled;
                         if (rt.rtOptPerSector !== undefined) this.rtOptPerSector = rt.rtOptPerSector;
+                    }
+                    if (settings.showThumbnailTitle !== undefined) {
+                        this.showThumbnailTitle = !!settings.showThumbnailTitle;
                     }
                 } catch (e) { /* ignore parse errors */ }
             }
@@ -637,6 +646,88 @@ function whiteboardApp(canvasId) {
             this.applyCardSizeMode();
         },
 
+        toggleShowThumbnailTitle() {
+            this.showThumbnailTitle = !this.showThumbnailTitle;
+            this._saveShowThumbnailTitle();
+        },
+
+        async emptyTrash() {
+            if (!confirm('將永久刪除字紙簍中所有軟刪除的卡片，無法復原。確定？')) return;
+            try {
+                var resp = await API.emptyTrash();
+                this.showToast(resp.message || ('已刪除 ' + (resp.deleted || 0) + ' 張'), 'success');
+                this.trashItems = [];
+                if (typeof this.refreshSidebarAtoms === 'function') this.refreshSidebarAtoms();
+            } catch (e) {
+                this.showToast('清空失敗：' + (e.message || e), 'error');
+            }
+        },
+
+        async openTrashModal() {
+            this.showTrashModal = true;
+            try {
+                var resp = await API.listTrash();
+                this.trashItems = resp.items || [];
+            } catch (e) {
+                this.showToast('讀取字紙簍失敗：' + (e.message || e), 'error');
+                this.trashItems = [];
+            }
+        },
+
+        // 救回字紙簍卡片到當前白板，落在視口中央
+        async restoreFromTrash(atomId) {
+            var vp = this.$refs.viewport;
+            var rect = vp ? vp.getBoundingClientRect() : { width: 800, height: 600 };
+            var pos_x = (-this.panX / this.zoom) + (rect.width / 2 / this.zoom) - 130;
+            var pos_y = (-this.panY / this.zoom) + (rect.height / 2 / this.zoom) - 80;
+            try {
+                await API.restoreAtom(atomId, { canvas_id: this.canvasId, pos_x: pos_x, pos_y: pos_y });
+                this.trashItems = this.trashItems.filter(function(t) { return t.id !== atomId; });
+                await this.loadData();
+                var self = this;
+                this.$nextTick(function() { self.renderConnections(); });
+                this.showToast('已救回到當前白板', 'success');
+            } catch (e) {
+                this.showToast('救回失敗：' + (e.message || e), 'error');
+            }
+        },
+
+        _saveShowThumbnailTitle() {
+            if (this.isSnapshot) return;
+            var settings;
+            try { settings = JSON.parse((this.canvas && this.canvas.settings) || '{}'); } catch (e) { settings = {}; }
+            settings.showThumbnailTitle = this.showThumbnailTitle;
+            API.updateCanvas(this.canvasId, { settings: JSON.stringify(settings) });
+        },
+
+        // 縮圖卡判定：atom 顯式設定了 thumbnail_url
+        hasThumbnail(ca) {
+            return !!(ca && ca.atom && ca.atom.thumbnail_url);
+        },
+
+        _firstRowIsImage(ca) {
+            if (!ca || !ca.atom) return false;
+            // 優先看 content_json：第一個 block 是 image，或第一個 paragraph 的第一個 inline 是 image
+            var cj = ca.atom.content_json;
+            if (cj && cj.content && cj.content.length > 0) {
+                var first = cj.content[0];
+                if (!first) return false;
+                if (first.type === 'image') return true;
+                if (first.type === 'paragraph' && first.content && first.content.length > 0) {
+                    for (var i = 0; i < first.content.length; i++) {
+                        var n = first.content[i];
+                        if (n.type === 'image') return true;
+                        // 遇到非空白文字代表第一列以文字起頭
+                        if (n.type === 'text' && n.text && n.text.trim()) return false;
+                    }
+                }
+                return false;
+            }
+            // 退路：純 markdown content 以圖片開頭
+            var content = ca.atom.content || '';
+            return /^\s*!\[[^\]]*\]\([^)]+\)/.test(content);
+        },
+
         applyCardSizeMode() {
             const HEADER_H = 34;
             const ENTRY_H = 23;
@@ -650,6 +741,9 @@ function whiteboardApp(canvasId) {
                 var hasContent = ca.atom && ca.atom.content && ca.atom.content.trim().length > 0;
                 var hasTags = ca.atom && ca.atom.tags && ca.atom.tags.length > 0;
                 var footerH = hasTags ? FOOTER_H : 0;
+                // 媒體卡片（PDF）或顯式縮圖卡：三種模式皆跳過，維持卡片原始尺寸
+                if (ca.atom && ca.atom.content_type === 'media') return;
+                if (self.hasThumbnail(ca)) return;
                 var h;
                 if (entries > 0) {
                     if (self.cardSizeMode === 'min') {
@@ -1137,6 +1231,9 @@ function whiteboardApp(canvasId) {
     _mergeInto(app, whiteboardUndoMixin());
     _mergeInto(app, whiteboardBatchMixin());
     _mergeInto(app, whiteboardGroupsMixin());
+    if (typeof whiteboardMediaMixin === 'function') {
+        _mergeInto(app, whiteboardMediaMixin());
+    }
 
     return app;
 }

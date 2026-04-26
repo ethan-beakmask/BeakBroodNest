@@ -156,6 +156,81 @@ function whiteboardCardEditorMixin() {
             if (ce) ce.cmd('image', url);
         },
 
+        ceUploadImage(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var self = this;
+            var input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/png,image/jpeg,image/webp,image/gif';
+            input.style.display = 'none';
+            input.addEventListener('change', async function() {
+                var file = input.files && input.files[0];
+                if (!file) return;
+                self.showToast('上傳圖片中...', 'info');
+                try {
+                    var rec = await API.uploadFile(file, 'image');
+                    var ce = _ceStore[ed.atomId];
+                    if (ce && rec && rec.url) {
+                        ce.cmd('image', rec.url);
+                        self._markEditorDirty(editorId);
+                        self.showToast('圖片已上傳', 'success');
+                    }
+                } catch (err) {
+                    self.showToast('上傳失敗: ' + err.message, 'error');
+                }
+                document.body.removeChild(input);
+            }, { once: true });
+            document.body.appendChild(input);
+            input.click();
+        },
+
+        ceUploadFile(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var self = this;
+            var input = document.createElement('input');
+            input.type = 'file';
+            input.style.display = 'none';
+            input.addEventListener('change', async function() {
+                var file = input.files && input.files[0];
+                if (!file) return;
+                self.showToast('上傳檔案中...', 'info');
+                try {
+                    var rec = await API.uploadFile(file, 'file');
+                    var ce = _ceStore[ed.atomId];
+                    if (!ce || !ce.editor || !rec) return;
+                    var fileSchema = (self.entrySchemas || []).find(function(s) { return s.code === 'file'; });
+                    if (!fileSchema) {
+                        self.showToast('找不到 file schema，請重新整理頁面', 'error');
+                        return;
+                    }
+                    ce.editor.chain().focus().insertContent({
+                        type: 'structuredEntry',
+                        attrs: {
+                            schemaCode: 'file',
+                            schemaId: fileSchema.id,
+                            collapsed: true,
+                            fieldValues: {
+                                filename: rec.original_filename,
+                                file_token: rec.token,
+                                mime_type: rec.mime_type,
+                                size_bytes: String(rec.size_bytes),
+                            },
+                        },
+                        content: [],
+                    }).run();
+                    self._markEditorDirty(editorId);
+                    self.showToast('檔案已上傳', 'success');
+                } catch (err) {
+                    self.showToast('上傳失敗: ' + err.message, 'error');
+                }
+                document.body.removeChild(input);
+            }, { once: true });
+            document.body.appendChild(input);
+            input.click();
+        },
+
         ceToggleAllEntries(editorId) {
             var ed = this.openEditors.find(function(e) { return e.id === editorId; });
             if (!ed) return;
@@ -222,14 +297,18 @@ function whiteboardCardEditorMixin() {
 
             // 用伺服器回傳的 updated_at，避免 polling 誤判
             var serverTs = (saveResp && saveResp.updated_at) || new Date().toISOString();
+            // thumbnail_url 由後端從 content_json 萃取後回傳，前端直接同步給白板對應卡片
+            var serverThumb = saveResp ? saveResp.thumbnail_url : undefined;
             var ca = this.atoms.find(a => a.atom_id === ed.atomId);
             if (ca && ca.atom) {
                 ca.atom.title = title; ca.atom.content = md; ca.atom.content_json = json;
                 ca.atom.updated_at = serverTs;
+                if (serverThumb !== undefined) ca.atom.thumbnail_url = serverThumb;
             }
             ed._knownServerTs = serverTs;
             if (this.selectedAtomDetails && this.selectedAtomDetails.id === ed.atomId) {
                 this.selectedAtomDetails.title = title; this.selectedAtomDetails.content = md;
+                if (serverThumb !== undefined) this.selectedAtomDetails.thumbnail_url = serverThumb;
             }
             ed.dirty = false;
             this.refreshSidebarAtoms();

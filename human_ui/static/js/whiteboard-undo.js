@@ -67,42 +67,58 @@ function whiteboardUndoMixin() {
             if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected(); return; }
         },
 
+        // Delete 鍵 / 工具列「刪除」/ Backspace：軟刪除進字紙簍
+        // 與右鍵「從白板移除」(removeFromCanvas) 是不同動作 -- 那邊只斷開 canvas_atom 連結
+        // 此處同時把 atom 軟刪除：可從字紙簍救回。Undo 走 restore API 重建白板連結。
         async deleteSelected() {
+            var self = this;
+            var ids = [];
             if (this.selectedAtomIds.length > 0) {
-                var self = this;
-                var toDelete = this.atoms.filter(function(ca) { return self.selectedAtomIds.includes(ca.atom_id); });
-                if (toDelete.length === 0) return;
-                var removedData = toDelete.map(function(ca) {
-                    return { id: ca.id, atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y,
-                             width: ca.width, height: ca.height, z_index: ca.z_index, group_ids: ca.group_ids || [] };
-                });
-                this.pushUndo({
-                    type: 'remove_multi',
-                    desc: '移除 ' + toDelete.length + ' 張卡片',
-                    undo: async function() {
-                        for (var i = 0; i < removedData.length; i++) {
-                            var rd = removedData[i];
-                            await API.addAtomToCanvas(self.canvasId, { atom_id: rd.atom_id, pos_x: rd.pos_x, pos_y: rd.pos_y, width: rd.width, height: rd.height });
-                        }
-                        await self.loadData(); self.$nextTick(function() { self.renderConnections(); });
-                    },
-                    redo: async function() {
-                        for (var i = 0; i < removedData.length; i++) {
-                            var ca = self.atoms.find(function(a) { return a.atom_id === removedData[i].atom_id; });
-                            if (ca) await API.removeCanvasAtom(ca.id);
-                        }
-                        await self.loadData(); self.$nextTick(function() { self.renderConnections(); });
-                    },
-                });
-                for (var i = 0; i < toDelete.length; i++) await API.removeCanvasAtom(toDelete[i].id);
-                this.selectedAtomIds = []; this.deselectCard();
-                await this.loadData(); this.$nextTick(function() { self.renderConnections(); });
-                return;
+                ids = this.selectedAtomIds.slice();
+            } else if (this.selectedAtomId) {
+                ids = [this.selectedAtomId];
             }
-            if (this.selectedAtomId) {
-                var ca = this.atoms.find(function(a) { return a.atom_id === self.selectedAtomId; });
-                if (ca) this.removeFromCanvas(ca);
+            if (ids.length === 0) return;
+
+            var toDelete = this.atoms.filter(function(ca) { return ids.includes(ca.atom_id); });
+            if (toDelete.length === 0) return;
+            var removedData = toDelete.map(function(ca) {
+                return { atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y,
+                         width: ca.width, height: ca.height };
+            });
+
+            this.pushUndo({
+                type: 'soft_delete_multi',
+                desc: '刪除 ' + toDelete.length + ' 張卡片',
+                undo: async function() {
+                    // 從字紙簍救回：把每張 atom is_deleted=false 並重建當前白板的 canvas_atom
+                    for (var i = 0; i < removedData.length; i++) {
+                        var rd = removedData[i];
+                        try {
+                            await API.restoreAtom(rd.atom_id, {
+                                canvas_id: self.canvasId,
+                                pos_x: rd.pos_x, pos_y: rd.pos_y,
+                                width: rd.width, height: rd.height,
+                            });
+                        } catch (e) { console.warn('restore failed for atom ' + rd.atom_id, e); }
+                    }
+                    await self.loadData(); self.$nextTick(function() { self.renderConnections(); });
+                },
+                redo: async function() {
+                    for (var i = 0; i < removedData.length; i++) {
+                        try { await API.deleteAtom(removedData[i].atom_id); }
+                        catch (e) { console.warn('delete failed for atom ' + removedData[i].atom_id, e); }
+                    }
+                    await self.loadData(); self.$nextTick(function() { self.renderConnections(); });
+                },
+            });
+
+            for (var i = 0; i < toDelete.length; i++) {
+                try { await API.deleteAtom(toDelete[i].atom_id); }
+                catch (e) { console.warn('delete failed', e); }
             }
+            this.selectedAtomIds = []; this.deselectCard();
+            await this.loadData(); this.$nextTick(function() { self.renderConnections(); });
         },
     };
 }

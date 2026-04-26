@@ -16,6 +16,14 @@
             "cron": "30 2 * * *",
             "enabled": true,
             "timeout_seconds": 300
+        },
+        {
+            "name": "uploaded_files_gc",
+            "description": "上傳檔案孤兒清理（每日 03:30）",
+            "command": ["{venv_python}", "{scripts_dir}/uploads_gc.py", "--run"],
+            "cron": "30 3 * * *",
+            "enabled": true,
+            "timeout_seconds": 180
         }
     ]
 }

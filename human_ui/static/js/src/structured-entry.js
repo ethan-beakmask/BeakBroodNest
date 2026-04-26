@@ -138,16 +138,19 @@ class StructuredEntryView {
         })
         this.tagRow.appendChild(this.badge)
 
-        // 展開/收合按鈕
-        this.toggleBtn = document.createElement('span')
-        this.toggleBtn.className = 'se-toggle-btn'
-        this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
-        this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
-        this.toggleBtn.addEventListener('click', (e) => {
-            e.stopPropagation()
-            this._toggleCollapsed()
-        })
-        this.tagRow.appendChild(this.toggleBtn)
+        // 展開/收合按鈕（file 類型沒有額外欄位面板，省略此鈕）
+        const isFile = (node.attrs.schemaCode || '') === 'file'
+        if (!isFile) {
+            this.toggleBtn = document.createElement('span')
+            this.toggleBtn.className = 'se-toggle-btn'
+            this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
+            this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
+            this.toggleBtn.addEventListener('click', (e) => {
+                e.stopPropagation()
+                this._toggleCollapsed()
+            })
+            this.tagRow.appendChild(this.toggleBtn)
+        }
 
         // 刪除 Item 按鈕（freetext 不顯示）
         if ((node.attrs.schemaCode || 'freetext') !== 'freetext') {
@@ -165,17 +168,74 @@ class StructuredEntryView {
 
         this.dom.appendChild(this.tagRow)
 
+        // file 類型：先加上「檔案連結列」，再放可編輯說明（contentDOM）
+        if (isFile) {
+            this.fileHeader = document.createElement('div')
+            this.fileHeader.className = 'se-file-header'
+            this.fileHeader.contentEditable = 'false'
+            this._renderFileHeader()
+            this.dom.appendChild(this.fileHeader)
+        }
+
         // 內容區（ProseMirror 管理的 inline content）
         this.contentDOM = document.createElement('div')
         this.contentDOM.className = 'se-content'
+        if (isFile) {
+            this.contentDOM.classList.add('se-file-desc')
+            this.contentDOM.setAttribute('data-placeholder', '輸入檔案說明...')
+        }
         this.dom.appendChild(this.contentDOM)
 
-        // 欄位面板
+        // 欄位面板（file 類型不顯示）
         this.fieldsPanel = document.createElement('div')
         this.fieldsPanel.className = 'se-fields'
-        this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
-        this._renderFields()
+        if (isFile) {
+            this.fieldsPanel.style.display = 'none'
+        } else {
+            this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
+            this._renderFields()
+        }
         this.dom.appendChild(this.fieldsPanel)
+    }
+
+    _renderFileHeader() {
+        if (!this.fileHeader) return
+        this.fileHeader.innerHTML = ''
+        const fv = this.node.attrs.fieldValues || {}
+        const token = fv.file_token || ''
+        const filename = fv.filename || '(未命名)'
+        const sizeBytes = parseInt(fv.size_bytes || '0', 10) || 0
+        const mime = fv.mime_type || ''
+
+        const icon = document.createElement('span')
+        icon.className = 'se-file-icon'
+        icon.textContent = '\u{1F4CE}'  // 📎
+        this.fileHeader.appendChild(icon)
+
+        const link = document.createElement('a')
+        link.className = 'se-file-link'
+        if (token) {
+            link.href = '/beakcortex/files/' + encodeURIComponent(token)
+            link.target = '_blank'
+            link.rel = 'noopener'
+            link.title = '點擊下載 ' + filename
+        }
+        link.textContent = filename
+        this.fileHeader.appendChild(link)
+
+        const meta = document.createElement('span')
+        meta.className = 'se-file-meta'
+        meta.textContent = ' (' + this._humanSize(sizeBytes) + (mime ? ' · ' + mime : '') + ')'
+        this.fileHeader.appendChild(meta)
+    }
+
+    _humanSize(bytes) {
+        if (!bytes) return '0 B'
+        const units = ['B', 'KB', 'MB', 'GB']
+        let i = 0
+        let n = bytes
+        while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+        return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i]
     }
 
     _getSchema() {
@@ -412,13 +472,21 @@ class StructuredEntryView {
     update(node) {
         if (node.type.name !== 'structuredEntry') return false
         this.node = node
+        const isFile = (node.attrs.schemaCode || '') === 'file'
         this.dom.className = 'se-block se-' + (node.attrs.schemaCode || 'freetext')
         this._updateVisualMode()
-        this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
-        this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
-        this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
-        if (!node.attrs.collapsed) {
-            this._renderFields()
+        if (isFile) {
+            this._renderFileHeader()
+            this.fieldsPanel.style.display = 'none'
+        } else {
+            this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
+            if (this.toggleBtn) {
+                this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
+                this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
+            }
+            if (!node.attrs.collapsed) {
+                this._renderFields()
+            }
         }
         return true
     }
