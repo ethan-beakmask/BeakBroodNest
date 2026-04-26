@@ -17,6 +17,7 @@
   "description": "",
   "dependencies": {
     "@tiptap/core": "^3.22.3",
+    "@tiptap/extension-color": "^3.22.4",
     "@tiptap/extension-highlight": "^3.22.4",
     "@tiptap/extension-image": "^3.22.3",
     "@tiptap/extension-link": "^3.22.3",
@@ -27,6 +28,7 @@
     "@tiptap/extension-table-row": "^3.22.3",
     "@tiptap/extension-task-item": "^3.22.3",
     "@tiptap/extension-task-list": "^3.22.3",
+    "@tiptap/extension-text-style": "^3.22.4",
     "@tiptap/extension-typography": "^3.22.3",
     "@tiptap/extension-underline": "^3.22.3",
     "@tiptap/pm": "^3.22.3",

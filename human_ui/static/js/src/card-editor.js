@@ -12,6 +12,8 @@ import { PdfThumbnail } from './pdf-thumbnail.js'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { Typography } from '@tiptap/extension-typography'
 import { Highlight } from '@tiptap/extension-highlight'
+import { TextStyle } from '@tiptap/extension-text-style'
+import { Color } from '@tiptap/extension-color'
 import { Markdown } from 'tiptap-markdown'
 import { StructuredEntry } from './structured-entry.js'
 import { SlashCommand } from './slash-command.js'
@@ -55,7 +57,9 @@ class CardEditor {
                 Placeholder.configure({
                     placeholder: '開始撰寫...',
                 }),
-                Highlight.configure({ multicolor: false }),
+                Highlight.configure({ multicolor: true }),
+                TextStyle,
+                Color,
                 Typography,
                 Markdown.configure({
                     html: true,

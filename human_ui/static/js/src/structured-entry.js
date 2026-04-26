@@ -196,6 +196,16 @@ class StructuredEntryView {
             this._renderFields()
         }
         this.dom.appendChild(this.fieldsPanel)
+
+        // 只允許從漢堡把手拖拉：
+        // mousedown 記錄按下位置是否在 handle 內（不改 dom.draggable，避免影響其他功能）；
+        // dragstart 時若不是從 handle 起源，preventDefault 取消拖拉。
+        this.dom.addEventListener('mousedown', (e) => {
+            this._mousedownInHandle = this.dragHandle.contains(e.target)
+        }, true)
+        this.dom.addEventListener('dragstart', (e) => {
+            if (!this._mousedownInHandle) e.preventDefault()
+        })
     }
 
     _renderFileHeader() {
@@ -326,8 +336,19 @@ class StructuredEntryView {
         const table = document.createElement('div')
         table.className = 'se-fields-grid'
 
-        for (const field of schema.fields.sort((a, b) => a.sort_order - b.sort_order)) {
+        // 長文字欄位（備註 / 內容）自成整列 + textarea 三列高
+        const LONG_FIELDS = ['note', 'body']
+        const sorted = schema.fields.slice().sort((a, b) => a.sort_order - b.sort_order)
+
+        for (const field of sorted) {
+            if (LONG_FIELDS.includes(field.name)) continue
             table.appendChild(this._buildFieldCell(field, fv[field.name] || ''))
+        }
+        for (const field of sorted) {
+            if (!LONG_FIELDS.includes(field.name)) continue
+            const cell = this._buildFieldCell(field, fv[field.name] || '', { multiline: true })
+            cell.classList.add('se-multiline-row')
+            table.appendChild(cell)
         }
         this.fieldsPanel.appendChild(table)
     }

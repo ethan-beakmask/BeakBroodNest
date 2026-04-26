@@ -737,6 +737,13 @@
                                :disabled="openEditors.length !== 2">
                         <span>謄寫</span>
                     </label>
+                    <label class="ce-topbar-transcribe"
+                           :class="{ disabled: !transcribeMode || openEditors.length !== 2 }"
+                           title="貼上後在同段落追加 hard break（\\n）">
+                        <input type="checkbox" x-model="transcribeNewline"
+                               :disabled="!transcribeMode || openEditors.length !== 2">
+                        <span>換列</span>
+                    </label>
                     <button class="btn btn-sm"
                             :style="ceStagingOpen ? 'background:#1e40af;color:#93c5fd;border:1px solid #3b82f6;' : 'background:rgba(255,255,255,0.1);color:#94a3b8;border:1px solid rgba(255,255,255,0.15);'"
                             @click="toggleStaging()"
@@ -770,6 +777,7 @@
             <div class="ce-container" :class="editorLayoutClass" :style="customGridStyle">
                 <template x-for="ed in openEditors" :key="ed.id">
                     <div class="ce-pane" :data-ce-id="ed.id"
+                         :data-continuous="(ceColorPen[ed.id] || ceColorHl[ed.id]) ? '1' : '0'"
                          :class="{ 'ce-pane-maximized': maximizedEditorId === ed.id }"
                          @mouseup="ceHandleSelection(ed.id)">
                         <!-- Pane Header -->
@@ -797,7 +805,6 @@
                             <button @click="ceCmd('underline', ed.id)" title="底線"><u>U</u></button>
                             <button @click="ceCmd('strike', ed.id)" title="刪除線"><s>S</s></button>
                             <button @click="ceCmd('code', ed.id)" title="行內程式碼">&lt;&gt;</button>
-                            <button @click="ceCmd('highlight', ed.id)" title="螢光標記" style="background:#fef08a;color:#854d0e;border-radius:2px;">H</button>
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('h1', ed.id)" title="H1">H1</button>
                             <button @click="ceCmd('h2', ed.id)" title="H2">H2</button>
@@ -840,6 +847,38 @@
                                     :title="ceHasCollapsed[ed.id] ? '展開所有 ;; 物件' : '收合所有 ;; 物件'"
                                     x-text="ceHasCollapsed[ed.id] ? '[+]全展' : '[-]全收'"></button>
                         </div>
+                        <!-- Pane Toolbar 第二排：連續色筆 / 連續螢光（紅綠黃藍各 4 色） -->
+                        <div class="ce-pane-toolbar-2" x-show="!ed.readonly">
+                            <span class="tb-group-label">色筆</span>
+                            <template x-for="c in colorPenPalette" :key="'pen-'+c.key">
+                                <button class="ce-color-btn ce-color-pen"
+                                        :class="{ active: ceColorPen[ed.id] === c.hex }"
+                                        :style="'color:' + c.hex"
+                                        @click="ceToggleColorPen(ed.id, c.hex)"
+                                        :title="'連續色筆 -- ' + c.label + '（再點關閉）'">A</button>
+                            </template>
+                            <button class="ce-color-btn ce-color-clear"
+                                    :class="{ active: ceColorPen[ed.id] === 'erase' }"
+                                    @click="ceToggleColorPen(ed.id, 'erase')"
+                                    title="連續清除字色（再點關閉）">A&times;</button>
+                            <span class="tb-sep"></span>
+                            <span class="tb-group-label">螢光</span>
+                            <template x-for="c in colorHlPalette" :key="'hl-'+c.key">
+                                <button class="ce-color-btn ce-color-hl"
+                                        :class="{ active: ceColorHl[ed.id] === c.hex }"
+                                        :style="'background:' + c.hex"
+                                        @click="ceToggleColorHl(ed.id, c.hex)"
+                                        :title="'連續螢光 -- ' + c.label + '（再點關閉）'">&nbsp;</button>
+                            </template>
+                            <button class="ce-color-btn ce-color-clear"
+                                    :class="{ active: ceColorHl[ed.id] === 'erase' }"
+                                    @click="ceToggleColorHl(ed.id, 'erase')"
+                                    title="連續清除底色（再點關閉）">&nbsp;&times;</button>
+                            <span style="flex:1;"></span>
+                            <span class="ce-continuous-hint" x-show="ceColorPen[ed.id] || ceColorHl[ed.id]">連續模式啟用中（ESC 取消）</span>
+                        </div>
+                        <!-- 保留條：避免 SelectionToolbar 浮窗覆蓋 toolbar，並提示此區不可編輯 -->
+                        <div class="ce-pane-reserved" @mousedown.stop @click.stop></div>
                         <!-- Pane Body (Tiptap mount point) -->
                         <div class="ce-pane-body"></div>
                         <!-- Pane Footer -->

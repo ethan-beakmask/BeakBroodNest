@@ -20,10 +20,27 @@ function whiteboardCardEditorMixin() {
         ceTableActive: {},     // { editorId: 游標是否在表格內 }
         ceHasCollapsed: {},    // { editorId: 是否仍有收合中的 ;; 物件 }
 
+        // 連續色筆 / 連續螢光（per editorId，null = 未啟用）
+        ceColorPen: {},        // { editorId: '#hex' | null }
+        ceColorHl:  {},        // { editorId: '#hex' | null }
+        colorPenPalette: [
+            { key: 'r', label: '紅', hex: '#dc2626' },
+            { key: 'g', label: '綠', hex: '#16a34a' },
+            { key: 'y', label: '黃', hex: '#ca8a04' },
+            { key: 'b', label: '藍', hex: '#2563eb' },
+        ],
+        colorHlPalette: [
+            { key: 'r', label: '紅', hex: '#fecaca' },
+            { key: 'g', label: '綠', hex: '#bbf7d0' },
+            { key: 'y', label: '黃', hex: '#fef9c3' },
+            { key: 'b', label: '藍', hex: '#bfdbfe' },
+        ],
+
         // 右側抓重點
         ceStagingOpen: false,
         stagingMode: 'copy',     // 'copy' or 'move'
         transcribeMode: false,   // 謄寫模式：直接在兩文件間複製/移動
+        transcribeNewline: false, // 謄寫後在同段落追加 hard break
         stagingItems: [],        // [{ id, text, sourceAtomId, sourceTitle }]
         stagingTitle: '',        // 自訂新卡片標題（空白時用預設）
         _stagingSeq: 0,
@@ -260,6 +277,18 @@ function whiteboardCardEditorMixin() {
             void el.offsetWidth;
             el.classList.add('ce-pane-flash');
             setTimeout(function() { el.classList.remove('ce-pane-flash'); }, 2000);
+
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed || ed.readonly) return;
+            this.$nextTick(function() {
+                if (!ed.title || ed.title.trim() === '') {
+                    var titleInput = el.querySelector('.card-editor-title-input');
+                    if (titleInput) titleInput.focus();
+                } else {
+                    var ce = _ceStore[ed.atomId];
+                    if (ce && ce.editor) ce.editor.commands.focus('start');
+                }
+            });
         },
 
         async saveEditor(editorId) {
@@ -376,6 +405,8 @@ function whiteboardCardEditorMixin() {
             }
 
             this.openEditors.splice(idx, 1);
+            delete this.ceColorPen[editorId];
+            delete this.ceColorHl[editorId];
             if (this.openEditors.length === 0) {
                 this.cardEditorOpen = false;
                 this.dragCard = null; this.bodyDragPending = false; this.bodyDragCa = null;
@@ -395,6 +426,8 @@ function whiteboardCardEditorMixin() {
             this.openEditors = [];
             this.maximizedEditorId = null;
             this.cardEditorOpen = false;
+            this.ceColorPen = {};
+            this.ceColorHl = {};
             this.dragCard = null; this.bodyDragPending = false; this.bodyDragCa = null;
             this.$nextTick(() => { this.renderConnections(); });
         },
@@ -482,17 +515,50 @@ function whiteboardCardEditorMixin() {
             this.ceStagingOpen = !this.ceStagingOpen;
         },
 
+        // value 為 hex 色碼或 'erase'；同值再點 → null（關閉）
+        ceToggleColorPen(editorId, value) {
+            this.ceColorPen[editorId] = (this.ceColorPen[editorId] === value) ? null : value;
+        },
+        ceToggleColorHl(editorId, value) {
+            this.ceColorHl[editorId] = (this.ceColorHl[editorId] === value) ? null : value;
+        },
+        ceCancelAllContinuous() {
+            var hadAny = false;
+            for (var k in this.ceColorPen) { if (this.ceColorPen[k]) { this.ceColorPen[k] = null; hadAny = true; } }
+            for (var k in this.ceColorHl)  { if (this.ceColorHl[k])  { this.ceColorHl[k]  = null; hadAny = true; } }
+            return hadAny;
+        },
+
         ceHandleSelection(editorId) {
-            if (!this.ceStagingOpen) return;
             var ed = this.openEditors.find(function(e) { return e.id === editorId; });
             if (!ed || ed.readonly) return;
             var ce = _ceStore[ed.atomId];
             if (!ce) return;
 
+            // 連續色筆 / 連續螢光：拖選後自動套用，套完即返（不進擷取流程）
+            // 值為 hex → 染色；值為 'erase' → 消除；null → 不動
+            var pen = this.ceColorPen[editorId];
+            var hl = this.ceColorHl[editorId];
+            if ((pen || hl) && ce.editor) {
+                var sel = ce.editor.state.selection;
+                if (!sel.empty) {
+                    var collapseTo = sel.to;
+                    var chain = ce.editor.chain();
+                    if (pen === 'erase')      chain = chain.unsetColor();
+                    else if (pen)             chain = chain.setColor(pen);
+                    if (hl === 'erase')       chain = chain.unsetHighlight();
+                    else if (hl)              chain = chain.setHighlight({ color: hl });
+                    // 套完色把選取折疊回游標，讓反白立刻消失，用戶能直接看到效果
+                    chain.setTextSelection(collapseTo).run();
+                    this._markEditorDirty(editorId);
+                    return;
+                }
+            }
+
             // 單一原子操作：讀取 + 刪除（若為移動模式）在同一 state 上完成
             var shouldDelete = this.stagingMode === 'move';
 
-            // 謄寫模式：直接在兩文件間複製/移動
+            // 謄寫模式：直接在兩文件間複製/移動，獨立於擷取面板開關
             if (this.transcribeMode && this.openEditors.length === 2) {
                 var info = ce.captureSelection(shouldDelete);
                 if (!info) return;
@@ -502,10 +568,16 @@ function whiteboardCardEditorMixin() {
                 if (!otherCe || !otherCe.editor) return;
                 // 用 contentJson 插入，保留 structuredEntry node 結構
                 otherCe.editor.commands.insertContent(info.contentJson);
+                if (this.transcribeNewline) {
+                    otherCe.editor.chain().setHardBreak().run();
+                }
                 this._markEditorDirty(other.id);
                 if (shouldDelete) this._markEditorDirty(editorId);
                 return;
             }
+
+            // 擷取面板關著時不進擷取流程
+            if (!this.ceStagingOpen) return;
 
             var info = ce.captureSelection(shouldDelete);
             if (!info) return;

@@ -71,7 +71,8 @@ class SlashMenuView {
             return
         }
 
-        const schemas = (window._entrySchemas || []).filter(s => s.code !== 'freetext')
+        // file 必須由工具列上傳建立，這條 ;; 路徑無法產生有效的 file entry
+        const schemas = (window._entrySchemas || []).filter(s => s.code !== 'freetext' && s.code !== 'file')
 
         // 虛擬別名：;;cal 建立 task entry（calendar 已合併入 task）
         const taskSchema = schemas.find(s => s.code === 'task')
