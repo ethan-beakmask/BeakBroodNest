@@ -191,7 +191,23 @@ function whiteboardMediaMixin() {
         },
 
         _dropPdf(file, pos) {
-            // 樂觀 UI：先放 placeholder 卡片，背景上傳 + PDF.js 處理完成才替換
+            // 預先檢查頁數（>50 直接拒絕，不放 placeholder）
+            var self = this;
+            (async function() {
+                var pageCount = null;
+                if (window.PdfUtils) {
+                    try { pageCount = await window.PdfUtils.getPageCount(file); } catch (e) {}
+                }
+                if (pageCount != null && pageCount > 500) {
+                    self.showToast('PDF 超過 500 頁（' + pageCount + ' 頁），請拆分後再上傳', 'error');
+                    return;
+                }
+                self._dropPdfAfterCheck(file, pos, pageCount);
+            })();
+        },
+
+        _dropPdfAfterCheck(file, pos, pageCount) {
+            // 樂觀 UI：先放 placeholder 卡片，背景上傳 + 渲首頁縮圖完成才替換
             var localId = this._tempLocalAtomId();
             var width = 320, height = 280;
             var placeholder = {
@@ -209,8 +225,14 @@ function whiteboardMediaMixin() {
                     content_json: {
                         type: 'doc',
                         content: [{
-                            type: 'pdfThumbnail',
-                            attrs: { token: '', filename: file.name, pages: null, thumbnailToken: null },
+                            type: 'pdfReader',
+                            attrs: {
+                                token: '',
+                                filename: file.name,
+                                pages: pageCount,
+                                thumbnailToken: null,
+                                viewMode: 'reader',
+                            },
                         }],
                     },
                     content_type: 'media',
@@ -231,11 +253,9 @@ function whiteboardMediaMixin() {
                 try {
                     var rec = await API.uploadFile(file, 'file');
 
-                    // 背景：抽頁數 + 文字 + 渲染縮圖（失敗皆吞掉，不阻塞流程）
-                    var pages = null, text = '', thumbnailToken = null;
+                    // 背景：渲染首頁縮圖（給白板顯示用，不抽 OCR 文字）
+                    var thumbnailToken = null;
                     if (window.PdfUtils) {
-                        try { pages = await window.PdfUtils.getPageCount(file); } catch (e) {}
-                        try { text = await window.PdfUtils.extractAllText(file); } catch (e) {}
                         try {
                             var dataUrl = await window.PdfUtils.renderFirstPageThumbnail(file, 480);
                             var blob = _dataUrlToBlob(dataUrl);
@@ -248,31 +268,23 @@ function whiteboardMediaMixin() {
                         } catch (e) {}
                     }
 
-                    var contentBlocks = [{
-                        type: 'pdfThumbnail',
-                        attrs: {
-                            token: rec.token,
-                            filename: rec.original_filename,
-                            pages: pages,
-                            thumbnailToken: thumbnailToken,
-                        },
-                    }];
-                    if (text && text.trim()) {
-                        var paragraphs = text.split(/\n{2,}/);
-                        for (var i = 0; i < paragraphs.length; i++) {
-                            var t = paragraphs[i].trim();
-                            if (!t) continue;
-                            contentBlocks.push({
-                                type: 'paragraph',
-                                content: [{ type: 'text', text: t }],
-                            });
-                        }
-                    }
-                    var content_json = { type: 'doc', content: contentBlocks };
+                    var content_json = {
+                        type: 'doc',
+                        content: [{
+                            type: 'pdfReader',
+                            attrs: {
+                                token: rec.token,
+                                filename: rec.original_filename,
+                                pages: pageCount,
+                                thumbnailToken: thumbnailToken,
+                                viewMode: 'reader',
+                            },
+                        }],
+                    };
 
                     var atom = await API.createAtom({
                         title: rec.original_filename,
-                        content: '[PDF: ' + rec.original_filename + '](' + rec.url + ')\n\n' + text,
+                        content: '[PDF: ' + rec.original_filename + '](' + rec.url + ')',
                         content_json: content_json,
                         content_type: 'media',
                         atom_type: 'F',
@@ -301,12 +313,13 @@ function whiteboardMediaMixin() {
         },
 
         // 只剩 PDF 用；圖片改走普通卡片快路徑（_firstRowIsImage + isImageOnlyCard）
+        // 同時識別 pdfThumbnail（舊資料）與 pdfReader（新資料）
         mediaCardKind(ca) {
             if (!this.isMediaCard(ca)) return null;
             var cj = ca.atom.content_json;
             if (cj && cj.content && cj.content.length > 0) {
                 var first = cj.content[0];
-                if (first && first.type === 'pdfThumbnail') return 'pdf';
+                if (first && (first.type === 'pdfThumbnail' || first.type === 'pdfReader')) return 'pdf';
             }
             return null;
         },
@@ -325,6 +338,54 @@ function whiteboardMediaMixin() {
             if (!cj || !cj.content || cj.content.length === 0) return null;
             var first = cj.content[0];
             return (first && first.attrs && first.attrs.thumbnailToken) || null;
+        },
+
+        // 是否為 pdfReader 類型（新版本，編輯器內顯閱讀器）
+        isPdfReaderCard(ca) {
+            if (this.mediaCardKind(ca) !== 'pdf') return false;
+            var cj = ca.atom.content_json;
+            var first = cj.content[0];
+            return !!(first && first.type === 'pdfReader');
+        },
+
+        // 取得 viewMode（pdfReader 用：reader / thumbnail）
+        pdfReaderViewMode(ca) {
+            if (!this.isPdfReaderCard(ca)) return null;
+            var first = ca.atom.content_json.content[0];
+            return (first.attrs && first.attrs.viewMode) || 'reader';
+        },
+
+        // 白板右鍵切換 PDF reader viewMode（reader ↔ thumbnail）
+        async togglePdfViewModeOnCanvas(ca) {
+            if (!this.isPdfReaderCard(ca)) {
+                this.showToast('此卡片無法切換顯示模式', 'warning');
+                return;
+            }
+            // 若該卡片正在編輯器中開啟，提示先關閉避免雙寫衝突
+            var openEd = (this.openEditors || []).find(function(e) { return e.atomId === ca.atom_id; });
+            if (openEd) {
+                this.showToast('請先關閉編輯器再切換顯示模式', 'warning');
+                return;
+            }
+            var cj = ca.atom.content_json;
+            if (!cj || !cj.content || cj.content.length === 0) return;
+            var first = cj.content[0];
+            var current = (first.attrs && first.attrs.viewMode) || 'reader';
+            var next = current === 'reader' ? 'thumbnail' : 'reader';
+            // 不可變更新：建立新 first node，避免 Alpine reactive 路徑混淆
+            var newFirst = Object.assign({}, first, {
+                attrs: Object.assign({}, first.attrs || {}, { viewMode: next }),
+            });
+            var newContent = [newFirst].concat(cj.content.slice(1));
+            var newJson = Object.assign({}, cj, { content: newContent });
+            try {
+                var resp = await API.updateAtom(ca.atom_id, { content_json: newJson });
+                ca.atom.content_json = newJson;
+                if (resp && resp.updated_at) ca.atom.updated_at = resp.updated_at;
+                this.showToast('已切換為「' + (next === 'reader' ? '閱讀器' : '縮圖') + '」', 'success');
+            } catch (e) {
+                this.showToast('切換失敗：' + (e.message || e), 'error');
+            }
         },
 
         // Fallback：舊 PDF 卡片沒 thumbnailToken 時，client side 即時渲染並背景快取
@@ -357,7 +418,7 @@ function whiteboardMediaMixin() {
             var cj = ca.atom.content_json;
             if (!cj.content || cj.content.length === 0) return;
             var first = cj.content[0];
-            if (!first || first.type !== 'pdfThumbnail') return;
+            if (!first || (first.type !== 'pdfThumbnail' && first.type !== 'pdfReader')) return;
             if (first.attrs && first.attrs.thumbnailToken) return;
             try {
                 var blob = _dataUrlToBlob(dataUrl);

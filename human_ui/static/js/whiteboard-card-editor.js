@@ -150,6 +150,7 @@ function whiteboardCardEditorMixin() {
                 self.$nextTick(function() {
                     initializing = false;
                     self._refreshToolbarState(editorId);
+                    self._refreshEditorPdfMeta(editorId);
                 });
                 self._focusEditor(editorId);
             });
@@ -529,11 +530,134 @@ function whiteboardCardEditorMixin() {
             return hadAny;
         },
 
-        ceHandleSelection(editorId) {
+        // 從 ed reactive 屬性判斷 PDF 卡片類型（避免依賴非 reactive 的 _ceStore）
+        ceIsPdfReaderEditor(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            return !!(ed && ed._pdfKind === 'pdfReader' && ed._pdfViewMode === 'reader');
+        },
+        ceIsPdfMediaEditor(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            return !!(ed && ed._pdfKind);
+        },
+
+        // openCardEditor 完成後呼叫：依 editor 內首節點，回填 ed 的 PDF reactive 屬性
+        _refreshEditorPdfMeta(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce) { ed._pdfKind = null; ed._pdfViewMode = null; return; }
+            var meta = ce.detectPdfMediaNode();
+            if (!meta) { ed._pdfKind = null; ed._pdfViewMode = null; return; }
+            ed._pdfKind = meta.kind;
+            ed._pdfViewMode = meta.viewMode;
+        },
+
+        // 切換 PDF reader 顯示模式（reader ↔ thumbnail），改 viewMode 並標記 dirty
+        ceTogglePdfViewMode(editorId) {
             var ed = this.openEditors.find(function(e) { return e.id === editorId; });
             if (!ed || ed.readonly) return;
             var ce = _ceStore[ed.atomId];
             if (!ce) return;
+            var meta = ce.detectPdfMediaNode();
+            if (!meta || meta.kind !== 'pdfReader') {
+                this.showToast('此卡片無法切換顯示模式', 'warning');
+                return;
+            }
+            var next = meta.viewMode === 'reader' ? 'thumbnail' : 'reader';
+            ce.setPdfReaderViewMode(next);
+            this._markEditorDirty(editorId);
+            // 同步 reactive 屬性，觸發 toolbar 重算
+            ed._pdfViewMode = next;
+            this.showToast('已切換為「' + (next === 'reader' ? '閱讀器' : '縮圖') + '」', 'success');
+        },
+
+        // PDF reader 矩形截圖 → 自動依當前 staging/transcribe 狀態處理
+        async cePdfCrop(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce) return;
+            var view = ce.getFirstPdfReaderView();
+            if (!view) { this.showToast('PDF 閱讀器尚未就緒', 'warning'); return; }
+
+            var self = this;
+            var ok = view.enterCropMode(async function(dataUrl, pageNum, errMsg) {
+                if (!dataUrl) {
+                    if (errMsg && errMsg !== '取消') self.showToast(errMsg, 'warning');
+                    return;
+                }
+                // 上傳截圖 → 取得連結
+                try {
+                    var blob = self._dataUrlToBlobLocal(dataUrl);
+                    if (!blob) { self.showToast('截圖轉檔失敗', 'error'); return; }
+                    var fname = (ed.title || 'pdf') + '_p' + pageNum + '.png';
+                    var fileObj = new File([blob], fname, { type: 'image/png' });
+                    var rec = await API.uploadFile(fileObj, 'image');
+                    if (!rec || !rec.url) { self.showToast('上傳失敗', 'error'); return; }
+
+                    var imgNode = {
+                        type: 'image',
+                        attrs: { src: rec.url, alt: fname, title: null, width: null },
+                    };
+                    var paragraphNode = { type: 'paragraph', content: [imgNode] };
+                    var contentJson = [paragraphNode];
+                    var displayText = '[截圖 ' + fname + ']';
+
+                    // 謄寫模式：直接送到另一文件
+                    if (self.transcribeMode && self.openEditors.length === 2) {
+                        var other = self.openEditors.find(function(e) { return e.id !== editorId; });
+                        if (other) {
+                            var otherCe = _ceStore[other.atomId];
+                            if (otherCe && otherCe.editor) {
+                                otherCe.editor.commands.insertContent(contentJson);
+                                if (self.transcribeNewline) otherCe.editor.chain().setHardBreak().run();
+                                self._markEditorDirty(other.id);
+                                self.showToast('截圖已謄寫到「' + (other.title || '#' + other.atomId) + '」', 'success');
+                                return;
+                            }
+                        }
+                    }
+                    // 擷取面板開：進暫存
+                    if (self.ceStagingOpen) {
+                        self.addToStaging(displayText, ed.atomId, ed.title, contentJson);
+                        self.showToast('截圖已加入暫存區', 'success');
+                        return;
+                    }
+                    self.showToast('請先開啟「擷取」面板或啟用「謄寫」模式', 'warning');
+                } catch (err) {
+                    console.error('crop upload failed:', err);
+                    self.showToast('截圖上傳失敗：' + (err.message || err), 'error');
+                }
+            });
+            if (!ok) this.showToast('無法啟動截圖模式（非 reader 模式？）', 'warning');
+        },
+
+        _dataUrlToBlobLocal(dataUrl) {
+            if (!dataUrl) return null;
+            var m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+            if (!m) return null;
+            var mime = m[1];
+            var bin = atob(m[2]);
+            var len = bin.length;
+            var buf = new Uint8Array(len);
+            for (var i = 0; i < len; i++) buf[i] = bin.charCodeAt(i);
+            return new Blob([buf], { type: mime });
+        },
+
+        ceHandleSelection(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce) return;
+
+            // PDF reader 卡片走獨立路徑：native selection、移動降級為複製
+            var pdfMeta = ce.detectPdfMediaNode();
+            if (pdfMeta && pdfMeta.kind === 'pdfReader' && pdfMeta.viewMode === 'reader') {
+                this._cePdfHandleSelection(editorId, ed, ce);
+                return;
+            }
+
+            if (ed.readonly) return;
 
             // 連續色筆 / 連續螢光：拖選後自動套用，套完即返（不進擷取流程）
             // 值為 hex → 染色；值為 'erase' → 消除；null → 不動
@@ -584,6 +708,36 @@ function whiteboardCardEditorMixin() {
 
             if (shouldDelete) this._markEditorDirty(editorId);
             this.addToStaging(info.markdown, ed.atomId, ed.title, info.contentJson);
+        },
+
+        _cePdfHandleSelection(editorId, ed, ce) {
+            var view = ce.getFirstPdfReaderView();
+            if (!view) return;
+            var text = view.getSelectedText();
+            if (!text) return;
+            text = String(text).replace(/\s+/g, ' ').trim();
+            if (!text) return;
+
+            // PDF 不能刪除原文 → 一律複製語意（移動模式自動降級）
+            var contentJson = [{
+                type: 'paragraph',
+                content: [{ type: 'text', text: text }],
+            }];
+
+            if (this.transcribeMode && this.openEditors.length === 2) {
+                var other = this.openEditors.find(function(e) { return e.id !== editorId; });
+                if (!other) return;
+                var otherCe = _ceStore[other.atomId];
+                if (!otherCe || !otherCe.editor) return;
+                otherCe.editor.commands.insertContent(contentJson);
+                if (this.transcribeNewline) otherCe.editor.chain().setHardBreak().run();
+                this._markEditorDirty(other.id);
+                try { window.getSelection().removeAllRanges(); } catch (e) {}
+                return;
+            }
+            if (!this.ceStagingOpen) return;
+            this.addToStaging(text, ed.atomId, ed.title, contentJson);
+            try { window.getSelection().removeAllRanges(); } catch (e) {}
         },
 
         addToStaging(text, atomId, title, contentJson) {

@@ -949,6 +949,162 @@
 }
 .pdf-thumb-link:hover { background: #eff6ff; }
 
+/* ============================================================
+   PDF Reader Tiptap node (viewMode='reader')
+   ============================================================ */
+.pdf-reader-block {
+    display: block;
+    margin: 0;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #f8fafc;
+    overflow: hidden;
+}
+.pdf-reader-block.pdf-reader-thumb-mode {
+    margin: 8px 0;
+    background: transparent;
+    border: none;
+}
+.pdf-reader-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: 12px;
+    border-bottom: 1px solid #334155;
+}
+.pdf-reader-name { flex: 1; font-weight: 500; word-break: break-all; }
+.pdf-reader-pages-count { color: #94a3b8; font-size: 11px; }
+.pdf-reader-pages-wrap {
+    position: relative;
+    background: #475569;
+}
+.pdf-reader-pages {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+.pdf-reader-page {
+    position: relative;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    flex-shrink: 0;
+}
+.pdf-reader-page-placeholder {
+    padding: 24px;
+    color: #94a3b8;
+    font-size: 12px;
+    text-align: center;
+}
+.pdf-reader-canvas {
+    display: block;
+    position: relative;
+    z-index: 1;
+}
+.pdf-reader-note {
+    padding: 24px;
+    color: #94a3b8;
+    font-size: 12px;
+    text-align: center;
+    font-style: italic;
+}
+
+/* PDF.js text layer (兼容 5.x 標準 className) */
+.pdf-reader-text-layer.textLayer {
+    position: absolute;
+    text-align: initial;
+    inset: 0;
+    overflow: clip;
+    opacity: 1;
+    line-height: 1;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+    z-index: 2;
+    user-select: text;
+}
+.pdf-reader-text-layer.textLayer span,
+.pdf-reader-text-layer.textLayer br {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+}
+.pdf-reader-text-layer.textLayer ::selection {
+    background: rgba(37, 99, 235, 0.35);
+}
+.pdf-reader-text-layer.textLayer .endOfContent {
+    display: block;
+    position: absolute;
+    inset: 100% 0 0;
+    z-index: -1;
+    cursor: default;
+    user-select: none;
+}
+.pdf-reader-text-layer.textLayer.selecting .endOfContent {
+    top: 0;
+}
+
+/* 截圖 overlay */
+.pdf-reader-crop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    cursor: crosshair;
+    background: rgba(15, 23, 42, 0.0);
+    display: none;
+}
+.pdf-reader-crop-overlay.active { display: block; }
+.pdf-reader-block.pdf-cropping .pdf-reader-text-layer { user-select: none; pointer-events: none; }
+
+/* 拖選矩形（fixed 定位於 body） */
+.pdf-crop-rect {
+    border: 2px dashed #f59e0b;
+    background: rgba(245, 158, 11, 0.18);
+    pointer-events: none;
+    z-index: 99999;
+}
+
+/* PDF reader 在編輯器內：給 pages 固定 max-height 觸發捲動，不依賴父層 flex */
+.pdf-reader-block.pdf-reader-reader-mode {
+    margin: 0;
+}
+.pdf-reader-block.pdf-reader-reader-mode .pdf-reader-pages {
+    max-height: calc(100vh - 260px);
+    min-height: 480px;
+}
+
+/* PDF 卡片專屬 toolbar */
+.ce-pane-toolbar-pdf {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    flex-shrink: 0;
+    background: #fef3c7;
+}
+.ce-pane-toolbar-pdf button {
+    background: #fff;
+    border: 1px solid #fbbf24;
+    color: #b45309;
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    cursor: pointer;
+}
+.ce-pane-toolbar-pdf button:hover:not(:disabled) { background: #fde68a; }
+.ce-pane-toolbar-pdf button:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* Placeholder */
 .card-editor-content p.is-editor-empty:first-child::before {
     content: attr(data-placeholder);

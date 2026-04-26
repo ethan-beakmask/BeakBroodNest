@@ -9,6 +9,7 @@ import { TaskList } from '@tiptap/extension-task-list'
 import { TaskItem } from '@tiptap/extension-task-item'
 import { ResizableImage } from './resizable-image.js'
 import { PdfThumbnail } from './pdf-thumbnail.js'
+import { PdfReader } from './pdf-reader.js'
 import { Placeholder } from '@tiptap/extension-placeholder'
 import { Typography } from '@tiptap/extension-typography'
 import { Highlight } from '@tiptap/extension-highlight'
@@ -68,6 +69,7 @@ class CardEditor {
                 }),
                 StructuredEntry,
                 PdfThumbnail,
+                PdfReader,
                 SlashCommand,
                 SelectionToolbar,
             ],
@@ -359,6 +361,8 @@ class CardEditor {
         const entries = []
         const doc = this.editor.state.doc
         doc.forEach((node, offset, index) => {
+            // 媒體 atom node（PDF）不視為任何 entry
+            if (node.type.name === 'pdfReader' || node.type.name === 'pdfThumbnail') return
             if (node.type.name === 'structuredEntry') {
                 entries.push({
                     id: node.attrs.entryId || null,
@@ -442,6 +446,42 @@ class CardEditor {
             }
         })
         this.editor.commands.setContent({ type: 'doc', content })
+    }
+
+    /**
+     * 偵測整份文件是否為 PDF 媒體卡片：第一塊 node 是 pdfReader 或 pdfThumbnail。
+     * @returns {{ kind: 'pdfReader' | 'pdfThumbnail', viewMode: string, attrs: object } | null}
+     */
+    detectPdfMediaNode() {
+        if (!this.editor) return null
+        const doc = this.editor.state.doc
+        if (doc.content.size === 0 || doc.childCount === 0) return null
+        const first = doc.firstChild
+        if (!first) return null
+        const t = first.type.name
+        if (t !== 'pdfReader' && t !== 'pdfThumbnail') return null
+        return {
+            kind: t,
+            viewMode: t === 'pdfReader' ? (first.attrs.viewMode || 'reader') : 'thumbnail',
+            attrs: { ...first.attrs },
+        }
+    }
+
+    /**
+     * 取得文件中第一個 pdfReader NodeView 實例（若有）。
+     * @returns {PdfReaderView | null}
+     */
+    getFirstPdfReaderView() {
+        if (!this.editor || !this.editor.view) return null
+        const root = this.editor.view.dom
+        const el = root.querySelector('.pdf-reader-block')
+        return el && el._pdfReaderView ? el._pdfReaderView : null
+    }
+
+    /** 切換 pdfReader node 的 viewMode（reader / thumbnail） */
+    setPdfReaderViewMode(mode) {
+        if (!this.editor) return false
+        return this.editor.commands.setPdfReaderViewMode(mode)
     }
 
     /** 銷毀編輯器 */

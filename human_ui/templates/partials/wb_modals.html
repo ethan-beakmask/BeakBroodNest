@@ -798,8 +798,24 @@
                                     x-text="maximizedEditorId === ed.id ? '&#9724;' : '&#9723;'"></button>
                             <button class="card-editor-close" @click="closeEditor(ed.id)" title="關閉此卡片">x</button>
                         </div>
+                        <!-- PDF 媒體卡片專屬工具列（取代普通 toolbar） -->
+                        <div class="ce-pane-toolbar ce-pane-toolbar-pdf" x-show="ceIsPdfMediaEditor(ed.id)">
+                            <button @click="cePdfCrop(ed.id)"
+                                    :disabled="!ceIsPdfReaderEditor(ed.id)"
+                                    :title="ceIsPdfReaderEditor(ed.id) ? '框選 PDF 區域截圖到擷取/謄寫' : '需切換到「閱讀器」模式才能截圖'">
+                                &#9986; 截圖
+                            </button>
+                            <span class="tb-sep"></span>
+                            <button @click="ceTogglePdfViewMode(ed.id)" :disabled="ed.readonly"
+                                    title="reader / thumbnail 切換">
+                                <template x-if="ceIsPdfReaderEditor(ed.id)"><span>切為縮圖</span></template>
+                                <template x-if="!ceIsPdfReaderEditor(ed.id)"><span>切為閱讀器</span></template>
+                            </button>
+                            <span style="flex:1;"></span>
+                            <span style="font-size:11px;color:#94a3b8;">PDF 媒體卡片</span>
+                        </div>
                         <!-- Pane Toolbar (compact) -->
-                        <div class="ce-pane-toolbar" x-show="!ed.readonly">
+                        <div class="ce-pane-toolbar" x-show="!ed.readonly && !ceIsPdfMediaEditor(ed.id)">
                             <button @click="ceCmd('bold', ed.id)" title="粗體"><b>B</b></button>
                             <button @click="ceCmd('italic', ed.id)" title="斜體"><i>I</i></button>
                             <button @click="ceCmd('underline', ed.id)" title="底線"><u>U</u></button>
@@ -848,7 +864,7 @@
                                     x-text="ceHasCollapsed[ed.id] ? '[+]全展' : '[-]全收'"></button>
                         </div>
                         <!-- Pane Toolbar 第二排：連續色筆 / 連續螢光（紅綠黃藍各 4 色） -->
-                        <div class="ce-pane-toolbar-2" x-show="!ed.readonly">
+                        <div class="ce-pane-toolbar-2" x-show="!ed.readonly && !ceIsPdfMediaEditor(ed.id)">
                             <span class="tb-group-label">色筆</span>
                             <template x-for="c in colorPenPalette" :key="'pen-'+c.key">
                                 <button class="ce-color-btn ce-color-pen"
@@ -1415,6 +1431,11 @@
                 <div>
                     <div class="context-menu-item" @click="openCardEditor(contextMenu.ca.atom_id); closeContextMenu()">開啟卡片</div>
                     <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">側欄編輯</div>
+                    <template x-if="isPdfReaderCard(contextMenu.ca)">
+                        <div class="context-menu-item"
+                             @click="togglePdfViewModeOnCanvas(contextMenu.ca); closeContextMenu()"
+                             x-text="pdfReaderViewMode(contextMenu.ca) === 'reader' ? '切換為縮圖（thumbnail）' : '切換為閱讀器（reader）'"></div>
+                    </template>
                     <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="sendToCanvasTrash(contextMenu.ca); closeContextMenu()">丟到字紙簍（可救回）</div>
                     <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除（解除連結，不可救回）</div>
