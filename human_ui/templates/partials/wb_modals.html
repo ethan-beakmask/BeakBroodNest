@@ -665,6 +665,60 @@
     </template>
 
     <!-- 群組編輯 -->
+    <template x-if="showTextboxModal">
+        <div class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3>編輯文字框</h3>
+                    <button class="modal-close" @click="closeTextboxModal()">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>標題</label>
+                        <input class="form-control" x-model="textboxForm.title"
+                               @keydown.enter="saveTextboxEdit()">
+                    </div>
+                    <div class="form-group" style="display:flex;gap:18px;align-items:flex-end;">
+                        <div>
+                            <label style="display:block;">底色</label>
+                            <input type="color" x-model="textboxForm.bg_color"
+                                   :disabled="textboxForm.bg_transparent"
+                                   :style="'width:60px;height:32px;border:1px solid var(--border-light);border-radius:4px;cursor:pointer;' + (textboxForm.bg_transparent ? 'opacity:0.4;' : '')">
+                        </div>
+                        <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding-bottom:6px;">
+                            <input type="checkbox" x-model="textboxForm.bg_transparent">
+                            透明
+                        </label>
+                        <div>
+                            <label style="display:block;">框線色</label>
+                            <input type="color" x-model="textboxForm.border_color"
+                                   style="width:60px;height:32px;border:1px solid var(--border-light);border-radius:4px;cursor:pointer;">
+                        </div>
+                        <div>
+                            <label style="display:block;">文字色</label>
+                            <input type="color" x-model="textboxForm.text_color"
+                                   style="width:60px;height:32px;border:1px solid var(--border-light);border-radius:4px;cursor:pointer;">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>框線樣式</label>
+                        <select class="form-control" x-model="textboxForm.border_style">
+                            <option value="none">無</option>
+                            <option value="solid">實線</option>
+                            <option value="dashed">虛線</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" style="color:var(--danger);" @click="if(editingTextbox){ var tb=editingTextbox; closeTextboxModal(); sendTextboxToTrash(tb); }">送字紙簍</button>
+                    <div style="flex:1"></div>
+                    <button class="btn btn-secondary" @click="closeTextboxModal()">取消</button>
+                    <button class="btn btn-primary" @click="saveTextboxEdit()">儲存</button>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <template x-if="showGroupModal">
         <div class="modal-overlay">
             <div class="modal">
@@ -1455,6 +1509,13 @@
                             <div class="context-menu-separator"></div>
                         </div>
                     </template>
+                </div>
+            </template>
+            <template x-if="contextMenu.type === 'textbox'">
+                <div>
+                    <div class="context-menu-item" @click="openTextboxEditModal(contextMenu.tb); closeContextMenu()">編輯（標題/顏色/框線）</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="sendTextboxToTrash(contextMenu.tb); closeContextMenu()">丟到字紙簍（可救回）</div>
                 </div>
             </template>
         </div>

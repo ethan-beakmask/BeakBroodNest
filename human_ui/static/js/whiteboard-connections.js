@@ -7,10 +7,13 @@ function whiteboardConnectionsMixin() {
         // Connection Drag (from card anchors)
         startConnDrag(e, ca, anchor) {
             this.isConnDragging = true;
+            this.connDragSourceKind = 'atom';
             this.connDragSourceAtomId = ca.atom_id;
+            this.connDragSourceTextboxId = null;
             this.connDragSourceAnchor = anchor;
             this.connDragSourceEntryId = null;
             this.connDragHoverAtomId = null;
+            this.connDragHoverTextboxId = null;
             this.connDragHoverEntryId = null;
             this.connDragShiftKey = e.shiftKey;
             this.connDragMouseX = e.clientX;
@@ -57,12 +60,21 @@ function whiteboardConnectionsMixin() {
                 if (hel) hel.classList.remove('conn-entry-hover');
             }
 
-            var hasTarget = this.connDragHoverAtomId && this.connDragHoverAtomId !== this.connDragSourceAtomId;
-            var isEntryLevel = this.connDragSourceEntryId || this.connDragHoverEntryId;
+            var srcKind = this.connDragSourceKind || 'atom';
+            var tgtKind = this.connDragHoverTextboxId ? 'textbox'
+                        : (this.connDragHoverAtomId ? 'atom' : null);
+            var sameNode = (srcKind === tgtKind) && (
+                (srcKind === 'atom'    && this.connDragHoverAtomId    === this.connDragSourceAtomId) ||
+                (srcKind === 'textbox' && this.connDragHoverTextboxId === this.connDragSourceTextboxId)
+            );
+            var hasTarget = tgtKind && !sameNode;
+            var isEntryLevel = (srcKind === 'atom' && tgtKind === 'atom') &&
+                               (this.connDragSourceEntryId || this.connDragHoverEntryId);
+            var isPureAtom = (srcKind === 'atom' && tgtKind === 'atom');
 
-            if (hasTarget || (this.connDragHoverAtomId && isEntryLevel)) {
-                if (this.connDragShiftKey) {
-                    // Shift+拖拉：跳 modal 選擇型別
+            if (hasTarget || (isPureAtom && this.connDragHoverAtomId && isEntryLevel)) {
+                if (isPureAtom && this.connDragShiftKey) {
+                    // Shift+拖拉：跳 modal 選擇型別（僅 atom-atom）
                     this.pendingConnection = {
                         sourceAtomId: this.connDragSourceAtomId,
                         targetAtomId: this.connDragHoverAtomId,
@@ -72,8 +84,7 @@ function whiteboardConnectionsMixin() {
                     this.selectedRelationType = isEntryLevel ? 'freeform' : 'references';
                     this.relationLabel = '';
                     this.showRelationModal = true;
-                } else {
-                    // 普通拖拉：entry 級用 freeform，card 級用 references
+                } else if (isPureAtom) {
                     this.createConnectionDirect(
                         this.connDragSourceAtomId,
                         this.connDragHoverAtomId,
@@ -81,16 +92,46 @@ function whiteboardConnectionsMixin() {
                         this.connDragSourceEntryId || null,
                         this.connDragHoverEntryId || null
                     );
+                } else {
+                    // textbox 端點：純視覺連線，不掛 unified_relation
+                    this.createTextboxConnectionDirect(
+                        srcKind, this.connDragSourceAtomId, this.connDragSourceTextboxId,
+                        tgtKind, this.connDragHoverAtomId, this.connDragHoverTextboxId
+                    );
                 }
             }
             this.isConnDragging = false;
+            this.connDragSourceKind = null;
             this.connDragSourceAtomId = null;
+            this.connDragSourceTextboxId = null;
             this.connDragSourceAnchor = null;
             this.connDragSourceEntryId = null;
             this.connDragHoverAtomId = null;
+            this.connDragHoverTextboxId = null;
             this.connDragHoverEntryId = null;
             this.connDragShiftKey = false;
             this.clearPreviewLine();
+        },
+
+        async createTextboxConnectionDirect(srcKind, srcAtomId, srcTbId, tgtKind, tgtAtomId, tgtTbId) {
+            try {
+                var payload = {
+                    canvas_id: this.canvasId,
+                    from_kind: srcKind, to_kind: tgtKind,
+                };
+                if (srcKind === 'atom')    payload.source_atom_id = srcAtomId;
+                if (srcKind === 'textbox') payload.source_textbox_id = srcTbId;
+                if (tgtKind === 'atom')    payload.target_atom_id = tgtAtomId;
+                if (tgtKind === 'textbox') payload.target_textbox_id = tgtTbId;
+                var resp = await API.post('/beakcortex/api/canvas-connections', payload);
+                if (resp && !resp.error) {
+                    await this.loadData();
+                    this.renderConnections();
+                }
+            } catch (e) {
+                this.showToast('連線建立失敗', 'error');
+            }
+            this.mode = 'select';
         },
 
         async createConnectionDirect(sourceAtomId, targetAtomId, relationType, sourceEntryId, targetEntryId) {
@@ -123,10 +164,13 @@ function whiteboardConnectionsMixin() {
                 if (hel) hel.classList.remove('conn-entry-hover');
             }
             this.isConnDragging = false;
+            this.connDragSourceKind = null;
             this.connDragSourceAtomId = null;
+            this.connDragSourceTextboxId = null;
             this.connDragSourceAnchor = null;
             this.connDragSourceEntryId = null;
             this.connDragHoverAtomId = null;
+            this.connDragHoverTextboxId = null;
             this.connDragHoverEntryId = null;
             this.clearPreviewLine();
         },
@@ -194,22 +238,27 @@ function whiteboardConnectionsMixin() {
         updatePreviewLine() {
             var line = this.$refs.previewLine;
             if (!line || !this.isConnDragging) return;
-            // 起點：entry 級 -> entry 邊緣；card 級 -> card anchor
+            // 起點：entry 級 -> entry 邊緣；card/textbox 級 -> 對應 anchor
             var src;
-            if (this.connDragSourceEntryId) {
+            if (this.connDragSourceKind === 'textbox') {
+                src = this.getTextboxAnchorPos(this.connDragSourceTextboxId, this.connDragSourceAnchor);
+            } else if (this.connDragSourceEntryId) {
                 src = this.getEntryEdgePos(this.connDragSourceAtomId, this.connDragSourceEntryId, 'right');
             } else {
                 src = this.getAnchorPos(this.connDragSourceAtomId, this.connDragSourceAnchor);
             }
             var tgt = this.screenToCanvas(this.connDragMouseX, this.connDragMouseY);
-            // 終點 snap：entry 級 -> entry 邊緣；card 級 -> nearest anchor
+            // 終點 snap
             if (this.connDragHoverEntryId && this.connDragHoverAtomId) {
                 var eSide = (tgt.x < src.x) ? 'right' : 'left';
                 var ep = this.getEntryEdgePos(this.connDragHoverAtomId, this.connDragHoverEntryId, eSide);
                 tgt.x = ep.x; tgt.y = ep.y;
-            } else if (this.connDragHoverAtomId) {
-                var snap = this.findNearestAnchor(this.connDragHoverAtomId, tgt.x, tgt.y);
+            } else if (this.connDragHoverTextboxId) {
+                var snap = this.findNearestTextboxAnchor(this.connDragHoverTextboxId, tgt.x, tgt.y);
                 tgt.x = snap.x; tgt.y = snap.y;
+            } else if (this.connDragHoverAtomId) {
+                var snap2 = this.findNearestAnchor(this.connDragHoverAtomId, tgt.x, tgt.y);
+                tgt.x = snap2.x; tgt.y = snap2.y;
             }
             var dx = tgt.x - src.x;
             var cx1 = src.x + dx * 0.4;
@@ -226,8 +275,11 @@ function whiteboardConnectionsMixin() {
         onCardMouseEnterForConn(ca) {
             if (!this.isConnDragging) return;
             // entry 級拖拉允許同卡片（不同 entry），card 級拖拉禁止同卡片
-            if (this.connDragSourceEntryId || ca.atom_id !== this.connDragSourceAtomId) {
+            // textbox->atom 連線無同卡片限制
+            var sameAtomSource = (this.connDragSourceKind === 'atom' && ca.atom_id === this.connDragSourceAtomId);
+            if (this.connDragSourceEntryId || !sameAtomSource) {
                 this.connDragHoverAtomId = ca.atom_id;
+                this.connDragHoverTextboxId = null;
             }
         },
 
@@ -248,21 +300,46 @@ function whiteboardConnectionsMixin() {
             };
         },
 
-        _calcEdgeEndpoints(srcCa, tgtCa) {
-            var srcSize = this._getCardSize(srcCa);
-            var tgtSize = this._getCardSize(tgtCa);
-            var sw = srcSize.w, sh = srcSize.h;
-            var tw = tgtSize.w, th = tgtSize.h;
-            var scx = srcCa.pos_x + sw / 2, scy = srcCa.pos_y + sh / 2;
-            var tcx = tgtCa.pos_x + tw / 2, tcy = tgtCa.pos_y + th / 2;
+        // 取得連線端點的「物件」(atom 卡片或文字框)
+        // 回傳統一形狀: { kind, id, pos_x, pos_y, w, h }
+        _getConnEndpointObj(conn, side) {
+            if (side === 'source') {
+                if (conn.from_kind === 'textbox') {
+                    var tb = (this.textboxes || []).find(function(x) { return x.id === conn.source_textbox_id; });
+                    if (!tb) return null;
+                    return { kind: 'textbox', id: tb.id, pos_x: tb.pos_x, pos_y: tb.pos_y, w: tb.width, h: tb.height };
+                }
+                var srcCa = this.atoms.find(function(a) { return a.atom_id === conn.source_atom_id; });
+                if (!srcCa) return null;
+                var sz = this._getCardSize(srcCa);
+                return { kind: 'atom', id: srcCa.atom_id, pos_x: srcCa.pos_x, pos_y: srcCa.pos_y, w: sz.w, h: sz.h };
+            } else {
+                if (conn.to_kind === 'textbox') {
+                    var tb2 = (this.textboxes || []).find(function(x) { return x.id === conn.target_textbox_id; });
+                    if (!tb2) return null;
+                    return { kind: 'textbox', id: tb2.id, pos_x: tb2.pos_x, pos_y: tb2.pos_y, w: tb2.width, h: tb2.height };
+                }
+                var tgtCa = this.atoms.find(function(a) { return a.atom_id === conn.target_atom_id; });
+                if (!tgtCa) return null;
+                var sz2 = this._getCardSize(tgtCa);
+                return { kind: 'atom', id: tgtCa.atom_id, pos_x: tgtCa.pos_x, pos_y: tgtCa.pos_y, w: sz2.w, h: sz2.h };
+            }
+        },
+
+        // 通用：接受 endpoint 物件 ({ pos_x, pos_y, w, h })
+        _calcEdgeEndpoints(srcEp, tgtEp) {
+            var sw = srcEp.w, sh = srcEp.h;
+            var tw = tgtEp.w, th = tgtEp.h;
+            var scx = srcEp.pos_x + sw / 2, scy = srcEp.pos_y + sh / 2;
+            var tcx = tgtEp.pos_x + tw / 2, tcy = tgtEp.pos_y + th / 2;
             var ddx = tcx - scx, ddy = tcy - scy;
             var sx, sy, tx, ty;
             if (Math.abs(ddx) > Math.abs(ddy)) {
-                if (ddx > 0) { sx = srcCa.pos_x + sw; sy = scy; tx = tgtCa.pos_x; ty = tcy; }
-                else         { sx = srcCa.pos_x;       sy = scy; tx = tgtCa.pos_x + tw; ty = tcy; }
+                if (ddx > 0) { sx = srcEp.pos_x + sw; sy = scy; tx = tgtEp.pos_x; ty = tcy; }
+                else         { sx = srcEp.pos_x;       sy = scy; tx = tgtEp.pos_x + tw; ty = tcy; }
             } else {
-                if (ddy > 0) { sx = scx; sy = srcCa.pos_y + sh; tx = tcx; ty = tgtCa.pos_y; }
-                else         { sx = scx; sy = srcCa.pos_y;       tx = tcx; ty = tgtCa.pos_y + th; }
+                if (ddy > 0) { sx = scx; sy = srcEp.pos_y + sh; tx = tcx; ty = tgtEp.pos_y; }
+                else         { sx = scx; sy = srcEp.pos_y;       tx = tcx; ty = tgtEp.pos_y + th; }
             }
             return { sx: sx, sy: sy, tx: tx, ty: ty, ddx: ddx, ddy: ddy };
         },
@@ -298,29 +375,29 @@ function whiteboardConnectionsMixin() {
             return ca.pos_x + w > vb.left && ca.pos_x < vb.right && ca.pos_y + h > vb.top && ca.pos_y < vb.bottom;
         },
 
+        _isEpInViewport(ep, vb) {
+            return ep.pos_x + ep.w > vb.left && ep.pos_x < vb.right && ep.pos_y + ep.h > vb.top && ep.pos_y < vb.bottom;
+        },
+
         _filterOptimizedConnections(connList) {
             var vb = this._getViewportBounds();
             if (!vb) return connList || this.connections;
             var sourceConns = connList || this.connections;
             var self = this;
-            var atomMap = {};
-            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
             var outsideCount = 0;
             this.atoms.forEach(function(ca) { if (!self._isInViewport(ca, vb)) outsideCount++; });
             if (outsideCount <= 100) return sourceConns;
             var insideConns = [];
             var outsideConns = [];
             sourceConns.forEach(function(conn) {
-                var src = atomMap[conn.source_atom_id];
-                var tgt = atomMap[conn.target_atom_id];
+                var src = self._getConnEndpointObj(conn, 'source');
+                var tgt = self._getConnEndpointObj(conn, 'target');
                 if (!src || !tgt) return;
-                if (self._isInViewport(src, vb) && self._isInViewport(tgt, vb)) {
+                if (self._isEpInViewport(src, vb) && self._isEpInViewport(tgt, vb)) {
                     insideConns.push(conn);
                 } else {
-                    var sw = src.width || 265, sh = src.height || 125;
-                    var tw = tgt.width || 265, th = tgt.height || 125;
-                    var mx = ((src.pos_x + sw / 2) + (tgt.pos_x + tw / 2)) / 2;
-                    var my = ((src.pos_y + sh / 2) + (tgt.pos_y + th / 2)) / 2;
+                    var mx = ((src.pos_x + src.w / 2) + (tgt.pos_x + tgt.w / 2)) / 2;
+                    var my = ((src.pos_y + src.h / 2) + (tgt.pos_y + tgt.h / 2)) / 2;
                     var dx = mx - vb.cx, dy = my - vb.cy;
                     var dist = Math.sqrt(dx * dx + dy * dy);
                     var angle = Math.atan2(dy, dx);
@@ -372,8 +449,11 @@ function whiteboardConnectionsMixin() {
                 return;
             }
             var visibleIds = this.filteredAtomIds;
+            // 連線可見性：atom 端點受 filter 控制；textbox 端點一律可見
             var baseConns = this.connections.filter(function(c) {
-                return visibleIds.includes(c.source_atom_id) && visibleIds.includes(c.target_atom_id);
+                var srcOk = (c.from_kind === 'textbox') || visibleIds.includes(c.source_atom_id);
+                var tgtOk = (c.to_kind   === 'textbox') || visibleIds.includes(c.target_atom_id);
+                return srcOk && tgtOk;
             });
             var renderList = this.rtOptEnabled ? this._filterOptimizedConnections(baseConns) : baseConns;
             this.renderStats = { total: this.connections.length, rendered: renderList.length };
@@ -382,14 +462,26 @@ function whiteboardConnectionsMixin() {
         },
 
         // 計算同對端點的偏移量（多條線避重疊）
+        // 端點 key 用 kind 與 id 組合，避免不同類型 ID 撞號
+        _connEndpointKey(conn, side) {
+            if (side === 'source') {
+                return (conn.from_kind || 'atom') + ':' + (conn.from_kind === 'textbox' ? conn.source_textbox_id : conn.source_atom_id);
+            }
+            return (conn.to_kind || 'atom') + ':' + (conn.to_kind === 'textbox' ? conn.target_textbox_id : conn.target_atom_id);
+        },
+
         _calcPairOffset(conn, renderList) {
-            var a = Math.min(conn.source_atom_id, conn.target_atom_id);
-            var b = Math.max(conn.source_atom_id, conn.target_atom_id);
+            var sk = this._connEndpointKey(conn, 'source');
+            var tk = this._connEndpointKey(conn, 'target');
+            var a = sk < tk ? sk : tk;
+            var b = sk < tk ? tk : sk;
             var sameCount = 0, myIndex = 0;
             for (var i = 0; i < renderList.length; i++) {
                 var c = renderList[i];
-                var ca = Math.min(c.source_atom_id, c.target_atom_id);
-                var cb = Math.max(c.source_atom_id, c.target_atom_id);
+                var csk = this._connEndpointKey(c, 'source');
+                var ctk = this._connEndpointKey(c, 'target');
+                var ca = csk < ctk ? csk : ctk;
+                var cb = csk < ctk ? ctk : csk;
                 if (ca === a && cb === b) {
                     if (c.id === conn.id) myIndex = sameCount;
                     sameCount++;
@@ -477,18 +569,19 @@ function whiteboardConnectionsMixin() {
             });
             svg.appendChild(defs);
             var self = this;
-            var atomMap = {};
-            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
             renderList.forEach(function(conn) {
-                var srcCa = atomMap[conn.source_atom_id];
-                var tgtCa = atomMap[conn.target_atom_id];
-                if (!srcCa || !tgtCa) return;
-                var isEntryConn = !!(conn.source_entry_id || conn.target_entry_id);
+                var srcEp = self._getConnEndpointObj(conn, 'source');
+                var tgtEp = self._getConnEndpointObj(conn, 'target');
+                if (!srcEp || !tgtEp) return;
+                var isAtomToAtom = (srcEp.kind === 'atom' && tgtEp.kind === 'atom');
+                var isEntryConn = isAtomToAtom && !!(conn.source_entry_id || conn.target_entry_id);
                 var ep;
                 if (isEntryConn) {
+                    var srcCa = self.atoms.find(function(a) { return a.atom_id === conn.source_atom_id; });
+                    var tgtCa = self.atoms.find(function(a) { return a.atom_id === conn.target_atom_id; });
                     ep = self._calcEntryEndpoints(srcCa, tgtCa, conn);
                 } else {
-                    ep = self._calcEdgeEndpoints(srcCa, tgtCa);
+                    ep = self._calcEdgeEndpoints(srcEp, tgtEp);
                 }
                 var pairInfo = self._calcPairOffset(conn, renderList);
                 var offset = isEntryConn ? 0 : pairInfo.offset;
@@ -600,15 +693,13 @@ function whiteboardConnectionsMixin() {
         _renderGrouped(svg, renderList) {
             var isStraight = (this.rtLineStyle === 'straight');
             var self = this;
-            var atomMap = {};
-            this.atoms.forEach(function(ca) { atomMap[ca.atom_id] = ca; });
             var groups = {};
             var geom = [];
             renderList.forEach(function(conn) {
-                var srcCa = atomMap[conn.source_atom_id];
-                var tgtCa = atomMap[conn.target_atom_id];
-                if (!srcCa || !tgtCa) return;
-                var ep = self._calcEdgeEndpoints(srcCa, tgtCa);
+                var srcEp = self._getConnEndpointObj(conn, 'source');
+                var tgtEp = self._getConnEndpointObj(conn, 'target');
+                if (!srcEp || !tgtEp) return;
+                var ep = self._calcEdgeEndpoints(srcEp, tgtEp);
                 var lc = conn.color || '#94a3b8';
                 var ls = conn.line_style || 'solid';
                 var key = lc + '|' + ls;

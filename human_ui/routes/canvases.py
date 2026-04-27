@@ -11,7 +11,7 @@ from core.db import session_scope
 from core.models import (
     KnowledgeAtom, UnifiedRelation, RelationTypeRegistry,
     Canvas, CanvasAtom, CanvasConnection, CanvasTrash,
-    CanvasGroup, Tag, atom_tags, canvas_group_members,
+    CanvasGroup, CanvasTextbox, Tag, atom_tags, canvas_group_members,
     AtomEntry, EntrySchema,
 )
 from core import relations as rel_service
@@ -132,21 +132,26 @@ def _build_canvas_snapshot(s, canvas_id):
         .filter(CanvasConnection.canvas_id == canvas_id)
         .all()
     )
-    snap_conns = [{
-        'id': cr.id, 'canvas_id': cr.canvas_id,
-        'source_atom_id': cr.source_atom_id, 'target_atom_id': cr.target_atom_id,
-        'unified_relation_id': cr.unified_relation_id,
-        'line_style': cr.line_style,
-        'color': cr.color, 'label': cr.label, 'animated': cr.animated,
-        'relation_type': cr.relation_type,
-        'graph_family': cr.graph_family,
-        'semantic_layer': cr.semantic_layer,
-    } for cr in conn_rows]
+    # snapshot 連線端點需含 kind 與 textbox_id（textbox 連線在歸檔時也要保留）
+    conn_full = (
+        s.query(CanvasConnection)
+        .filter(CanvasConnection.canvas_id == canvas_id)
+        .all()
+    )
+    snap_conns = []
+    for c in conn_full:
+        d = c.to_dict()
+        snap_conns.append(d)
+
+    # 文字框
+    textboxes = s.query(CanvasTextbox).filter(CanvasTextbox.canvas_id == canvas_id).all()
+    snap_textboxes = [t.to_dict() for t in textboxes]
 
     return {
         'atoms': atoms,
         'groups': snap_groups,
         'connections': snap_conns,
+        'textboxes': snap_textboxes,
     }
 
 
@@ -199,6 +204,7 @@ def get_canvas(slug):
             result['atoms'] = canvas.snapshot.get('atoms', [])
             result['groups'] = canvas.snapshot.get('groups', [])
             result['connections'] = canvas.snapshot.get('connections', [])
+            result['textboxes'] = canvas.snapshot.get('textboxes', [])
             result['is_snapshot'] = True
             return jsonify(result)
 
@@ -384,8 +390,12 @@ def get_canvas(slug):
             s.query(
                 CanvasConnection.id,
                 CanvasConnection.canvas_id,
+                CanvasConnection.from_kind,
+                CanvasConnection.to_kind,
                 CanvasConnection.source_atom_id,
                 CanvasConnection.target_atom_id,
+                CanvasConnection.source_textbox_id,
+                CanvasConnection.target_textbox_id,
                 CanvasConnection.source_entry_id,
                 CanvasConnection.target_entry_id,
                 CanvasConnection.unified_relation_id,
@@ -405,8 +415,12 @@ def get_canvas(slug):
         result['connections'] = [{
             'id': cr.id,
             'canvas_id': cr.canvas_id,
+            'from_kind': cr.from_kind,
+            'to_kind': cr.to_kind,
             'source_atom_id': cr.source_atom_id,
             'target_atom_id': cr.target_atom_id,
+            'source_textbox_id': cr.source_textbox_id,
+            'target_textbox_id': cr.target_textbox_id,
             'source_entry_id': cr.source_entry_id,
             'target_entry_id': cr.target_entry_id,
             'unified_relation_id': cr.unified_relation_id,
@@ -419,6 +433,10 @@ def get_canvas(slug):
             'graph_family': cr.graph_family,
             'semantic_layer': cr.semantic_layer,
         } for cr in conn_rows]
+
+        # --- 6. 文字框 ---
+        textboxes = s.query(CanvasTextbox).filter(CanvasTextbox.canvas_id == canvas_id).all()
+        result['textboxes'] = [t.to_dict() for t in textboxes]
 
         return jsonify(result)
 
@@ -706,6 +724,60 @@ def delete_canvas_group(group_id):
 
 
 # ============================================================
+# Canvas Textboxes (獨立文字框)
+# ============================================================
+
+_TEXTBOX_FIELDS = (
+    'title', 'content', 'pos_x', 'pos_y', 'width', 'height', 'z_index',
+    'bg_color', 'border_color', 'border_style', 'text_color',
+)
+
+
+@bp.route('/api/canvases/<slug>/textboxes', methods=['POST'])
+def create_canvas_textbox(slug):
+    """在白板上建立獨立文字框"""
+    data = request.get_json() or {}
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        tb = CanvasTextbox(canvas_id=canvas.id)
+        for f in _TEXTBOX_FIELDS:
+            if f in data:
+                setattr(tb, f, data[f])
+        s.add(tb)
+        s.flush()
+        return jsonify(tb.to_dict()), 201
+
+
+@bp.route('/api/canvas-textboxes/<int:tb_id>', methods=['PUT'])
+def update_canvas_textbox(tb_id):
+    """更新文字框（位置/尺寸/標題/內文/顏色/邊框）"""
+    data = request.get_json() or {}
+    with session_scope() as s:
+        tb = s.get(CanvasTextbox, tb_id)
+        if not tb:
+            return jsonify({'error': '文字框不存在'}), 404
+        for f in _TEXTBOX_FIELDS:
+            if f in data:
+                setattr(tb, f, data[f])
+        s.flush()
+        return jsonify(tb.to_dict())
+
+
+@bp.route('/api/canvas-textboxes/<int:tb_id>', methods=['DELETE'])
+def delete_canvas_textbox(tb_id):
+    """刪除文字框（hard delete；走字紙簍請改用 /trash 端點）"""
+    with session_scope() as s:
+        tb = s.get(CanvasTextbox, tb_id)
+        if not tb:
+            return jsonify({'error': '文字框不存在'}), 404
+        s.delete(tb)
+        return jsonify({'message': f'文字框 {tb_id} 已刪除'})
+
+
+# ============================================================
 # Canvas Trash (白板私有字紙簍)
 # 從白板 Delete 的卡片暫存於此，可救回到當前白板
 # atom 本體不動 -- 不影響其他白板的引用
@@ -714,7 +786,7 @@ def delete_canvas_group(group_id):
 def _trash_to_dict_with_atom(s, t: CanvasTrash) -> dict:
     """字紙簍紀錄序列化，附帶卡片預覽用資料"""
     d = t.to_dict()
-    if t.atom:
+    if t.kind == 'atom' and t.atom:
         a = t.atom
         d['atom'] = {
             'id': a.id,
@@ -724,6 +796,11 @@ def _trash_to_dict_with_atom(s, t: CanvasTrash) -> dict:
             'thumbnail_url': a.thumbnail_url,
             'content_type': a.content_type,
             'content_preview': (a.content or '')[:200],
+        }
+    elif t.kind == 'textbox' and t.payload:
+        d['textbox_preview'] = {
+            'title': t.payload.get('title', ''),
+            'content_preview': (t.payload.get('content') or '')[:200],
         }
     return d
 
@@ -888,6 +965,103 @@ def empty_canvas_trash(slug):
         return jsonify({'message': f'已清空 {deleted} 筆', 'deleted': deleted})
 
 
+@bp.route('/api/canvases/<slug>/trash/textboxes', methods=['POST'])
+def add_textboxes_to_canvas_trash(slug):
+    """把指定文字框送進字紙簍。
+    body: {textbox_ids: [int]}
+    """
+    data = request.get_json() or {}
+    tb_ids = data.get('textbox_ids') or []
+    if not isinstance(tb_ids, list) or not tb_ids:
+        return jsonify({'error': '需要 textbox_ids（非空陣列）'}), 400
+
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        tbs = s.query(CanvasTextbox).filter(
+            CanvasTextbox.canvas_id == canvas.id,
+            CanvasTextbox.id.in_(tb_ids),
+        ).all()
+        if not tbs:
+            return jsonify({'trashed_count': 0, 'items': []}), 200
+
+        now = datetime.datetime.now()
+        trash_rows = []
+        for tb in tbs:
+            t = CanvasTrash(
+                canvas_id=canvas.id,
+                kind='textbox',
+                deleted_at=now,
+                original_pos_x=tb.pos_x,
+                original_pos_y=tb.pos_y,
+                original_width=tb.width,
+                original_height=tb.height,
+                z_index=tb.z_index,
+                payload=tb.to_dict(),
+            )
+            s.add(t)
+            trash_rows.append(t)
+        # 刪除原文字框（連帶 cascade 刪相關 canvas_connections）
+        for tb in tbs:
+            s.delete(tb)
+        s.flush()
+
+        return jsonify({
+            'trashed_count': len(trash_rows),
+            'items': [_trash_to_dict_with_atom(s, t) for t in trash_rows],
+        }), 201
+
+
+@bp.route('/api/canvases/<slug>/trash/textboxes/restore', methods=['POST'])
+def restore_textboxes_from_canvas_trash(slug):
+    """從字紙簍救回文字框。
+    body: {trash_ids: [int]}（textbox 沒有穩定主鍵可指定，故用 trash 紀錄 ID）
+    """
+    data = request.get_json() or {}
+    trash_ids = data.get('trash_ids') or []
+    if not isinstance(trash_ids, list) or not trash_ids:
+        return jsonify({'error': '需要 trash_ids（非空陣列）'}), 400
+
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        rows = s.query(CanvasTrash).filter(
+            CanvasTrash.canvas_id == canvas.id,
+            CanvasTrash.id.in_(trash_ids),
+            CanvasTrash.kind == 'textbox',
+        ).all()
+
+        restored = []
+        for t in rows:
+            p = t.payload or {}
+            tb = CanvasTextbox(
+                canvas_id=canvas.id,
+                title=p.get('title', '標題'),
+                content=p.get('content', ''),
+                pos_x=t.original_pos_x,
+                pos_y=t.original_pos_y,
+                width=t.original_width or 320,
+                height=t.original_height or 180,
+                z_index=t.z_index,
+                bg_color=p.get('bg_color', '#fffbe6'),
+                border_color=p.get('border_color', '#f59e0b'),
+                border_style=p.get('border_style', 'solid'),
+                text_color=p.get('text_color', '#1f2937'),
+            )
+            s.add(tb)
+            s.delete(t)
+            restored.append(tb)
+        s.flush()
+        return jsonify({
+            'restored_count': len(restored),
+            'textboxes': [tb.to_dict() for tb in restored],
+        })
+
+
 # ============================================================
 # Canvas Connections
 # ============================================================
@@ -902,19 +1076,47 @@ def _get_relation_style(s, relation_type):
 
 @bp.route('/api/canvas-connections', methods=['POST'])
 def create_canvas_connection():
-    """建立視覺連線（同時建立或重用 UnifiedRelation）"""
+    """建立視覺連線。
+
+    端點種類由 from_kind / to_kind 決定（'atom' | 'textbox'，未指定預設 'atom'）。
+    - 兩端皆 atom：建立或重用 UnifiedRelation（行為與舊版一致）
+    - 任一端是 textbox：純粹的視覺連線，不掛 UnifiedRelation，relation_type 可省略
+    """
     data = request.get_json()
     if not data:
         return jsonify({'error': '需要 JSON body'}), 400
 
-    required = ('canvas_id', 'source_atom_id', 'target_atom_id', 'relation_type')
-    for f in required:
-        if f not in data:
-            return jsonify({'error': f'缺少必要欄位: {f}'}), 400
+    if 'canvas_id' not in data:
+        return jsonify({'error': '缺少必要欄位: canvas_id'}), 400
 
-    rel_type = data['relation_type']
-    if rel_type not in UnifiedRelation.VALID_TYPES:
-        return jsonify({'error': f'無效的 relation_type: {rel_type}'}), 400
+    from_kind = data.get('from_kind', 'atom')
+    to_kind = data.get('to_kind', 'atom')
+    if from_kind not in ('atom', 'textbox') or to_kind not in ('atom', 'textbox'):
+        return jsonify({'error': "from_kind/to_kind 必須是 'atom' 或 'textbox'"}), 400
+
+    # 端點 ID 一致性檢查
+    src_atom_id = data.get('source_atom_id')
+    tgt_atom_id = data.get('target_atom_id')
+    src_tb_id = data.get('source_textbox_id')
+    tgt_tb_id = data.get('target_textbox_id')
+
+    if from_kind == 'atom' and not src_atom_id:
+        return jsonify({'error': 'from_kind=atom 需要 source_atom_id'}), 400
+    if from_kind == 'textbox' and not src_tb_id:
+        return jsonify({'error': 'from_kind=textbox 需要 source_textbox_id'}), 400
+    if to_kind == 'atom' and not tgt_atom_id:
+        return jsonify({'error': 'to_kind=atom 需要 target_atom_id'}), 400
+    if to_kind == 'textbox' and not tgt_tb_id:
+        return jsonify({'error': 'to_kind=textbox 需要 target_textbox_id'}), 400
+
+    is_pure_atom = (from_kind == 'atom' and to_kind == 'atom')
+
+    rel_type = data.get('relation_type')
+    if is_pure_atom:
+        if not rel_type:
+            return jsonify({'error': '缺少必要欄位: relation_type'}), 400
+        if rel_type not in UnifiedRelation.VALID_TYPES:
+            return jsonify({'error': f'無效的 relation_type: {rel_type}'}), 400
 
     with session_scope() as s:
         # canvas_id 接受 slug 字串
@@ -927,66 +1129,73 @@ def create_canvas_connection():
         else:
             canvas_id = canvas_ref
 
-        # entry-level 連線參數（可選）
-        src_entry_id = data.get('source_entry_id')
-        tgt_entry_id = data.get('target_entry_id')
+        # entry-level 連線只在 atom-atom 情境下成立
+        src_entry_id = data.get('source_entry_id') if is_pure_atom else None
+        tgt_entry_id = data.get('target_entry_id') if is_pure_atom else None
 
-        # unified_relation 端點：entry 優先，否則 atom
-        # create_relation 要求二擇一（atom_id 或 entry_id）
-        ur_from_atom = None if src_entry_id else data['source_atom_id']
-        ur_from_entry = src_entry_id
-        ur_to_atom = None if tgt_entry_id else data['target_atom_id']
-        ur_to_entry = tgt_entry_id
+        relation = None
+        style = {'color': '#94a3b8', 'line_style': 'solid'}
 
-        # 查找現有 relation
-        filter_conds = [
-            UnifiedRelation.relation_type == rel_type,
-            UnifiedRelation.is_deleted == False,
-        ]
-        if ur_from_atom:
-            filter_conds.append(UnifiedRelation.from_atom_id == ur_from_atom)
-        if ur_from_entry:
-            filter_conds.append(UnifiedRelation.from_entry_id == ur_from_entry)
-        if ur_to_atom:
-            filter_conds.append(UnifiedRelation.to_atom_id == ur_to_atom)
-        if ur_to_entry:
-            filter_conds.append(UnifiedRelation.to_entry_id == ur_to_entry)
+        if is_pure_atom:
+            # unified_relation 端點：entry 優先，否則 atom
+            ur_from_atom = None if src_entry_id else src_atom_id
+            ur_from_entry = src_entry_id
+            ur_to_atom = None if tgt_entry_id else tgt_atom_id
+            ur_to_entry = tgt_entry_id
 
-        relation = s.query(UnifiedRelation).filter(*filter_conds).first()
+            filter_conds = [
+                UnifiedRelation.relation_type == rel_type,
+                UnifiedRelation.is_deleted == False,
+            ]
+            if ur_from_atom:
+                filter_conds.append(UnifiedRelation.from_atom_id == ur_from_atom)
+            if ur_from_entry:
+                filter_conds.append(UnifiedRelation.from_entry_id == ur_from_entry)
+            if ur_to_atom:
+                filter_conds.append(UnifiedRelation.to_atom_id == ur_to_atom)
+            if ur_to_entry:
+                filter_conds.append(UnifiedRelation.to_entry_id == ur_to_entry)
 
-        if not relation:
-            try:
-                relation = rel_service.create_relation(
-                    s,
-                    relation_type=rel_type,
-                    from_atom_id=ur_from_atom,
-                    to_atom_id=ur_to_atom,
-                    from_entry_id=ur_from_entry,
-                    to_entry_id=ur_to_entry,
-                    label=data.get('label', ''),
-                    created_by='human',
-                )
-            except ValueError as e:
-                return jsonify({'error': str(e)}), 400
+            relation = s.query(UnifiedRelation).filter(*filter_conds).first()
 
-        style = _get_relation_style(s, rel_type)
+            if not relation:
+                try:
+                    relation = rel_service.create_relation(
+                        s,
+                        relation_type=rel_type,
+                        from_atom_id=ur_from_atom,
+                        to_atom_id=ur_to_atom,
+                        from_entry_id=ur_from_entry,
+                        to_entry_id=ur_to_entry,
+                        label=data.get('label', ''),
+                        created_by='human',
+                    )
+                except ValueError as e:
+                    return jsonify({'error': str(e)}), 400
+
+            style = _get_relation_style(s, rel_type)
 
         conn = CanvasConnection(
             canvas_id=canvas_id,
-            source_atom_id=data['source_atom_id'],
-            target_atom_id=data['target_atom_id'],
+            from_kind=from_kind,
+            to_kind=to_kind,
+            source_atom_id=src_atom_id if from_kind == 'atom' else None,
+            target_atom_id=tgt_atom_id if to_kind == 'atom' else None,
+            source_textbox_id=src_tb_id if from_kind == 'textbox' else None,
+            target_textbox_id=tgt_tb_id if to_kind == 'textbox' else None,
             source_entry_id=src_entry_id,
             target_entry_id=tgt_entry_id,
-            unified_relation_id=relation.id,
+            unified_relation_id=relation.id if relation else None,
             line_style=style['line_style'],
             color=style['color'],
-            label=data.get('label', '') or relation.label,
+            label=data.get('label', '') or (relation.label if relation else ''),
         )
         s.add(conn)
         s.flush()
 
         result = conn.to_dict()
-        result['relation_type'] = rel_type
+        if rel_type:
+            result['relation_type'] = rel_type
         return jsonify(result), 201
 
 

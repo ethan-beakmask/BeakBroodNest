@@ -2,6 +2,8 @@
             <div class="wb-toolbar">
                 <button x-show="selectedAtomIds.length >= 2" @click="createGroupFromSelection()">群組</button>
                 <div class="separator" x-show="selectedAtomIds.length >= 2"></div>
+                <button @click="createTextboxAtViewportCenter()" title="新增文字框（標題在框外、內文純文字）">文字框</button>
+                <div class="separator"></div>
                 <button @click="openExchangeModal()" title="交換卡片：寄存到交換包，或從交換包取出">交換</button>
                 <button @click="openTrashModal()" title="字紙簍">字紙簍</button>
                 <div class="separator"></div>

@@ -21,6 +21,7 @@ function whiteboardApp(canvasId) {
         atoms: [],
         connections: [],
         groups: [],
+        textboxes: [],
         canvases: [],
         tags: [],
         tagCategories: [],
@@ -133,9 +134,12 @@ function whiteboardApp(canvasId) {
 
         // Connection drag (from anchors)
         isConnDragging: false,
+        connDragSourceKind: null,         // 'atom' | 'textbox'
         connDragSourceAtomId: null,
+        connDragSourceTextboxId: null,
         connDragSourceAnchor: null,
         connDragHoverAtomId: null,
+        connDragHoverTextboxId: null,
         connDragMouseX: 0,
         connDragMouseY: 0,
 
@@ -345,6 +349,7 @@ function whiteboardApp(canvasId) {
             this.atoms = canvas.atoms || [];
             this.connections = canvas.connections || [];
             this.groups = canvas.groups || [];
+            this.textboxes = canvas.textboxes || [];
             this.archivedCanvasCount = allCanvases.filter(c => c.is_archived).length;
             this.canvases = this.showArchivedCanvases ? allCanvases : allCanvases.filter(c => !c.is_archived);
             this.tags = tags;
@@ -410,7 +415,7 @@ function whiteboardApp(canvasId) {
             if (e.button === 2) return;
             if (e.button === 0) {
                 if (this.mode === 'connect' && !e.target.closest('.wb-card')) { this.connSourceAtomId = null; this.mode = 'select'; return; }
-                if (!e.target.closest('.wb-card') && !e.target.closest('.wb-group') && !e.target.closest('.wb-toolbar') && !e.target.closest('.wb-zoom')) {
+                if (!e.target.closest('.wb-card') && !e.target.closest('.wb-group') && !e.target.closest('.wb-textbox') && !e.target.closest('.wb-toolbar') && !e.target.closest('.wb-zoom')) {
                     this.boxSelectPending = true;
                     this.boxSelectStartX = e.clientX; this.boxSelectStartY = e.clientY;
                     this.boxSelectCurrentX = e.clientX; this.boxSelectCurrentY = e.clientY;
@@ -458,6 +463,20 @@ function whiteboardApp(canvasId) {
                 this.renderConnections(); return;
             }
             if (this.resizeGroup) { this.resizeGroup.width = Math.max(160, this.resizeGroupStartW + (e.clientX - this.resizeGroupStartX) / this.zoom); this.resizeGroup.height = Math.max(80, this.resizeGroupStartH + (e.clientY - this.resizeGroupStartY) / this.zoom); return; }
+            if (this.dragTextbox) {
+                var tdx = (e.clientX - this.textboxDragStartX) / this.zoom;
+                var tdy = (e.clientY - this.textboxDragStartY) / this.zoom;
+                this.dragTextbox.pos_x = this.textboxDragStartPos.x + tdx;
+                this.dragTextbox.pos_y = this.textboxDragStartPos.y + tdy;
+                this.renderConnections();
+                return;
+            }
+            if (this.resizeTextbox) {
+                this.resizeTextbox.width = Math.max(160, this.resizeTextboxStartW + (e.clientX - this.resizeTextboxStartX) / this.zoom);
+                this.resizeTextbox.height = Math.max(80, this.resizeTextboxStartH + (e.clientY - this.resizeTextboxStartY) / this.zoom);
+                this.renderConnections();
+                return;
+            }
             if (this.resizeCard) {
                 this.resizeCard.width = Math.max(160, this.resizeStartW + (e.clientX - this.resizeStartX) / this.zoom);
                 this.resizeCard.height = Math.max(80, this.resizeStartH + (e.clientY - this.resizeStartY) / this.zoom);
@@ -511,6 +530,14 @@ function whiteboardApp(canvasId) {
                 this.dragGroup = null; this.groupDragMemberStarts = null;
             }
             if (this.resizeGroup) { API.updateGroup(this.resizeGroup.id, { width: this.resizeGroup.width, height: this.resizeGroup.height }); this.resizeGroup = null; }
+            if (this.dragTextbox) {
+                API.updateTextbox(this.dragTextbox.id, { pos_x: this.dragTextbox.pos_x, pos_y: this.dragTextbox.pos_y });
+                this.dragTextbox = null;
+            }
+            if (this.resizeTextbox) {
+                API.updateTextbox(this.resizeTextbox.id, { width: this.resizeTextbox.width, height: this.resizeTextbox.height });
+                this.resizeTextbox = null;
+            }
             if (this.resizeCard) { API.updateCanvasAtom(this.resizeCard.id, { width: this.resizeCard.width, height: this.resizeCard.height }); if (this.resizeCard.group_ids) this.resizeCard.group_ids.forEach(gid => this.autoResizeGroup(gid)); this.resizeCard = null; }
             if (this.dragCard) {
                 this._justDragged = true;
@@ -702,14 +729,27 @@ function whiteboardApp(canvasId) {
             }
         },
 
-        // 列出當前白板字紙簍
+        // 列出當前白板字紙簍（含 atom 與 textbox 兩種 kind）
         async openTrashModal() {
             this.showTrashModal = true;
             try {
                 var resp = await API.listCanvasTrash(this.canvasId);
-                // 攤平成 modal 期待的結構：id=atom_id, title/thumbnail_url 從 atom 取，updated_at 用 deleted_at
                 this.trashItems = (resp.items || []).map(function(t) {
+                    if (t.kind === 'textbox') {
+                        var p = t.textbox_preview || {};
+                        return {
+                            kind: 'textbox',
+                            _trash_id: t.id,
+                            id: 'tb-' + t.id,  // x-for :key 用
+                            title: p.title || '(無標題)',
+                            thumbnail_url: null,
+                            content_preview: p.content_preview || '',
+                            atom_type: 'TXT',
+                            updated_at: t.deleted_at,
+                        };
+                    }
                     return {
+                        kind: 'atom',
                         id: t.atom_id,
                         title: t.atom ? t.atom.title : '(無標題)',
                         thumbnail_url: t.atom ? t.atom.thumbnail_url : null,
@@ -723,11 +763,18 @@ function whiteboardApp(canvasId) {
             }
         },
 
-        // 救回此白板字紙簍中的卡片（用原座標）
-        async restoreFromTrash(atomId) {
+        // 救回此白板字紙簍中的項目（atom 或 textbox 統一入口）
+        async restoreFromTrash(itemId) {
+            // 找到項目區分 kind
+            var item = this.trashItems.find(function(x) { return x.id === itemId; });
+            if (!item) return;
             try {
-                await API.restoreFromCanvasTrash(this.canvasId, [atomId]);
-                this.trashItems = this.trashItems.filter(function(t) { return t.id !== atomId; });
+                if (item.kind === 'textbox') {
+                    await API.restoreTextboxesFromTrash(this.canvasId, [item._trash_id]);
+                } else {
+                    await API.restoreFromCanvasTrash(this.canvasId, [item.id]);
+                }
+                this.trashItems = this.trashItems.filter(function(t) { return t.id !== itemId; });
                 await this.loadData();
                 var self = this;
                 this.$nextTick(function() { self.renderConnections(); });
@@ -1375,6 +1422,9 @@ function whiteboardApp(canvasId) {
     _mergeInto(app, whiteboardUndoMixin());
     _mergeInto(app, whiteboardBatchMixin());
     _mergeInto(app, whiteboardGroupsMixin());
+    if (typeof whiteboardTextboxesMixin === 'function') {
+        _mergeInto(app, whiteboardTextboxesMixin());
+    }
     if (typeof whiteboardMediaMixin === 'function') {
         _mergeInto(app, whiteboardMediaMixin());
     }

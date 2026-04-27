@@ -65,6 +65,17 @@ const API = {
     updateGroup(id, data)      { return this.put('/beakcortex/api/canvas-groups/' + id, data); },
     deleteGroup(id)            { return this.del('/beakcortex/api/canvas-groups/' + id); },
 
+    // Canvas Textboxes (獨立文字框)
+    createTextbox(canvasId, data) { return this.post('/beakcortex/api/canvases/' + canvasId + '/textboxes', data); },
+    updateTextbox(id, data)       { return this.put('/beakcortex/api/canvas-textboxes/' + id, data); },
+    deleteTextbox(id)             { return this.del('/beakcortex/api/canvas-textboxes/' + id); },
+    addTextboxesToCanvasTrash(slug, ids) {
+        return this.post('/beakcortex/api/canvases/' + slug + '/trash/textboxes', { textbox_ids: ids });
+    },
+    restoreTextboxesFromTrash(slug, trashIds) {
+        return this.post('/beakcortex/api/canvases/' + slug + '/trash/textboxes/restore', { trash_ids: trashIds });
+    },
+
     // Canvas Connections
     createConnection(data)  { return this.post('/beakcortex/api/canvas-connections', data); },
     updateConnection(id, data) { return this.put('/beakcortex/api/canvas-connections/' + id, data); },

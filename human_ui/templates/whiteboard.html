@@ -13,6 +13,7 @@
 <script src="/beakcortex/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-textboxes.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-media.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-exchange.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard.js?v={{ cache_ver }}"></script>
@@ -21,7 +22,7 @@
 {% block body %}
 <div x-data="whiteboardApp('{{ canvas_slug }}')" x-init="init()"
      @click="closeContextMenu()"
-     @keydown.escape.window="if(exchangeFollowItem){ cancelExchangeFollow(); return; } if(showHardDeleteModal){ closeHardDeleteModal(); return; } if(cardEditorOpen){ if(ceCancelAllContinuous()) return; closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showExchangeModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
+     @keydown.escape.window="if(exchangeFollowItem){ cancelExchangeFollow(); return; } if(showHardDeleteModal){ closeHardDeleteModal(); return; } if(cardEditorOpen){ if(ceCancelAllContinuous()) return; closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } if(showTextboxModal){ closeTextboxModal(); return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showExchangeModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
 
     <!-- Toast -->
     <div class="toast-container">
@@ -89,6 +90,36 @@
                              @dblclick.stop="openGroupEditModal(g)"
                              x-text="g.name"></div>
                         <div class="wb-group-resize" @mousedown.stop.prevent="onGroupResizeMouseDown($event, g)"></div>
+                    </div>
+                </template>
+
+                <!-- 獨立文字框 -->
+                <template x-for="tb in textboxes" :key="'tb-' + tb.id">
+                    <div class="wb-textbox"
+                         :id="'textbox-' + tb.id"
+                         :style="getTextboxStyle(tb)"
+                         @mousedown="onTextboxMouseDown($event, tb)"
+                         @mouseenter="onTextboxMouseEnterForConn(tb)"
+                         @mouseleave="onTextboxMouseLeaveForConn(tb)"
+                         @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'textbox', tb: tb }">
+                        <div class="wb-textbox-label"
+                             :style="getTextboxLabelStyle(tb)"
+                             @dblclick.stop="openTextboxEditModal(tb)"
+                             x-text="tb.title"></div>
+                        <div class="wb-textbox-anchor top"    @mousedown.stop.prevent="startTextboxConnDrag($event, tb, 'top')"></div>
+                        <div class="wb-textbox-anchor bottom" @mousedown.stop.prevent="startTextboxConnDrag($event, tb, 'bottom')"></div>
+                        <div class="wb-textbox-anchor left"   @mousedown.stop.prevent="startTextboxConnDrag($event, tb, 'left')"></div>
+                        <div class="wb-textbox-anchor right"  @mousedown.stop.prevent="startTextboxConnDrag($event, tb, 'right')"></div>
+                        <textarea class="wb-textbox-content"
+                                  :value="tb.content"
+                                  :style="'color:' + tb.text_color + ';'"
+                                  :readonly="isSnapshot"
+                                  @input="onTextboxContentInput(tb, $event.target.value)"
+                                  @focus="startTextboxEdit(tb)"
+                                  @blur="finishTextboxEdit(tb)"
+                                  @mousedown.stop
+                                  @click.stop></textarea>
+                        <div class="wb-textbox-resize" @mousedown.stop.prevent="onTextboxResizeMouseDown($event, tb)"></div>
                     </div>
                 </template>
 

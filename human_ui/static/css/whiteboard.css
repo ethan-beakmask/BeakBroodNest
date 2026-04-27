@@ -839,6 +839,100 @@
 .wb-group:hover .wb-group-resize { opacity: 0.6; }
 .wb-group-resize:hover { opacity: 1 !important; }
 
+/* ---- 獨立文字框 (canvas_textboxes) ---- */
+.wb-textbox {
+    position: absolute;
+    border-radius: 6px;
+    pointer-events: auto;
+    cursor: move;
+    box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.wb-textbox-label {
+    /* 像 Panel 頁籤緊貼框線左上外緣 */
+    position: absolute;
+    left: -1px;            /* 補 1.5px border 對齊 */
+    top: -22px;            /* 22px 高度的頁籤完全突出於框線之上 */
+    height: 22px;
+    line-height: 22px;
+    padding: 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    user-select: none;
+    letter-spacing: 0.3px;
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wb-textbox-content {
+    position: absolute;
+    inset: 6px 6px 14px 6px;   /* 上 6 / 右 6 / 下 14（給 resize 把手）/ 左 6 */
+    width: calc(100% - 12px);
+    height: calc(100% - 20px);
+    border: none;
+    outline: none;
+    background: transparent;
+    resize: none;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    cursor: text;
+    box-sizing: border-box;
+    padding: 0;
+}
+
+.wb-textbox-resize {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 14px; height: 14px;
+    cursor: nwse-resize;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.wb-textbox-resize::after {
+    content: '';
+    position: absolute;
+    bottom: 3px; right: 3px;
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    border-radius: 0 0 2px 0;
+}
+
+.wb-textbox:hover .wb-textbox-resize { opacity: 0.6; }
+.wb-textbox-resize:hover { opacity: 1 !important; }
+
+/* 連線錨點（仿 wb-card-anchor 但獨立樣式） */
+.wb-textbox-anchor {
+    position: absolute;
+    width: 12px; height: 12px;
+    background: #3b82f6;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 3;
+    cursor: crosshair;
+}
+.wb-textbox-anchor.top    { top: -6px;  left: 50%; transform: translateX(-50%); }
+.wb-textbox-anchor.bottom { bottom: -6px; left: 50%; transform: translateX(-50%); }
+.wb-textbox-anchor.left   { left: -6px;  top: 50%; transform: translateY(-50%); }
+.wb-textbox-anchor.right  { right: -6px; top: 50%; transform: translateY(-50%); }
+.wb-textbox:hover .wb-textbox-anchor { opacity: 0.85; }
+.wb-textbox-anchor:hover { opacity: 1 !important; transform: scale(1.2) translate(0, 0); }
+.wb-textbox-anchor.top:hover    { transform: translateX(-50%) scale(1.2); }
+.wb-textbox-anchor.bottom:hover { transform: translateX(-50%) scale(1.2); }
+.wb-textbox-anchor.left:hover   { transform: translateY(-50%) scale(1.2); }
+.wb-textbox-anchor.right:hover  { transform: translateY(-50%) scale(1.2); }
+
 /* ---- Minimap ---- */
 .wb-minimap {
     position: absolute;

@@ -350,6 +350,9 @@ class Canvas(Base):
     groups: Mapped[list["CanvasGroup"]] = relationship(
         back_populates='canvas', cascade='all, delete-orphan'
     )
+    textboxes: Mapped[list["CanvasTextbox"]] = relationship(
+        back_populates='canvas', cascade='all, delete-orphan'
+    )
 
     def to_dict(self):
         return {
@@ -452,9 +455,9 @@ class CanvasGroup(Base):
 
 
 class CanvasTrash(Base):
-    """白板私有字紙簍：從白板 Delete 的卡片暫存區。
-    救回時用 original_* 欄位重建 canvas_atoms。
-    atom 本體不動 -- 此表純粹是「白板級的刪除歷史」。
+    """白板私有字紙簍：從白板 Delete 的卡片或文字框暫存區。
+    kind='atom'：救回時用 original_* 欄位重建 canvas_atoms（atom 本體不動）。
+    kind='textbox'：救回時用 payload 完整重建 canvas_textboxes 紀錄。
     """
     __tablename__ = 'canvas_trash'
 
@@ -462,8 +465,9 @@ class CanvasTrash(Base):
     canvas_id: Mapped[int] = mapped_column(
         Integer, ForeignKey('canvases.id', ondelete='CASCADE'), nullable=False
     )
-    atom_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=False
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default='atom')
+    atom_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='CASCADE'), nullable=True
     )
     deleted_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now, nullable=False
@@ -474,6 +478,7 @@ class CanvasTrash(Base):
     original_height: Mapped[float | None] = mapped_column(Float, nullable=True)
     z_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     visual_style: Mapped[str] = mapped_column(Text, nullable=False, default='{}')
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     atom: Mapped["KnowledgeAtom"] = relationship()
 
@@ -485,6 +490,7 @@ class CanvasTrash(Base):
         return {
             'id': self.id,
             'canvas_id': self.canvas_id,
+            'kind': self.kind,
             'atom_id': self.atom_id,
             'deleted_at': self.deleted_at.isoformat() if self.deleted_at else None,
             'original_pos_x': self.original_pos_x,
@@ -493,6 +499,7 @@ class CanvasTrash(Base):
             'original_height': self.original_height,
             'z_index': self.z_index,
             'visual_style': self.visual_style,
+            'payload': self.payload,
         }
 
 
@@ -503,8 +510,18 @@ class CanvasConnection(Base):
     canvas_id: Mapped[int] = mapped_column(
         Integer, ForeignKey('canvases.id', ondelete='CASCADE'), nullable=False
     )
-    source_atom_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    target_atom_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 端點型別：'atom' | 'textbox'
+    from_kind: Mapped[str] = mapped_column(String(20), nullable=False, default='atom')
+    to_kind: Mapped[str] = mapped_column(String(20), nullable=False, default='atom')
+    # atom 端點時填 source/target_atom_id；textbox 端點時填 source/target_textbox_id
+    source_atom_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    target_atom_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_textbox_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('canvas_textboxes.id', ondelete='CASCADE'), nullable=True
+    )
+    target_textbox_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('canvas_textboxes.id', ondelete='CASCADE'), nullable=True
+    )
     source_entry_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('atom_entries.id', ondelete='SET NULL'), nullable=True
     )
@@ -533,8 +550,12 @@ class CanvasConnection(Base):
         d = {
             'id': self.id,
             'canvas_id': self.canvas_id,
+            'from_kind': self.from_kind,
+            'to_kind': self.to_kind,
             'source_atom_id': self.source_atom_id,
             'target_atom_id': self.target_atom_id,
+            'source_textbox_id': self.source_textbox_id,
+            'target_textbox_id': self.target_textbox_id,
             'source_entry_id': self.source_entry_id,
             'target_entry_id': self.target_entry_id,
             'unified_relation_id': self.unified_relation_id,
@@ -549,6 +570,56 @@ class CanvasConnection(Base):
             d['graph_family'] = self.unified_relation.graph_family
             d['semantic_layer'] = self.unified_relation.semantic_layer
         return d
+
+
+class CanvasTextbox(Base):
+    """白板獨立文字框：標題在框外、內文純文字、可拉連線。
+    不依附任何 atom；資料只屬於這張白板。
+    """
+    __tablename__ = 'canvas_textboxes'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    canvas_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='CASCADE'), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default='標題')
+    content: Mapped[str] = mapped_column(Text, nullable=False, default='')
+    pos_x: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    pos_y: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    width: Mapped[float] = mapped_column(Float, nullable=False, default=320)
+    height: Mapped[float] = mapped_column(Float, nullable=False, default=180)
+    z_index: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    bg_color: Mapped[str] = mapped_column(String(20), nullable=False, default='transparent')
+    border_color: Mapped[str] = mapped_column(String(20), nullable=False, default='#f59e0b')
+    border_style: Mapped[str] = mapped_column(String(20), nullable=False, default='solid')
+    text_color: Mapped[str] = mapped_column(String(20), nullable=False, default='#1f2937')
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now, nullable=False
+    )
+
+    canvas: Mapped["Canvas"] = relationship(back_populates='textboxes')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'canvas_id': self.canvas_id,
+            'title': self.title,
+            'content': self.content,
+            'pos_x': self.pos_x,
+            'pos_y': self.pos_y,
+            'width': self.width,
+            'height': self.height,
+            'z_index': self.z_index,
+            'bg_color': self.bg_color,
+            'border_color': self.border_color,
+            'border_style': self.border_style,
+            'text_color': self.text_color,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 # ============================================================
