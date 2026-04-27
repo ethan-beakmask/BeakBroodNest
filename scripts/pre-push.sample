@@ -1,0 +1,32 @@
+#!/bin/bash
+# =============================================================================
+# pre-push hook：禁止裸 push 到 github remote
+# =============================================================================
+# 安裝：
+#   cp scripts/pre-push.sample .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#
+# 規則：
+#   - 預設拒絕對 github remote 的任何 push
+#   - 唯一允許條件：環境變數 BEAKCORTEX_GITHUB_PUSH_OK=1（由 push_github.sh 設定）
+#   - 不依賴 stdin 偵測 ref（dry-run / 部分 push 場景 stdin 可能為空，不可靠）
+#   - 其他 remote（如 origin/forgejo）一律放行
+# =============================================================================
+
+remote_name="$1"
+
+# 非 github remote：放行
+if [ "$remote_name" != "github" ]; then
+    exit 0
+fi
+
+# github remote：必須有白名單變數
+if [ "${BEAKCORTEX_GITHUB_PUSH_OK:-0}" = "1" ]; then
+    exit 0
+fi
+
+echo "" >&2
+echo "[pre-push] 禁止裸 push 到 github remote" >&2
+echo "  GitHub 公開倉庫須走 scripts/push_github.sh 過濾內部檔。" >&2
+echo "  正確流程：bash /opt/BeakCortex/scripts/push_github.sh" >&2
+echo "" >&2
+exit 1
