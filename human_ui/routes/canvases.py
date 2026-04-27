@@ -1014,7 +1014,17 @@ def delete_mindmap_shell(shell_id):
         )
 
         if mode == 'with_atoms':
+            atom_ids = [ca.atom_id for ca in members]
+            tree_parents_map = _collect_tree_parents(s, atom_ids)
+            shell_snapshot = _shell_to_snapshot(shell)
+            # shell_snapshot 只附在 root atom 的 trash entry（restore 時重建殼）
             for ca in members:
+                payload = {
+                    'mindmap_shell_id': shell_id,
+                    'tree_parent': tree_parents_map.get(ca.atom_id),
+                }
+                if shell.root_atom_id is not None and ca.atom_id == shell.root_atom_id:
+                    payload['shell_snapshot'] = shell_snapshot
                 trash = CanvasTrash(
                     canvas_id=canvas_id,
                     kind='atom',
@@ -1025,11 +1035,10 @@ def delete_mindmap_shell(shell_id):
                     original_height=ca.height,
                     z_index=ca.z_index,
                     visual_style=ca.visual_style,
+                    payload=payload,
                 )
                 s.add(trash)
                 s.delete(ca)
-            # 樹結構也標 is_deleted（避免救回後殘留斷裂關係）
-            atom_ids = [ca.atom_id for ca in members]
             if atom_ids:
                 (
                     s.query(UnifiedRelation)
@@ -1046,6 +1055,40 @@ def delete_mindmap_shell(shell_id):
 
         s.delete(shell)
         return jsonify({'message': f'心智圖殼 {shell_id} 已刪除', 'mode': mode})
+
+
+def _collect_tree_parents(s, atom_ids):
+    """取得 atom_ids 各自的 tree_parent relation（dict: atom_id -> {to_atom_id, sort_order}）。
+    必須在 mark is_deleted 之前呼叫。"""
+    if not atom_ids:
+        return {}
+    rels = (
+        s.query(UnifiedRelation)
+        .filter(
+            UnifiedRelation.relation_type == 'tree_parent',
+            UnifiedRelation.is_deleted == False,
+            UnifiedRelation.from_atom_id.in_(atom_ids),
+        )
+        .all()
+    )
+    return {
+        r.from_atom_id: {'to_atom_id': r.to_atom_id, 'sort_order': r.sort_order}
+        for r in rels
+    }
+
+
+def _shell_to_snapshot(shell):
+    """殼快照（不含 id），給 trash payload 用 -- restore 時可重建殼。"""
+    return {
+        'title': shell.title,
+        'pos_x': shell.pos_x,
+        'pos_y': shell.pos_y,
+        'width': shell.width,
+        'height': shell.height,
+        'z_index': shell.z_index,
+        'color': shell.color,
+        'layout': shell.layout,
+    }
 
 
 @bp.route('/api/canvas-mindmap-shells/<int:shell_id>/nodes', methods=['POST'])
@@ -1172,17 +1215,24 @@ def move_mindmap_node(shell_id, atom_id):
 
 @bp.route('/api/canvas-mindmap-shells/<int:shell_id>/nodes/<int:atom_id>', methods=['DELETE'])
 def delete_mindmap_node(shell_id, atom_id):
-    """刪除節點及其整個子樹（送入字紙簍，tree_parent relations 標 is_deleted）"""
+    """刪除節點及其整個子樹（送入字紙簍，tree_parent relations 標 is_deleted）
+
+    payload 中保存 mindmap_shell_id 與 tree_parent 資訊以便 restore 時還原為心智圖節點。
+    若刪的是 root（殼也會被刪），把殼快照也存進 root atom 的 trash payload。
+    """
     with session_scope() as s:
         shell = s.get(CanvasMindmapShell, shell_id)
         if not shell:
             return jsonify({'error': '心智圖殼不存在'}), 404
 
-        # 取整個子樹的所有 atom_id
         subtree_ids = _tree_descendants(s, atom_id)
         canvas_id = shell.canvas_id
+        is_deleting_shell = (shell.root_atom_id == atom_id)
+        shell_snapshot = _shell_to_snapshot(shell) if is_deleting_shell else None
 
-        # 1) 子樹的 canvas_atoms 進字紙簍（atom 本體不刪）
+        # 取每個 atom 的 tree_parent（必須在 mark deleted 之前查）
+        tree_parents_map = _collect_tree_parents(s, list(subtree_ids))
+
         members = (
             s.query(CanvasAtom)
             .filter(
@@ -1192,6 +1242,12 @@ def delete_mindmap_node(shell_id, atom_id):
             .all()
         )
         for ca in members:
+            payload = {
+                'mindmap_shell_id': shell_id,
+                'tree_parent': tree_parents_map.get(ca.atom_id),
+            }
+            if is_deleting_shell and ca.atom_id == atom_id:
+                payload['shell_snapshot'] = shell_snapshot
             trash = CanvasTrash(
                 canvas_id=canvas_id,
                 kind='atom',
@@ -1202,11 +1258,11 @@ def delete_mindmap_node(shell_id, atom_id):
                 original_height=ca.height,
                 z_index=ca.z_index,
                 visual_style=ca.visual_style,
+                payload=payload,
             )
             s.add(trash)
             s.delete(ca)
 
-        # 2) 樹結構: 子樹內所有 tree_parent relations 標 is_deleted
         (
             s.query(UnifiedRelation)
             .filter(
@@ -1216,8 +1272,7 @@ def delete_mindmap_node(shell_id, atom_id):
             .update({'is_deleted': True}, synchronize_session=False)
         )
 
-        # 3) 若刪的是殼的 root，殼也一併刪除
-        if shell.root_atom_id == atom_id:
+        if is_deleting_shell:
             s.delete(shell)
             return jsonify({
                 'message': f'已刪除整個心智圖（root + 子樹），共 {len(subtree_ids)} 個節點',
@@ -1467,6 +1522,9 @@ def restore_from_canvas_trash(slug):
     body: {atom_ids: [int]}
     每張卡片重建 canvas_atoms（用原座標），刪除字紙簍紀錄。
     若 canvas_atoms 已存在（被外部建出來），更新位置而非新增（idempotent）。
+
+    心智圖節點:若 trash payload 含 mindmap_shell_id / tree_parent / shell_snapshot，
+    一併還原 mindmap 歸屬與樹結構。shell 已被刪除時用 shell_snapshot 重建。
     """
     data = request.get_json() or {}
     atom_ids = data.get('atom_ids') or []
@@ -1483,6 +1541,38 @@ def restore_from_canvas_trash(slug):
             CanvasTrash.atom_id.in_(atom_ids),
         ).all()
 
+        # Pass 1：重建被刪除的殼（shell_snapshot 在 root atom 的 payload 中）
+        # old_shell_id -> 實際可用的 shell_id（既存的或新建的）
+        shell_id_map = {}
+        for t in trash_rows:
+            if not (t.payload and isinstance(t.payload, dict)):
+                continue
+            old_shell_id = t.payload.get('mindmap_shell_id')
+            if not old_shell_id or old_shell_id in shell_id_map:
+                continue
+            existing_shell = s.get(CanvasMindmapShell, old_shell_id)
+            if existing_shell:
+                shell_id_map[old_shell_id] = old_shell_id
+            else:
+                snap = t.payload.get('shell_snapshot')
+                if snap:
+                    new_shell = CanvasMindmapShell(
+                        canvas_id=canvas.id,
+                        title=snap.get('title', '心智圖'),
+                        pos_x=snap.get('pos_x', 0),
+                        pos_y=snap.get('pos_y', 0),
+                        width=snap.get('width', 600),
+                        height=snap.get('height', 400),
+                        z_index=snap.get('z_index', 1),
+                        color=snap.get('color', '#3b82f6'),
+                        layout=snap.get('layout', 'tree-right'),
+                        root_atom_id=t.atom_id,
+                    )
+                    s.add(new_shell)
+                    s.flush()
+                    shell_id_map[old_shell_id] = new_shell.id
+
+        # Pass 2：恢復 canvas_atom + 還原 mindmap 歸屬與 tree_parent
         restored_cas = []
         for t in trash_rows:
             existing = s.query(CanvasAtom).filter(
@@ -1511,6 +1601,48 @@ def restore_from_canvas_trash(slug):
                     visual_style=t.visual_style,
                 )
                 s.add(ca)
+
+            # 還原 mindmap 歸屬與樹結構
+            if t.payload and isinstance(t.payload, dict):
+                old_shell_id = t.payload.get('mindmap_shell_id')
+                target_shell_id = shell_id_map.get(old_shell_id)
+                if target_shell_id:
+                    ca.mindmap_shell_id = target_shell_id
+                    tree_parent = t.payload.get('tree_parent')
+                    if tree_parent and tree_parent.get('to_atom_id'):
+                        # 若已有「活躍」tree_parent（用戶在 trash 期間建立的）-- 不覆蓋
+                        active_rel = (
+                            s.query(UnifiedRelation)
+                            .filter(
+                                UnifiedRelation.relation_type == 'tree_parent',
+                                UnifiedRelation.is_deleted == False,
+                                UnifiedRelation.from_atom_id == t.atom_id,
+                            )
+                            .first()
+                        )
+                        if not active_rel:
+                            # 嘗試 undelete 舊 relation，否則新建
+                            old_rel = (
+                                s.query(UnifiedRelation)
+                                .filter(
+                                    UnifiedRelation.relation_type == 'tree_parent',
+                                    UnifiedRelation.from_atom_id == t.atom_id,
+                                )
+                                .first()
+                            )
+                            if old_rel:
+                                old_rel.is_deleted = False
+                                old_rel.to_atom_id = tree_parent['to_atom_id']
+                                old_rel.sort_order = tree_parent.get('sort_order', 0)
+                            else:
+                                s.add(UnifiedRelation(
+                                    from_atom_id=t.atom_id,
+                                    to_atom_id=tree_parent['to_atom_id'],
+                                    relation_type='tree_parent',
+                                    sort_order=tree_parent.get('sort_order', 0),
+                                    created_by='human',
+                                ))
+
             s.delete(t)
             restored_cas.append(ca)
         s.flush()
