@@ -440,7 +440,10 @@ function whiteboardConnectionsMixin() {
         _connGeometry: [],
 
         renderConnections() {
-            var svg = this.$refs.connSvg;
+            // $refs.connSvg 在某些 reactive 重建後會暫時失效（如 setShellLayout 後 alpine 對
+            // atoms/mindmapShells/treeParents 連續重新賦值的 nextTick 內），用 querySelector
+            // 作 fallback 確保 SVG 取得到
+            var svg = this.$refs.connSvg || document.querySelector('.wb-connections:not(.wb-preview-layer)');
             if (!svg) return;
             svg.innerHTML = '';
             this._connGeometry = [];

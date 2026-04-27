@@ -30,13 +30,14 @@ function whiteboardMindmapMixin() {
         editingShellTitle: '',
         _shellTitleSaveTimer: null,
 
-        // 節點同層拖曳排序（#2）
+        // 節點同層拖曳排序（#2）/ 拖出殼（B）
         mindmapDragNode: null,         // 拖曳中的 ca
         mindmapDragStartX: 0,
         mindmapDragStartY: 0,
         mindmapDragMoved: false,
         mindmapDragDropTargetId: null, // sibling atom_id（drop indicator 顯示在它上/下）
-        mindmapDragDropPosition: null, // 'above' | 'below'
+        mindmapDragDropPosition: null, // 'above' | 'below' | 'left' | 'right'
+        mindmapDragOutsideShell: false, // 拖到殼範圍外 = 準備 extract
 
         // 子樹摺疊（#3）-- per-session，不入 DB
         // 用 plain object 而非 Set，alpine reactivity 對 object key 較穩定
@@ -205,7 +206,7 @@ function whiteboardMindmapMixin() {
             if (!shell) return;
             try {
                 await API.updateMindmapShell(shellId, { layout: layout });
-                // 重新從後端拉取，alpine 重建整套 reactive，繞過 in-place mutation 的時序問題
+                // 重新從後端拉取，alpine 重建整套 reactive
                 await this.loadData();
                 var self = this;
                 this.$nextTick(function() { self.renderConnections(); });
@@ -383,6 +384,13 @@ function whiteboardMindmapMixin() {
 
             // 非編輯中:有 active 節點時吃熱鍵
             if (!this.activeMindmapAtomId || !this.activeMindmapShellId) return false;
+
+            // Ctrl+E 或 F2 = 開啟詳細編輯卡片（完整 markdown / entries 編輯器）
+            if ((e.ctrlKey && (e.key === 'e' || e.key === 'E')) || e.key === 'F2') {
+                e.preventDefault();
+                if (this.openCardEditor) this.openCardEditor(this.activeMindmapAtomId);
+                return true;
+            }
 
             if (e.key === 'Tab') {
                 e.preventDefault();
@@ -726,6 +734,24 @@ function whiteboardMindmapMixin() {
             var node = this.mindmapDragNode;
             if (!node) return;
             this._rebuildTreeIndex();
+            var shell = this.getShellById(node.mindmap_shell_id);
+            var pos = this.screenToCanvas(clientX, clientY);
+
+            // 偵測是否拖出殼範圍 -- 用 16px buffer 避免邊界抖動
+            if (shell) {
+                var BUF = 16;
+                var inShell = pos.x >= shell.pos_x - BUF
+                           && pos.x <= shell.pos_x + shell.width + BUF
+                           && pos.y >= shell.pos_y - BUF
+                           && pos.y <= shell.pos_y + shell.height + BUF;
+                if (!inShell) {
+                    this.mindmapDragOutsideShell = true;
+                    this.mindmapDragDropTargetId = null;
+                    return;
+                }
+                this.mindmapDragOutsideShell = false;
+            }
+
             var parentId = this._parentByChild[node.atom_id];
             if (parentId === undefined) {
                 this.mindmapDragDropTargetId = null;
@@ -737,9 +763,7 @@ function whiteboardMindmapMixin() {
                 this.mindmapDragDropTargetId = null;
                 return;
             }
-            var shell = this.getShellById(node.mindmap_shell_id);
             var isDown = shell && shell.layout === 'tree-down';
-            var pos = this.screenToCanvas(clientX, clientY);
             var self = this;
             var nearestId = null;
             var nearestDist = Infinity;
@@ -774,17 +798,43 @@ function whiteboardMindmapMixin() {
             var dropId = this.mindmapDragDropTargetId;
             var dropPos = this.mindmapDragDropPosition;
             var moved = this.mindmapDragMoved;
+            var outside = this.mindmapDragOutsideShell;
+            var dropClientX = e.clientX, dropClientY = e.clientY;
             this.mindmapDragNode = null;
             this.mindmapDragMoved = false;
             this.mindmapDragDropTargetId = null;
             this.mindmapDragDropPosition = null;
-            if (moved && dropId !== null && dropId !== undefined) {
+            this.mindmapDragOutsideShell = false;
+            if (moved && outside) {
+                // 拖出殼 -- extract，並把節點放到滑鼠座標
+                this._extractFromDrag(dragged, dropClientX, dropClientY);
+            } else if (moved && dropId !== null && dropId !== undefined) {
                 this._commitMindmapReorder(dragged, dropId, dropPos);
             } else if (!moved) {
                 // 未實際拖動 -- 視為 click
                 this.onMindmapNodeClick(dragged, e);
             }
             return true;
+        },
+
+        async _extractFromDrag(draggedCa, clientX, clientY) {
+            var shellId = draggedCa.mindmap_shell_id;
+            var atomId = draggedCa.atom_id;
+            var pos = this.screenToCanvas(clientX, clientY);
+            try {
+                await API.extractMindmapSubtree(shellId, atomId);
+                // 把節點移到滑鼠落下位置（atom 本體 + 直接後代會跟著走，但 layout 已脫離）
+                await API.updateCanvasAtom(draggedCa.id, {
+                    pos_x: pos.x - this.MM_NODE_W / 2,
+                    pos_y: pos.y - this.MM_NODE_H / 2,
+                });
+                await this.loadData();
+                var self = this;
+                this.$nextTick(function() { self.renderConnections(); });
+                this.showToast('已脫離心智圖殼', 'info', 1500);
+            } catch (err) {
+                this.showToast('拖出殼失敗：' + (err.message || err), 'error');
+            }
         },
 
         async _commitMindmapReorder(draggedCa, dropTargetAtomId, position) {
