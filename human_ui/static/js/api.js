@@ -148,6 +148,9 @@ const API = {
         return this.del(url);
     },
     addMindmapNode(shellId, data)          { return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes', data); },
+    attachMindmapAtom(shellId, atomId, parentAtomId) {
+        return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/attach', { atom_id: atomId, parent_atom_id: parentAtomId });
+    },
     moveMindmapNode(shellId, atomId, data) { return this.put('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes/' + atomId + '/move', data); },
     deleteMindmapNode(shellId, atomId)     { return this.del('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes/' + atomId); },
     extractMindmapSubtree(shellId, atomId) { return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/extract', { atom_id: atomId }); },

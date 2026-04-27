@@ -460,6 +460,8 @@ function whiteboardApp(canvasId) {
 
         onViewportMouseMove(e) {
             if (this.exchangeFollowItem && this._updateExchangeFollowPos) { this._updateExchangeFollowPos(e); return; }
+            // 心智圖節點同層拖曳排序（優先）
+            if (this._handleMindmapDragMove && this._handleMindmapDragMove(e)) return;
             if (this.isConnDragging) { this.connDragMouseX = e.clientX; this.connDragMouseY = e.clientY; this.updatePreviewLine(); return; }
             if (this.rightDragPending) {
                 if (Math.abs(e.clientX - this.rightDragStartX) > 5 || Math.abs(e.clientY - this.rightDragStartY) > 5) {
@@ -546,6 +548,8 @@ function whiteboardApp(canvasId) {
         },
 
         onViewportMouseUp(e) {
+            // 心智圖節點拖曳結算（優先）
+            if (this._handleMindmapDragUp && this._handleMindmapDragUp(e)) return;
             if (this.rightDragPending) {
                 this.rightDragPending = false; var tgt = this.rightDragTarget; this.rightDragTarget = null;
                 if (tgt && !tgt._isGroup) {
@@ -600,6 +604,12 @@ function whiteboardApp(canvasId) {
             if (this.resizeCard) { API.updateCanvasAtom(this.resizeCard.id, { width: this.resizeCard.width, height: this.resizeCard.height }); if (this.resizeCard.group_ids) this.resizeCard.group_ids.forEach(gid => this.autoResizeGroup(gid)); this.resizeCard = null; }
             if (this.dragCard) {
                 this._justDragged = true;
+                // 拖到心智圖殼/節點上 → 收入心智圖（不再走位置儲存）
+                if (this._tryAttachDragToMindmap && this._tryAttachDragToMindmap(e)) {
+                    if (this.multiDragStarts) this.multiDragStarts = null;
+                    this.dragCard = null;
+                    return;
+                }
                 var groupsToResize = new Set(); var movedIds = []; var beforePos = []; var afterPos = [];
                 if (this.multiDragStarts) {
                     var self = this;

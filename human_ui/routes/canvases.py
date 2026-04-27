@@ -1232,6 +1232,75 @@ def delete_mindmap_node(shell_id, atom_id):
         })
 
 
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>/attach', methods=['POST'])
+def attach_atom_to_mindmap(shell_id):
+    """把既存 canvas atom 收入殼，建立 tree_parent relation。
+
+    body: {
+        atom_id: int,                # 要收入的 atom（必須已在此白板上）
+        parent_atom_id: int|null     # 父節點；null 則接到 shell.root_atom_id 之下
+    }
+    防呆:cycle 偵測（不能附加到自己或自己的後代）。
+    """
+    data = request.get_json() or {}
+    atom_id = data.get('atom_id')
+    parent_atom_id = data.get('parent_atom_id')
+    if not atom_id:
+        return jsonify({'error': '需要 atom_id'}), 400
+    atom_id = int(atom_id)
+
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+
+        if parent_atom_id is None:
+            if shell.root_atom_id is None:
+                return jsonify({'error': '殼沒有 root，無法 attach'}), 400
+            parent_atom_id = shell.root_atom_id
+        else:
+            parent_atom_id = int(parent_atom_id)
+
+        if parent_atom_id == atom_id:
+            return jsonify({'error': '不能附加到自己之下'}), 400
+
+        descendants = _tree_descendants(s, atom_id)
+        if parent_atom_id in descendants:
+            return jsonify({'error': '不能附加到自己的後代之下（會形成迴圈）'}), 400
+
+        ca = s.query(CanvasAtom).filter(
+            CanvasAtom.canvas_id == shell.canvas_id,
+            CanvasAtom.atom_id == atom_id,
+        ).first()
+        if not ca:
+            return jsonify({'error': 'atom 不在此白板上'}), 400
+
+        ca.mindmap_shell_id = shell_id
+
+        existing_rel = _get_tree_parent(s, atom_id)
+        if existing_rel:
+            existing_rel.to_atom_id = parent_atom_id
+            existing_rel.sort_order = _next_sibling_sort_order(s, parent_atom_id)
+            existing_rel.is_deleted = False
+            rel = existing_rel
+        else:
+            rel = UnifiedRelation(
+                from_atom_id=atom_id,
+                to_atom_id=parent_atom_id,
+                relation_type='tree_parent',
+                sort_order=_next_sibling_sort_order(s, parent_atom_id),
+                created_by='human',
+            )
+            s.add(rel)
+        s.flush()
+
+        return jsonify({
+            'message': '已附加到心智圖',
+            'canvas_atom': ca.to_dict(),
+            'tree_parent_relation': rel.to_dict(),
+        })
+
+
 @bp.route('/api/canvas-mindmap-shells/<int:shell_id>/extract', methods=['POST'])
 def extract_mindmap_subtree(shell_id):
     """把節點及其子樹從殼脫離（清 mindmap_shell_id），保留 tree_parent relations。

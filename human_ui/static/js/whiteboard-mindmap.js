@@ -25,11 +25,32 @@ function whiteboardMindmapMixin() {
         mindmapShellDragStartPos: null,
         mindmapShellDragMemberStarts: null,
 
+        // 殼標題編輯（#1）
+        editingShellId: null,
+        editingShellTitle: '',
+        _shellTitleSaveTimer: null,
+
+        // 節點同層拖曳排序（#2）
+        mindmapDragNode: null,         // 拖曳中的 ca
+        mindmapDragStartX: 0,
+        mindmapDragStartY: 0,
+        mindmapDragMoved: false,
+        mindmapDragDropTargetId: null, // sibling atom_id（drop indicator 顯示在它上/下）
+        mindmapDragDropPosition: null, // 'above' | 'below'
+
+        // 子樹摺疊（#3）-- per-session，不入 DB
+        // 用 plain object 而非 Set，alpine reactivity 對 object key 較穩定
+        collapsedMindmapAtomIds: {},
+
         // ---- 常數: tree layout ----
         MM_NODE_W: 140,
         MM_NODE_H: 30,
-        MM_X_GAP: 90,    // 層距：寬鬆 3 倍，避免子樹擴張時樹線重疊
-        MM_Y_GAP: 6,
+        // tree-right: 同層垂直堆疊、不同層水平展開
+        MM_X_GAP: 90,    // 層距(水平)
+        MM_Y_GAP: 6,     // sibling 間距(垂直)
+        // tree-down: 同層水平排列、不同層垂直展開
+        MM_X_GAP_DOWN: 16,  // sibling 間距(水平)
+        MM_Y_GAP_DOWN: 36,  // 層距(垂直)
         MM_PAD_X: 24,
         MM_PAD_Y: 48,   // 殼上緣標題列高度
         MM_PAD_BOTTOM: 16,
@@ -77,8 +98,14 @@ function whiteboardMindmapMixin() {
         },
 
         // ---- Tree Layout (tree-right):root 在左、子節點往右、同層垂直堆疊 ----
+        // 摺疊節點視為葉節點 -- 不展開子樹、不佔垂直空間
+        _isCollapsed(atomId) {
+            return !!this.collapsedMindmapAtomIds[atomId];
+        },
+
         // 回傳子樹高度
         _measureSubtree(atomId) {
+            if (this._isCollapsed(atomId)) return this.MM_NODE_H;
             var children = this._childrenByParent[atomId] || [];
             if (children.length === 0) return this.MM_NODE_H;
             var sum = 0;
@@ -92,7 +119,7 @@ function whiteboardMindmapMixin() {
         _placeSubtree(atomId, x, y) {
             var ca = this._getCanvasAtomByAtomId(atomId);
             if (!ca) return { width: 0, height: this.MM_NODE_H };
-            var children = this._childrenByParent[atomId] || [];
+            var children = this._isCollapsed(atomId) ? [] : (this._childrenByParent[atomId] || []);
             var subtreeH = this._measureSubtree(atomId);
 
             // 自身放在子樹垂直中線
@@ -121,7 +148,12 @@ function whiteboardMindmapMixin() {
 
             var rootX = shell.pos_x + this.MM_PAD_X;
             var rootY = shell.pos_y + this.MM_PAD_Y;
-            var bounds = this._placeSubtree(shell.root_atom_id, rootX, rootY);
+            var bounds;
+            if (shell.layout === 'tree-down') {
+                bounds = this._placeSubtreeDown(shell.root_atom_id, rootX, rootY);
+            } else {
+                bounds = this._placeSubtree(shell.root_atom_id, rootX, rootY);
+            }
             if (!bounds) return;
 
             // 自動調整殼大小以包覆子樹
@@ -129,6 +161,57 @@ function whiteboardMindmapMixin() {
             var newH = Math.max(120, bounds.bottom - shell.pos_y + this.MM_PAD_BOTTOM);
             shell.width = newW;
             shell.height = newH;
+        },
+
+        // ---- Tree Layout (tree-down):root 在上、子節點往下、同層水平排列 ----
+        _measureSubtreeWidth(atomId) {
+            if (this._isCollapsed(atomId)) return this.MM_NODE_W;
+            var children = this._childrenByParent[atomId] || [];
+            if (children.length === 0) return this.MM_NODE_W;
+            var sum = 0;
+            for (var i = 0; i < children.length; i++) {
+                sum += this._measureSubtreeWidth(children[i]);
+                if (i > 0) sum += this.MM_X_GAP_DOWN;
+            }
+            return Math.max(this.MM_NODE_W, sum);
+        },
+
+        _placeSubtreeDown(atomId, x, y) {
+            var ca = this._getCanvasAtomByAtomId(atomId);
+            if (!ca) return { right: x + this.MM_NODE_W, bottom: y + this.MM_NODE_H };
+            var children = this._isCollapsed(atomId) ? [] : (this._childrenByParent[atomId] || []);
+            var subtreeW = this._measureSubtreeWidth(atomId);
+
+            ca.pos_x = x + (subtreeW - this.MM_NODE_W) / 2;
+            ca.pos_y = y;
+            ca.width = this.MM_NODE_W;
+            ca.height = this.MM_NODE_H;
+
+            var childY = y + this.MM_NODE_H + this.MM_Y_GAP_DOWN;
+            var childX = x;
+            var maxBottom = y + this.MM_NODE_H;
+            for (var i = 0; i < children.length; i++) {
+                var ch = children[i];
+                var childW = this._measureSubtreeWidth(ch);
+                var sub = this._placeSubtreeDown(ch, childX, childY);
+                if (sub.bottom > maxBottom) maxBottom = sub.bottom;
+                childX += childW + this.MM_X_GAP_DOWN;
+            }
+            return { right: x + subtreeW, bottom: maxBottom };
+        },
+
+        async setShellLayout(shellId, layout) {
+            var shell = this.getShellById(shellId);
+            if (!shell) return;
+            try {
+                await API.updateMindmapShell(shellId, { layout: layout });
+                // 重新從後端拉取，alpine 重建整套 reactive，繞過 in-place mutation 的時序問題
+                await this.loadData();
+                var self = this;
+                this.$nextTick(function() { self.renderConnections(); });
+            } catch (e) {
+                this.showToast('切換 layout 失敗：' + (e.message || e), 'error');
+            }
         },
 
         recalcAllMindmapLayouts() {
@@ -259,6 +342,10 @@ function whiteboardMindmapMixin() {
         // 若 active 在心智圖節點，吞掉 Tab/Enter/Delete/可印刷字元
         // 回傳 true = 已處理，外層 return；false = 由外層繼續
         handleMindmapKeyDown(e) {
+            // 殼標題編輯中：不攔截任何鍵，讓 input 自然處理
+            // （否則 active 節點仍存在，printable 字元會誤觸標題改寫到 active 節點）
+            if (this.editingShellId !== null && this.editingShellId !== undefined) return false;
+
             if (this.editingMindmapAtomId) {
                 // 編輯標題中:Enter 結束編輯 + 新增同層；Tab 結束編輯 + 新增子節點；Esc 結束編輯
                 if (e.key === 'Enter') {
@@ -440,26 +527,33 @@ function whiteboardMindmapMixin() {
 
         _navigateMindmap(atomId, key) {
             this._rebuildTreeIndex();
+            var ca = this._getCanvasAtomByAtomId(atomId);
+            var shell = ca && this.getShellById(ca.mindmap_shell_id);
+            var isDown = shell && shell.layout === 'tree-down';
+
             var parent = this._parentByChild[atomId];
             var siblings = parent !== undefined ? (this._childrenByParent[parent] || []) : [];
             var idx = siblings.indexOf(atomId);
+            var children = this._childrenByParent[atomId] || [];
 
-            if (key === 'ArrowUp') {
-                if (idx > 0) return siblings[idx - 1];
-                return null;
-            }
-            if (key === 'ArrowDown') {
-                if (idx >= 0 && idx < siblings.length - 1) return siblings[idx + 1];
-                return null;
-            }
-            if (key === 'ArrowLeft') {
-                // 父節點（root 沒有則不動）
-                return parent !== undefined ? parent : null;
-            }
-            if (key === 'ArrowRight') {
-                // 第一個子節點
-                var children = this._childrenByParent[atomId] || [];
-                return children.length > 0 ? children[0] : null;
+            // 對應表（對應視覺方向）
+            //   tree-right: ↑↓ = 同層 sibling, ← = parent, → = first child
+            //   tree-down:  ←→ = 同層 sibling, ↑ = parent, ↓ = first child
+            var prevSibling = function() { return idx > 0 ? siblings[idx - 1] : null; };
+            var nextSibling = function() { return (idx >= 0 && idx < siblings.length - 1) ? siblings[idx + 1] : null; };
+            var goParent = function() { return parent !== undefined ? parent : null; };
+            var goFirstChild = function() { return children.length > 0 ? children[0] : null; };
+
+            if (isDown) {
+                if (key === 'ArrowLeft')  return prevSibling();
+                if (key === 'ArrowRight') return nextSibling();
+                if (key === 'ArrowUp')    return goParent();
+                if (key === 'ArrowDown')  return goFirstChild();
+            } else {
+                if (key === 'ArrowUp')    return prevSibling();
+                if (key === 'ArrowDown')  return nextSibling();
+                if (key === 'ArrowLeft')  return goParent();
+                if (key === 'ArrowRight') return goFirstChild();
             }
             return null;
         },
@@ -480,20 +574,44 @@ function whiteboardMindmapMixin() {
             if (!svg) return;
             var self = this;
             var rels = this.treeParents || [];
+            var hidden = this._collapsedHiddenAtomIds();
             var path = '';
             rels.forEach(function(r) {
                 var child = self._getCanvasAtomByAtomId(r.child_atom_id);
                 var parent = self._getCanvasAtomByAtomId(r.parent_atom_id);
                 if (!child || !parent) return;
                 if (!child.mindmap_shell_id) return;
-                var px = parent.pos_x + self.MM_NODE_W;
-                var py = parent.pos_y + self.MM_NODE_H / 2;
-                var cx = child.pos_x;
-                var cy = child.pos_y + self.MM_NODE_H / 2;
-                // 兩段折線:水平到中點，再垂直，再水平到子節點
-                var midX = (px + cx) / 2;
-                path += 'M ' + px + ' ' + py + ' '
-                      + 'C ' + midX + ' ' + py + ', ' + midX + ' ' + cy + ', ' + cx + ' ' + cy + ' ';
+                if (hidden[r.child_atom_id]) return;
+
+                var shell = self.getShellById(child.mindmap_shell_id);
+                var layout = shell ? shell.layout : 'tree-right';
+
+                var pW = parent.width || self.MM_NODE_W;
+                var pH = parent.height || self.MM_NODE_H;
+                var cW = child.width || self.MM_NODE_W;
+                var cH = child.height || self.MM_NODE_H;
+
+                if (layout === 'tree-down') {
+                    // 直式：折角直線。出口統一從父節點底部正中
+                    var px = parent.pos_x + pW / 2;
+                    var py = parent.pos_y + pH;
+                    var cx = child.pos_x + cW / 2;
+                    var cy = child.pos_y;
+                    var midY = (py + cy) / 2;
+                    path += 'M ' + px + ' ' + py
+                          + ' L ' + px + ' ' + midY
+                          + ' L ' + cx + ' ' + midY
+                          + ' L ' + cx + ' ' + cy + ' ';
+                } else {
+                    // 橫式：貝茲曲線。出口從父節點右側中央
+                    var px2 = parent.pos_x + pW;
+                    var py2 = parent.pos_y + pH / 2;
+                    var cx2 = child.pos_x;
+                    var cy2 = child.pos_y + cH / 2;
+                    var midX = (px2 + cx2) / 2;
+                    path += 'M ' + px2 + ' ' + py2
+                          + ' C ' + midX + ' ' + py2 + ', ' + midX + ' ' + cy2 + ', ' + cx2 + ' ' + cy2 + ' ';
+                }
             });
             // 用一條 <path> 全部畫，輕量
             var existing = svg.querySelector('path.wb-mindmap-tree-lines');
@@ -530,6 +648,288 @@ function whiteboardMindmapMixin() {
             } catch (e) {
                 this.showToast('刪除心智圖殼失敗:' + (e.message || e), 'error');
             }
+        },
+
+        // ============================================================
+        // #1 殼標題改名
+        // ============================================================
+        startShellTitleEdit(shell) {
+            if (this.isSnapshot) return;
+            this.editingShellId = shell.id;
+            this.editingShellTitle = shell.title || '';
+            var self = this;
+            this.$nextTick(function() {
+                var inp = document.getElementById('mm-shell-title-input-' + shell.id);
+                if (inp) { inp.focus(); inp.select(); }
+            });
+        },
+
+        onShellTitleInput(shellId, value) {
+            this.editingShellTitle = value;
+            var shell = this.getShellById(shellId);
+            if (shell) shell.title = value;  // 即時 UI
+            var self = this;
+            if (this._shellTitleSaveTimer) clearTimeout(this._shellTitleSaveTimer);
+            this._shellTitleSaveTimer = setTimeout(function() {
+                self._shellTitleSaveTimer = null;
+                API.updateMindmapShell(shellId, { title: value }).catch(function() {});
+            }, 400);
+        },
+
+        finishShellTitleEdit() {
+            if (this.editingShellId === null) return;
+            var shellId = this.editingShellId;
+            if (this._shellTitleSaveTimer) {
+                clearTimeout(this._shellTitleSaveTimer);
+                this._shellTitleSaveTimer = null;
+                var v = this.editingShellTitle;
+                API.updateMindmapShell(shellId, { title: v }).catch(function() {});
+            }
+            this.editingShellId = null;
+        },
+
+        // ============================================================
+        // #2 同層拖曳排序
+        // ============================================================
+        onMindmapNodeMouseDown(e, ca) {
+            if (e.button !== 0) return;
+            if (this.isSnapshot) return;
+            if (!ca || !ca.mindmap_shell_id) return;
+            // 編輯標題中時不啟動拖曳
+            if (this.editingMindmapAtomId === ca.atom_id) return;
+            // root 沒同層可換，不啟動拖曳
+            this._rebuildTreeIndex();
+            if (this._parentByChild[ca.atom_id] === undefined) return;
+            e.stopPropagation();
+            this.mindmapDragNode = ca;
+            this.mindmapDragStartX = e.clientX;
+            this.mindmapDragStartY = e.clientY;
+            this.mindmapDragMoved = false;
+            this.mindmapDragDropTargetId = null;
+            this.mindmapDragDropPosition = null;
+        },
+
+        // 由 onViewportMouseMove 呼叫
+        _handleMindmapDragMove(e) {
+            if (!this.mindmapDragNode) return false;
+            var dx = e.clientX - this.mindmapDragStartX;
+            var dy = e.clientY - this.mindmapDragStartY;
+            if (!this.mindmapDragMoved) {
+                if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return true;
+                this.mindmapDragMoved = true;
+            }
+            this._updateMindmapDragDropTarget(e.clientX, e.clientY);
+            return true;
+        },
+
+        _updateMindmapDragDropTarget(clientX, clientY) {
+            var node = this.mindmapDragNode;
+            if (!node) return;
+            this._rebuildTreeIndex();
+            var parentId = this._parentByChild[node.atom_id];
+            if (parentId === undefined) {
+                this.mindmapDragDropTargetId = null;
+                return;
+            }
+            var draggedId = node.atom_id;
+            var siblings = (this._childrenByParent[parentId] || []).filter(function(s) { return s !== draggedId; });
+            if (siblings.length === 0) {
+                this.mindmapDragDropTargetId = null;
+                return;
+            }
+            var shell = this.getShellById(node.mindmap_shell_id);
+            var isDown = shell && shell.layout === 'tree-down';
+            var pos = this.screenToCanvas(clientX, clientY);
+            var self = this;
+            var nearestId = null;
+            var nearestDist = Infinity;
+            var position = isDown ? 'left' : 'above';
+            siblings.forEach(function(sid) {
+                var sca = self._getCanvasAtomByAtomId(sid);
+                if (!sca) return;
+                var probe, mid;
+                if (isDown) {
+                    probe = pos.x;
+                    mid = sca.pos_x + (sca.width || self.MM_NODE_W) / 2;
+                } else {
+                    probe = pos.y;
+                    mid = sca.pos_y + (sca.height || self.MM_NODE_H) / 2;
+                }
+                var d = Math.abs(probe - mid);
+                if (d < nearestDist) {
+                    nearestDist = d;
+                    nearestId = sid;
+                    if (isDown) position = probe < mid ? 'left' : 'right';
+                    else        position = probe < mid ? 'above' : 'below';
+                }
+            });
+            this.mindmapDragDropTargetId = nearestId;
+            this.mindmapDragDropPosition = position;
+        },
+
+        // 由 onViewportMouseUp 呼叫；回傳 true 表示已處理
+        _handleMindmapDragUp(e) {
+            if (!this.mindmapDragNode) return false;
+            var dragged = this.mindmapDragNode;
+            var dropId = this.mindmapDragDropTargetId;
+            var dropPos = this.mindmapDragDropPosition;
+            var moved = this.mindmapDragMoved;
+            this.mindmapDragNode = null;
+            this.mindmapDragMoved = false;
+            this.mindmapDragDropTargetId = null;
+            this.mindmapDragDropPosition = null;
+            if (moved && dropId !== null && dropId !== undefined) {
+                this._commitMindmapReorder(dragged, dropId, dropPos);
+            } else if (!moved) {
+                // 未實際拖動 -- 視為 click
+                this.onMindmapNodeClick(dragged, e);
+            }
+            return true;
+        },
+
+        async _commitMindmapReorder(draggedCa, dropTargetAtomId, position) {
+            this._rebuildTreeIndex();
+            var targetSortOrder = this._sortOrderByChild[dropTargetAtomId] || 0;
+            // 用 ±0.5 插入，避免整批重新編號；後端不在意小數
+            // tree-right:above/below；tree-down:left/right -- 兩者語意一致(前/後)
+            var isBefore = (position === 'above' || position === 'left');
+            var newSortOrder = isBefore ? targetSortOrder - 0.5 : targetSortOrder + 0.5;
+            var parentId = this._parentByChild[draggedCa.atom_id];
+            try {
+                await API.moveMindmapNode(draggedCa.mindmap_shell_id, draggedCa.atom_id, {
+                    new_parent_atom_id: parentId,
+                    sort_order: newSortOrder,
+                });
+                var rel = this.treeParents.find(function(r) { return r.child_atom_id === draggedCa.atom_id; });
+                if (rel) rel.sort_order = newSortOrder;
+                this.recalcMindmapLayout(draggedCa.mindmap_shell_id);
+                var self = this;
+                this.$nextTick(function() { self.renderConnections(); });
+            } catch (e) {
+                this.showToast('排序失敗：' + (e.message || e), 'error');
+            }
+        },
+
+        // drop indicator 樣式（在 template 中綁 :style）
+        get mindmapDropIndicatorStyle() {
+            if (!this.mindmapDragDropTargetId || !this.mindmapDragMoved) return 'display:none;';
+            var ca = this._getCanvasAtomByAtomId(this.mindmapDragDropTargetId);
+            if (!ca) return 'display:none;';
+            var w = ca.width || this.MM_NODE_W;
+            var h = ca.height || this.MM_NODE_H;
+            var pos = this.mindmapDragDropPosition;
+            if (pos === 'left' || pos === 'right') {
+                // tree-down:垂直線在左/右
+                var x = pos === 'left' ? ca.pos_x - 4 : ca.pos_x + w + 1;
+                return 'left:' + x + 'px; top:' + ca.pos_y + 'px; width:3px; height:' + h + 'px;';
+            }
+            // tree-right:水平線在上/下
+            var y = pos === 'above' ? ca.pos_y - 4 : ca.pos_y + h + 1;
+            return 'left:' + ca.pos_x + 'px; top:' + y + 'px; width:' + w + 'px; height:3px;';
+        },
+
+        // ============================================================
+        // #4 拖入殼:外部卡片拖曳放下時偵測是否落在心智圖殼/節點
+        // 由 whiteboard.js onViewportMouseUp 的 dragCard 分支呼叫；回傳 true 已處理
+        // ============================================================
+        _tryAttachDragToMindmap(e) {
+            if (!this.dragCard) return false;
+            // 已在某殼內的 mindmap 節點不重複 attach
+            if (this.dragCard.mindmap_shell_id) return false;
+
+            var elem = document.elementFromPoint(e.clientX, e.clientY);
+            if (!elem) return false;
+            var nodeEl = elem.closest('.wb-mindmap-node');
+            var shellEl = elem.closest('.wb-mindmap-shell');
+            if (!nodeEl && !shellEl) return false;
+
+            var shellId = null;
+            var parentAtomId = null;
+            if (nodeEl) {
+                var aid = parseInt(nodeEl.id.replace('card-', ''), 10);
+                var ca = this._getCanvasAtomByAtomId(aid);
+                if (!ca || !ca.mindmap_shell_id) return false;
+                shellId = ca.mindmap_shell_id;
+                parentAtomId = aid;
+            } else {
+                var sid = parseInt(shellEl.id.replace('mindmap-shell-', ''), 10);
+                var shell = this.getShellById(sid);
+                if (!shell) return false;
+                shellId = sid;
+                parentAtomId = shell.root_atom_id;  // null 也讓後端用 root
+            }
+
+            var draggedAtomId = this.dragCard.atom_id;
+            if (parentAtomId === draggedAtomId) {
+                // 不可附加到自己 -- 視為一般拖曳，不攔截
+                return false;
+            }
+
+            var self = this;
+            API.attachMindmapAtom(shellId, draggedAtomId, parentAtomId)
+                .then(function() { return self.loadData(); })
+                .then(function() {
+                    self.$nextTick(function() { self.renderConnections(); });
+                    self.showToast('已收入心智圖', 'info', 1500);
+                })
+                .catch(function(err) {
+                    self.showToast('收入心智圖失敗：' + (err.message || err), 'error');
+                });
+            return true;
+        },
+
+        // ============================================================
+        // #3 摺疊/展開子樹
+        // ============================================================
+        hasMindmapChildren(ca) {
+            if (!ca || !ca.mindmap_shell_id) return false;
+            this._rebuildTreeIndex();
+            var children = this._childrenByParent[ca.atom_id] || [];
+            return children.length > 0;
+        },
+
+        isMindmapCollapsed(ca) {
+            return !!(ca && this.collapsedMindmapAtomIds[ca.atom_id]);
+        },
+
+        toggleMindmapCollapse(ca) {
+            if (!ca || !ca.mindmap_shell_id) return;
+            var aid = ca.atom_id;
+            var copy = Object.assign({}, this.collapsedMindmapAtomIds);
+            if (copy[aid]) delete copy[aid];
+            else copy[aid] = true;
+            this.collapsedMindmapAtomIds = copy;  // 重新賦值以觸發 alpine 重算
+            this.recalcMindmapLayout(ca.mindmap_shell_id);
+            var self = this;
+            this.$nextTick(function() { self.renderConnections(); });
+        },
+
+        // 計算被摺疊子樹隱藏的所有 atom_ids（後代）
+        _collapsedHiddenAtomIds() {
+            var hidden = {};
+            var keys = Object.keys(this.collapsedMindmapAtomIds || {});
+            if (keys.length === 0) return hidden;
+            this._rebuildTreeIndex();
+            var self = this;
+            function markDescendants(parentId) {
+                var children = self._childrenByParent[parentId] || [];
+                children.forEach(function(c) {
+                    hidden[c] = true;
+                    markDescendants(c);
+                });
+            }
+            keys.forEach(function(aid) { markDescendants(parseInt(aid, 10)); });
+            return hidden;
+        },
+
+        // 過濾後可見的 mindmap atom（取代主 app 的 mindmapAtoms）
+        get visibleMindmapAtoms() {
+            var hidden = this._collapsedHiddenAtomIds();
+            return this.atoms.filter(function(ca) {
+                var v = ca && ca.mindmap_shell_id;
+                if (v === null || v === undefined) return false;
+                return !hidden[ca.atom_id];
+            });
         },
     };
 }

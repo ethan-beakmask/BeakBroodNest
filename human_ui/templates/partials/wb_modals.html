@@ -1521,6 +1521,13 @@
             <template x-if="contextMenu.type === 'mindmap_shell'">
                 <div>
                     <div class="context-menu-header" x-text="contextMenu.sh.title"></div>
+                    <div class="context-menu-item" @click="setShellLayout(contextMenu.sh.id, 'tree-right'); closeContextMenu()">
+                        <span x-text="contextMenu.sh.layout === 'tree-right' ? '✓ 展開向右' : '展開向右'"></span>
+                    </div>
+                    <div class="context-menu-item" @click="setShellLayout(contextMenu.sh.id, 'tree-down'); closeContextMenu()">
+                        <span x-text="contextMenu.sh.layout === 'tree-down' ? '✓ 展開向下' : '展開向下'"></span>
+                    </div>
+                    <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'shell_only'); closeContextMenu()">解除殼（節點留在白板上）</div>
                     <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'with_atoms'); closeContextMenu()" style="color:var(--danger);">刪除殼+所有節點（送字紙簍）</div>
                 </div>

@@ -133,9 +133,28 @@
                          @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_shell', sh: sh }">
                         <div class="wb-mindmap-shell-label"
                              :style="getMindmapShellLabelStyle(sh)"
-                             x-text="sh.title"></div>
+                             @dblclick.stop="startShellTitleEdit(sh)">
+                            <template x-if="editingShellId !== sh.id">
+                                <span x-text="sh.title"></span>
+                            </template>
+                            <template x-if="editingShellId === sh.id">
+                                <input class="wb-mindmap-shell-title-input"
+                                       type="text"
+                                       :id="'mm-shell-title-input-' + sh.id"
+                                       :value="editingShellTitle"
+                                       @input="onShellTitleInput(sh.id, $event.target.value)"
+                                       @blur="finishShellTitleEdit()"
+                                       @keydown.enter.prevent="finishShellTitleEdit()"
+                                       @keydown.escape.prevent.stop="finishShellTitleEdit()"
+                                       @click.stop
+                                       @mousedown.stop>
+                            </template>
+                        </div>
                     </div>
                 </template>
+
+                <!-- 心智圖排序 drop indicator（拖曳同層節點時顯示） -->
+                <div class="wb-mindmap-drop-indicator" :style="mindmapDropIndicatorStyle"></div>
 
                 <!-- 原子卡片（已從 iteration 過濾掉心智圖節點，由獨立 mini-node template 渲染） -->
                 <template x-for="ca in cardAtoms" :key="ca.id">
@@ -249,15 +268,16 @@
                 </template>
 
                 <!-- 心智圖節點（mini 卡，僅標題） -->
-                <template x-for="ca in mindmapAtoms" :key="'mm-node-' + ca.atom_id">
+                <template x-for="ca in visibleMindmapAtoms" :key="'mm-node-' + ca.atom_id">
                     <div class="wb-mindmap-node"
                          :id="'card-' + ca.atom_id"
                          :class="{
                              'mindmap-node-active': activeMindmapAtomId === ca.atom_id,
                              'mindmap-node-editing': editingMindmapAtomId === ca.atom_id,
+                             'mindmap-node-dragging': mindmapDragNode && mindmapDragNode.atom_id === ca.atom_id && mindmapDragMoved,
                          }"
                          :style="getCardStyle(ca)"
-                         @click.stop="onMindmapNodeClick(ca, $event)"
+                         @mousedown="onMindmapNodeMouseDown($event, ca)"
                          @dblclick.stop="onMindmapNodeDblClick(ca, $event)"
                          @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_node', ca: ca }">
                         <template x-if="editingMindmapAtomId !== ca.atom_id">
@@ -271,8 +291,14 @@
                                    :value="editingMindmapTitle"
                                    @input="onMindmapTitleInput(ca.atom_id, $event.target.value)"
                                    @blur="finishMindmapTitleEdit(ca.atom_id)"
-                                   @click.stop>
+                                   @click.stop
+                                   @mousedown.stop>
                         </template>
+                        <span class="wb-mindmap-toggle"
+                              :style="hasMindmapChildren(ca) ? '' : 'visibility:hidden;'"
+                              @click.stop="toggleMindmapCollapse(ca)"
+                              @mousedown.stop
+                              x-text="isMindmapCollapsed(ca) ? '▶' : '▼'"></span>
                     </div>
                 </template>
             </div>
