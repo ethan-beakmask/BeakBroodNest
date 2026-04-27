@@ -1518,5 +1518,20 @@
                     <div class="context-menu-item" @click="sendTextboxToTrash(contextMenu.tb); closeContextMenu()">丟到字紙簍（可救回）</div>
                 </div>
             </template>
+            <template x-if="contextMenu.type === 'mindmap_shell'">
+                <div>
+                    <div class="context-menu-header" x-text="contextMenu.sh.title"></div>
+                    <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'shell_only'); closeContextMenu()">解除殼（節點留在白板上）</div>
+                    <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'with_atoms'); closeContextMenu()" style="color:var(--danger);">刪除殼+所有節點（送字紙簍）</div>
+                </div>
+            </template>
+            <template x-if="contextMenu.type === 'mindmap_node'">
+                <div>
+                    <div class="context-menu-item" @click="onMindmapNodeDblClick(contextMenu.ca); closeContextMenu()">編輯標題</div>
+                    <div class="context-menu-item" @click="extractMindmapSubtree(contextMenu.ca.mindmap_shell_id, contextMenu.ca.atom_id); closeContextMenu()">脫離殼（子樹一起變獨立卡）</div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="_deleteMindmapNode(contextMenu.ca.mindmap_shell_id, contextMenu.ca.atom_id); closeContextMenu()" style="color:var(--danger);">刪除節點+子樹</div>
+                </div>
+            </template>
         </div>
     </template>

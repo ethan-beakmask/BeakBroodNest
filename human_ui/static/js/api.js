@@ -139,6 +139,19 @@ const API = {
     updateUnifiedRelation(id, data) { return this.put('/beakcortex/api/unified-relations/' + id, data); },
     deleteUnifiedRelation(id)       { return this.del('/beakcortex/api/unified-relations/' + id); },
 
+    // Canvas Mindmap Shells (心智圖殼 + 樹結構)
+    createMindmapShell(slug, data)         { return this.post('/beakcortex/api/canvases/' + slug + '/mindmap-shells', data); },
+    updateMindmapShell(shellId, data)      { return this.put('/beakcortex/api/canvas-mindmap-shells/' + shellId, data); },
+    deleteMindmapShell(shellId, mode)      {
+        var url = '/beakcortex/api/canvas-mindmap-shells/' + shellId;
+        if (mode) url += '?mode=' + encodeURIComponent(mode);
+        return this.del(url);
+    },
+    addMindmapNode(shellId, data)          { return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes', data); },
+    moveMindmapNode(shellId, atomId, data) { return this.put('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes/' + atomId + '/move', data); },
+    deleteMindmapNode(shellId, atomId)     { return this.del('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes/' + atomId); },
+    extractMindmapSubtree(shellId, atomId) { return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/extract', { atom_id: atomId }); },
+
     // Promote entry to atom
     promoteEntry(entryId)           { return this.post('/beakcortex/api/entries/' + entryId + '/promote', {}); },
 

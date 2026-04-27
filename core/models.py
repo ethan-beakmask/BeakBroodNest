@@ -353,6 +353,9 @@ class Canvas(Base):
     textboxes: Mapped[list["CanvasTextbox"]] = relationship(
         back_populates='canvas', cascade='all, delete-orphan'
     )
+    mindmap_shells: Mapped[list["CanvasMindmapShell"]] = relationship(
+        back_populates='canvas', cascade='all, delete-orphan'
+    )
 
     def to_dict(self):
         return {
@@ -392,6 +395,10 @@ class CanvasAtom(Base):
     group_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('canvas_groups.id', ondelete='SET NULL'), nullable=True
     )
+    # 心智圖殼歸屬（NOT NULL 表此卡為某殼的 mini 節點，render 為小尺寸 + 受 layout 控制）
+    mindmap_shell_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('canvas_mindmap_shells.id', ondelete='SET NULL'), nullable=True
+    )
 
     canvas: Mapped["Canvas"] = relationship(back_populates='atoms')
     atom: Mapped["KnowledgeAtom"] = relationship()
@@ -412,6 +419,7 @@ class CanvasAtom(Base):
             'z_index': self.z_index,
             'visual_style': self.visual_style,
             'group_ids': [g.id for g in self.groups] if hasattr(self, 'groups') and self.groups else [],
+            'mindmap_shell_id': self.mindmap_shell_id,
             'atom': self.atom.to_dict() if self.atom else None,
         }
 
@@ -570,6 +578,56 @@ class CanvasConnection(Base):
             d['graph_family'] = self.unified_relation.graph_family
             d['semantic_layer'] = self.unified_relation.semantic_layer
         return d
+
+
+class CanvasMindmapShell(Base):
+    """心智圖殼:畫布層的視覺容器，內含一棵以 root_atom_id 為頂的樹。
+    樹結構透過 unified_relations(relation_type='tree_parent') 表達，跨 canvas 共用。
+    殼僅負責視覺呈現:邊界、標題、layout 模式。
+    """
+    __tablename__ = 'canvas_mindmap_shells'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    canvas_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='CASCADE'), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False, default='心智圖')
+    pos_x: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    pos_y: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    width: Mapped[float] = mapped_column(Float, nullable=False, default=600)
+    height: Mapped[float] = mapped_column(Float, nullable=False, default=400)
+    z_index: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    color: Mapped[str] = mapped_column(String(20), nullable=False, default='#3b82f6')
+    layout: Mapped[str] = mapped_column(String(20), nullable=False, default='tree-right')
+    root_atom_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('knowledge_atoms.id', ondelete='SET NULL'), nullable=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now, nullable=False
+    )
+
+    canvas: Mapped["Canvas"] = relationship(back_populates='mindmap_shells')
+    root_atom: Mapped["KnowledgeAtom | None"] = relationship(foreign_keys=[root_atom_id])
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'canvas_id': self.canvas_id,
+            'title': self.title,
+            'pos_x': self.pos_x,
+            'pos_y': self.pos_y,
+            'width': self.width,
+            'height': self.height,
+            'z_index': self.z_index,
+            'color': self.color,
+            'layout': self.layout,
+            'root_atom_id': self.root_atom_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
 
 
 class CanvasTextbox(Base):

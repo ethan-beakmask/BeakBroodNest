@@ -444,6 +444,8 @@ function whiteboardConnectionsMixin() {
             if (!svg) return;
             svg.innerHTML = '';
             this._connGeometry = [];
+            // 心智圖樹線優先繪製（在連線下層）
+            if (this.renderMindmapTreeLines) this.renderMindmapTreeLines(svg);
             if (this.rtLineStyle === 'none') {
                 this.renderStats = { total: this.connections.length, rendered: 0 };
                 return;

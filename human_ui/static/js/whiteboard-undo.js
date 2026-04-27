@@ -53,16 +53,31 @@ function whiteboardUndoMixin() {
         },
 
         handleKeyDown(e) {
+            // Event-level dedupe：同一 event 被 handler 處理過就不再處理
+            // （防 init/listener 多重註冊或 alpine 對某些事件的雙派發）
+            if (e.__bcHandled) return;
+            e.__bcHandled = true;
             if (this.cardEditorOpen) return;
-            var tag = e.target.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-            if (e.target.isContentEditable) return;
 
+            // Ctrl/Cmd 組合鍵優先處理（undo/redo/select-all）
             if ((e.ctrlKey || e.metaKey) && !e.altKey) {
                 if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); this.doUndo(); return; }
                 if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); this.doRedo(); return; }
-                if (e.key === 'a') { e.preventDefault(); this.selectedAtomIds = this.filteredAtoms.map(function(ca) { return ca.atom_id; }); return; }
+                if (e.key === 'a') {
+                    var tag0 = e.target.tagName;
+                    if (tag0 === 'INPUT' || tag0 === 'TEXTAREA' || tag0 === 'SELECT') return;
+                    e.preventDefault();
+                    this.selectedAtomIds = this.filteredAtoms.map(function(ca) { return ca.atom_id; });
+                    return;
+                }
             }
+
+            // 心智圖節點熱鍵優先（active/editing 在心智圖時吃掉 Tab/Enter/Del/printable）
+            if (this.handleMindmapKeyDown && this.handleMindmapKeyDown(e)) return;
+
+            var tag = e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            if (e.target.isContentEditable) return;
 
             if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected(); return; }
         },

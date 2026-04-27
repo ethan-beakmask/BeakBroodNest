@@ -11,7 +11,8 @@ from core.db import session_scope
 from core.models import (
     KnowledgeAtom, UnifiedRelation, RelationTypeRegistry,
     Canvas, CanvasAtom, CanvasConnection, CanvasTrash,
-    CanvasGroup, CanvasTextbox, Tag, atom_tags, canvas_group_members,
+    CanvasGroup, CanvasTextbox, CanvasMindmapShell,
+    Tag, atom_tags, canvas_group_members,
     AtomEntry, EntrySchema,
 )
 from core import relations as rel_service
@@ -81,6 +82,7 @@ def _build_canvas_snapshot(s, canvas_id):
             'z_index': ca.z_index,
             'visual_style': ca.visual_style,
             'group_id': ca.group_id,
+            'mindmap_shell_id': ca.mindmap_shell_id,
             'atom': {
                 'id': ka.id,
                 'title': ka.title,
@@ -147,11 +149,38 @@ def _build_canvas_snapshot(s, canvas_id):
     textboxes = s.query(CanvasTextbox).filter(CanvasTextbox.canvas_id == canvas_id).all()
     snap_textboxes = [t.to_dict() for t in textboxes]
 
+    # 心智圖殼
+    shells = s.query(CanvasMindmapShell).filter(CanvasMindmapShell.canvas_id == canvas_id).all()
+    snap_shells = [sh.to_dict() for sh in shells]
+
+    # 樹結構（tree_parent relations）-- 限該白板上的 atom
+    tree_parents = []
+    if atom_ids:
+        tp_rows = (
+            s.query(
+                UnifiedRelation.from_atom_id,
+                UnifiedRelation.to_atom_id,
+                UnifiedRelation.sort_order,
+            )
+            .filter(
+                UnifiedRelation.relation_type == 'tree_parent',
+                UnifiedRelation.is_deleted == False,
+                UnifiedRelation.from_atom_id.in_(atom_ids),
+            )
+            .all()
+        )
+        tree_parents = [
+            {'child_atom_id': r[0], 'parent_atom_id': r[1], 'sort_order': r[2]}
+            for r in tp_rows
+        ]
+
     return {
         'atoms': atoms,
         'groups': snap_groups,
         'connections': snap_conns,
         'textboxes': snap_textboxes,
+        'mindmap_shells': snap_shells,
+        'tree_parents': tree_parents,
     }
 
 
@@ -205,6 +234,8 @@ def get_canvas(slug):
             result['groups'] = canvas.snapshot.get('groups', [])
             result['connections'] = canvas.snapshot.get('connections', [])
             result['textboxes'] = canvas.snapshot.get('textboxes', [])
+            result['mindmap_shells'] = canvas.snapshot.get('mindmap_shells', [])
+            result['tree_parents'] = canvas.snapshot.get('tree_parents', [])
             result['is_snapshot'] = True
             return jsonify(result)
 
@@ -223,6 +254,7 @@ def get_canvas(slug):
                 CanvasAtom.height,
                 CanvasAtom.z_index,
                 CanvasAtom.visual_style,
+                CanvasAtom.mindmap_shell_id,
                 KnowledgeAtom.id.label('ka_id'),
                 KnowledgeAtom.title,
                 func.left(KnowledgeAtom.content, CONTENT_PREVIEW_LEN).label('content_preview'),
@@ -338,6 +370,7 @@ def get_canvas(slug):
                 'z_index': r.z_index,
                 'visual_style': r.visual_style,
                 'group_ids': group_ids_map.get(r.id, []),
+                'mindmap_shell_id': r.mindmap_shell_id,
                 'atom': {
                     'id': r.ka_id,
                     'title': r.title,
@@ -437,6 +470,35 @@ def get_canvas(slug):
         # --- 6. 文字框 ---
         textboxes = s.query(CanvasTextbox).filter(CanvasTextbox.canvas_id == canvas_id).all()
         result['textboxes'] = [t.to_dict() for t in textboxes]
+
+        # --- 7. 心智圖殼 ---
+        shells = (
+            s.query(CanvasMindmapShell)
+            .filter(CanvasMindmapShell.canvas_id == canvas_id)
+            .all()
+        )
+        result['mindmap_shells'] = [sh.to_dict() for sh in shells]
+
+        # --- 8. 樹結構（tree_parent relations，僅限本白板的 atom）---
+        result['tree_parents'] = []
+        if atom_ids:
+            tp_rows = (
+                s.query(
+                    UnifiedRelation.from_atom_id,
+                    UnifiedRelation.to_atom_id,
+                    UnifiedRelation.sort_order,
+                )
+                .filter(
+                    UnifiedRelation.relation_type == 'tree_parent',
+                    UnifiedRelation.is_deleted == False,
+                    UnifiedRelation.from_atom_id.in_(atom_ids),
+                )
+                .all()
+            )
+            result['tree_parents'] = [
+                {'child_atom_id': r[0], 'parent_atom_id': r[1], 'sort_order': r[2]}
+                for r in tp_rows
+            ]
 
         return jsonify(result)
 
@@ -569,7 +631,7 @@ def add_atom_to_canvas(slug):
             CanvasAtom.atom_id == data['atom_id'],
         ).first()
         if existing:
-            for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style'):
+            for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style', 'mindmap_shell_id'):
                 if field in data:
                     setattr(existing, field, data[field])
             s.flush()
@@ -584,6 +646,7 @@ def add_atom_to_canvas(slug):
             height=data.get('height'),
             z_index=data.get('z_index', 0),
             visual_style=data.get('visual_style', '{}'),
+            mindmap_shell_id=data.get('mindmap_shell_id'),
         )
         s.add(ca)
         s.flush()
@@ -592,13 +655,13 @@ def add_atom_to_canvas(slug):
 
 @bp.route('/api/canvas-atoms/<int:ca_id>', methods=['PUT'])
 def update_canvas_atom(ca_id):
-    """更新原子在白板上的位置/樣式"""
+    """更新原子在白板上的位置/樣式/心智圖殼歸屬"""
     data = request.get_json()
     with session_scope() as s:
         ca = s.get(CanvasAtom, ca_id)
         if not ca:
             return jsonify({'error': '不存在'}), 404
-        for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style'):
+        for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style', 'mindmap_shell_id'):
             if field in data:
                 setattr(ca, field, data[field])
         s.flush()
@@ -775,6 +838,443 @@ def delete_canvas_textbox(tb_id):
             return jsonify({'error': '文字框不存在'}), 404
         s.delete(tb)
         return jsonify({'message': f'文字框 {tb_id} 已刪除'})
+
+
+# ============================================================
+# Canvas Mindmap Shells + Tree Operations
+# 殼 = 視覺容器（canvas_mindmap_shells）
+# 樹 = unified_relations(relation_type='tree_parent')，方向 child -> parent
+# 殼內節點 = canvas_atoms.mindmap_shell_id IS NOT NULL，render 為 mini 卡
+# ============================================================
+
+_SHELL_FIELDS = (
+    'title', 'pos_x', 'pos_y', 'width', 'height', 'z_index',
+    'color', 'layout', 'root_atom_id',
+)
+
+
+def _tree_descendants(s, root_atom_id):
+    """BFS 取得 root_atom 的所有後代 atom_id（含 root），透過 tree_parent relations 走訪。"""
+    seen = {root_atom_id}
+    queue = [root_atom_id]
+    while queue:
+        next_q = []
+        children = (
+            s.query(UnifiedRelation.from_atom_id)
+            .filter(
+                UnifiedRelation.relation_type == 'tree_parent',
+                UnifiedRelation.is_deleted == False,
+                UnifiedRelation.to_atom_id.in_(queue),
+            )
+            .all()
+        )
+        for (cid,) in children:
+            if cid not in seen:
+                seen.add(cid)
+                next_q.append(cid)
+        queue = next_q
+    return seen
+
+
+def _next_sibling_sort_order(s, parent_atom_id):
+    """同層次序：取現有最大 sort_order + 1（同 parent 下）"""
+    if parent_atom_id is None:
+        return 0
+    max_order = (
+        s.query(func.max(UnifiedRelation.sort_order))
+        .filter(
+            UnifiedRelation.relation_type == 'tree_parent',
+            UnifiedRelation.is_deleted == False,
+            UnifiedRelation.to_atom_id == parent_atom_id,
+        )
+        .scalar()
+    )
+    return (max_order or 0) + 1
+
+
+def _get_tree_parent(s, child_atom_id):
+    """取得 child 的 tree_parent relation（單一），不存在回 None"""
+    return (
+        s.query(UnifiedRelation)
+        .filter(
+            UnifiedRelation.relation_type == 'tree_parent',
+            UnifiedRelation.is_deleted == False,
+            UnifiedRelation.from_atom_id == child_atom_id,
+        )
+        .first()
+    )
+
+
+@bp.route('/api/canvases/<slug>/mindmap-shells', methods=['POST'])
+def create_mindmap_shell(slug):
+    """建立心智圖殼 + root 節點。
+
+    body: {
+        title: str (殼標題),
+        pos_x, pos_y, width, height, z_index, color, layout (殼屬性),
+        root_title: str (root 節點 atom 標題，預設 '主題'),
+        root_atom_id: int (可選；若提供則用既有 atom 當 root，否則新建)
+    }
+    回傳 { shell, root_canvas_atom, root_atom }
+    """
+    data = request.get_json() or {}
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        # 1) 建立殼（暫不設 root_atom_id，下面建好 root 後再 set）
+        shell = CanvasMindmapShell(canvas_id=canvas.id)
+        for f in _SHELL_FIELDS:
+            if f in data and f != 'root_atom_id':
+                setattr(shell, f, data[f])
+        s.add(shell)
+        s.flush()
+
+        # 2) root atom: 既有或新建
+        if data.get('root_atom_id'):
+            root_atom = s.get(KnowledgeAtom, int(data['root_atom_id']))
+            if not root_atom:
+                return jsonify({'error': 'root_atom_id 不存在'}), 400
+        else:
+            root_atom = KnowledgeAtom(
+                title=data.get('root_title') or '主題',
+                content='',
+                atom_type='F',
+                source='human',
+                owner='ethan',
+            )
+            s.add(root_atom)
+            s.flush()
+
+        shell.root_atom_id = root_atom.id
+
+        # 3) root 的 canvas_atom（idempotent: 若已在白板上，沿用並設 mindmap_shell_id）
+        existing = s.query(CanvasAtom).filter(
+            CanvasAtom.canvas_id == canvas.id,
+            CanvasAtom.atom_id == root_atom.id,
+        ).first()
+        if existing:
+            existing.mindmap_shell_id = shell.id
+            existing.pos_x = shell.pos_x + 20
+            existing.pos_y = shell.pos_y + 40
+            root_ca = existing
+        else:
+            root_ca = CanvasAtom(
+                canvas_id=canvas.id,
+                atom_id=root_atom.id,
+                pos_x=shell.pos_x + 20,
+                pos_y=shell.pos_y + 40,
+                mindmap_shell_id=shell.id,
+            )
+            s.add(root_ca)
+        s.flush()
+
+        return jsonify({
+            'shell': shell.to_dict(),
+            'root_canvas_atom': root_ca.to_dict(),
+            'root_atom': root_atom.to_dict(),
+        }), 201
+
+
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>', methods=['PUT'])
+def update_mindmap_shell(shell_id):
+    """更新殼屬性（標題/位置/大小/顏色/layout/root_atom_id）"""
+    data = request.get_json() or {}
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+        for f in _SHELL_FIELDS:
+            if f in data:
+                setattr(shell, f, data[f])
+        s.flush()
+        return jsonify(shell.to_dict())
+
+
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>', methods=['DELETE'])
+def delete_mindmap_shell(shell_id):
+    """刪除心智圖殼。
+
+    mode='shell_only'(預設): 殼刪除，內部 atom 留在白板上變獨立卡（清 mindmap_shell_id），
+                             tree_parent relations 保留（樹結構不損）
+    mode='with_atoms':       殼內所有 atom 一併送入字紙簍（atom 本體不刪，可救回）
+    """
+    mode = (request.args.get('mode') or 'shell_only').lower()
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+        canvas_id = shell.canvas_id
+
+        members = (
+            s.query(CanvasAtom)
+            .filter(CanvasAtom.mindmap_shell_id == shell_id)
+            .all()
+        )
+
+        if mode == 'with_atoms':
+            for ca in members:
+                trash = CanvasTrash(
+                    canvas_id=canvas_id,
+                    kind='atom',
+                    atom_id=ca.atom_id,
+                    original_pos_x=ca.pos_x,
+                    original_pos_y=ca.pos_y,
+                    original_width=ca.width,
+                    original_height=ca.height,
+                    z_index=ca.z_index,
+                    visual_style=ca.visual_style,
+                )
+                s.add(trash)
+                s.delete(ca)
+            # 樹結構也標 is_deleted（避免救回後殘留斷裂關係）
+            atom_ids = [ca.atom_id for ca in members]
+            if atom_ids:
+                (
+                    s.query(UnifiedRelation)
+                    .filter(
+                        UnifiedRelation.relation_type == 'tree_parent',
+                        UnifiedRelation.from_atom_id.in_(atom_ids),
+                    )
+                    .update({'is_deleted': True}, synchronize_session=False)
+                )
+        else:
+            # shell_only: 清 mindmap_shell_id，atom 留在白板上
+            for ca in members:
+                ca.mindmap_shell_id = None
+
+        s.delete(shell)
+        return jsonify({'message': f'心智圖殼 {shell_id} 已刪除', 'mode': mode})
+
+
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>/nodes', methods=['POST'])
+def add_mindmap_node(shell_id):
+    """在殼內新增節點（child 或 sibling）。
+
+    body: {
+        mode: 'child' | 'sibling',
+        anchor_atom_id: int,            # mode='child': 父；mode='sibling': 兄
+        title: str,                     # 新節點 atom 標題（可空）
+        pos_x, pos_y: float (可選)      # 由前端 layout 決定，或預設殼內某位置
+    }
+    回傳 { atom, canvas_atom, tree_parent_relation }
+    """
+    data = request.get_json() or {}
+    mode = (data.get('mode') or 'child').lower()
+    anchor_id = data.get('anchor_atom_id')
+
+    if mode not in ('child', 'sibling'):
+        return jsonify({'error': "mode 必須是 'child' 或 'sibling'"}), 400
+    if not anchor_id:
+        return jsonify({'error': '需要 anchor_atom_id'}), 400
+
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+
+        # 決定新節點的 parent
+        if mode == 'child':
+            parent_atom_id = int(anchor_id)
+        else:
+            anchor_rel = _get_tree_parent(s, int(anchor_id))
+            parent_atom_id = anchor_rel.to_atom_id if anchor_rel else None
+            # sibling 模式但 anchor 是 root（沒 parent）：不允許
+            if parent_atom_id is None:
+                return jsonify({'error': 'root 節點無同層兄弟，請改用 child 模式'}), 400
+
+        # 1) 建立 atom
+        atom = KnowledgeAtom(
+            title=data.get('title') or '',
+            content='',
+            atom_type='F',
+            source='human',
+            owner='ethan',
+        )
+        s.add(atom)
+        s.flush()
+
+        # 2) 建立 canvas_atom（位置由前端送或預設殼內）
+        ca = CanvasAtom(
+            canvas_id=shell.canvas_id,
+            atom_id=atom.id,
+            pos_x=data.get('pos_x', shell.pos_x + 40),
+            pos_y=data.get('pos_y', shell.pos_y + 40),
+            mindmap_shell_id=shell_id,
+        )
+        s.add(ca)
+        s.flush()
+
+        # 3) tree_parent relation
+        rel = UnifiedRelation(
+            from_atom_id=atom.id,
+            to_atom_id=parent_atom_id,
+            relation_type='tree_parent',
+            sort_order=_next_sibling_sort_order(s, parent_atom_id),
+            created_by='human',
+        )
+        s.add(rel)
+        s.flush()
+
+        return jsonify({
+            'atom': atom.to_dict(),
+            'canvas_atom': ca.to_dict(),
+            'tree_parent_relation': rel.to_dict(),
+        }), 201
+
+
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>/nodes/<int:atom_id>/move', methods=['PUT'])
+def move_mindmap_node(shell_id, atom_id):
+    """移動節點到不同 parent / 重排同層次序。
+
+    body: { new_parent_atom_id: int|null, sort_order: int|null }
+    cycle 防呆: new_parent 不能是 atom 自己或自己的後代
+    """
+    data = request.get_json() or {}
+    new_parent_id = data.get('new_parent_atom_id')
+    new_order = data.get('sort_order')
+
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+
+        rel = _get_tree_parent(s, atom_id)
+
+        # cycle 防呆
+        if new_parent_id is not None:
+            descendants = _tree_descendants(s, atom_id)
+            if int(new_parent_id) in descendants:
+                return jsonify({'error': '不能將節點移到自己或自己的後代之下（會形成迴圈）'}), 400
+
+        if new_parent_id is None and rel:
+            # 變 root：刪原 relation
+            rel.is_deleted = True
+        elif new_parent_id is not None and not rel:
+            # 原本是 root，現在掛到某 parent 下
+            rel = UnifiedRelation(
+                from_atom_id=atom_id,
+                to_atom_id=int(new_parent_id),
+                relation_type='tree_parent',
+                sort_order=new_order if new_order is not None else _next_sibling_sort_order(s, int(new_parent_id)),
+                created_by='human',
+            )
+            s.add(rel)
+        elif new_parent_id is not None and rel:
+            rel.to_atom_id = int(new_parent_id)
+            if new_order is not None:
+                rel.sort_order = int(new_order)
+
+        s.flush()
+        return jsonify({'message': '節點已移動', 'tree_parent_relation': rel.to_dict() if rel else None})
+
+
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>/nodes/<int:atom_id>', methods=['DELETE'])
+def delete_mindmap_node(shell_id, atom_id):
+    """刪除節點及其整個子樹（送入字紙簍，tree_parent relations 標 is_deleted）"""
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+
+        # 取整個子樹的所有 atom_id
+        subtree_ids = _tree_descendants(s, atom_id)
+        canvas_id = shell.canvas_id
+
+        # 1) 子樹的 canvas_atoms 進字紙簍（atom 本體不刪）
+        members = (
+            s.query(CanvasAtom)
+            .filter(
+                CanvasAtom.canvas_id == canvas_id,
+                CanvasAtom.atom_id.in_(subtree_ids),
+            )
+            .all()
+        )
+        for ca in members:
+            trash = CanvasTrash(
+                canvas_id=canvas_id,
+                kind='atom',
+                atom_id=ca.atom_id,
+                original_pos_x=ca.pos_x,
+                original_pos_y=ca.pos_y,
+                original_width=ca.width,
+                original_height=ca.height,
+                z_index=ca.z_index,
+                visual_style=ca.visual_style,
+            )
+            s.add(trash)
+            s.delete(ca)
+
+        # 2) 樹結構: 子樹內所有 tree_parent relations 標 is_deleted
+        (
+            s.query(UnifiedRelation)
+            .filter(
+                UnifiedRelation.relation_type == 'tree_parent',
+                UnifiedRelation.from_atom_id.in_(subtree_ids),
+            )
+            .update({'is_deleted': True}, synchronize_session=False)
+        )
+
+        # 3) 若刪的是殼的 root，殼也一併刪除
+        if shell.root_atom_id == atom_id:
+            s.delete(shell)
+            return jsonify({
+                'message': f'已刪除整個心智圖（root + 子樹），共 {len(subtree_ids)} 個節點',
+                'removed_atom_ids': list(subtree_ids),
+                'shell_deleted': True,
+            })
+
+        return jsonify({
+            'message': f'已刪除節點及子樹，共 {len(subtree_ids)} 個節點',
+            'removed_atom_ids': list(subtree_ids),
+            'shell_deleted': False,
+        })
+
+
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>/extract', methods=['POST'])
+def extract_mindmap_subtree(shell_id):
+    """把節點及其子樹從殼脫離（清 mindmap_shell_id），保留 tree_parent relations。
+
+    body: { atom_id: int }
+    脫離後變獨立卡，但樹結構保留（可日後再拖回某殼）。
+    若脫離的是殼的 root，殼變空，由前端決定是否一併刪除殼。
+    """
+    data = request.get_json() or {}
+    atom_id = data.get('atom_id')
+    if not atom_id:
+        return jsonify({'error': '需要 atom_id'}), 400
+
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+
+        subtree_ids = _tree_descendants(s, int(atom_id))
+
+        members = (
+            s.query(CanvasAtom)
+            .filter(
+                CanvasAtom.canvas_id == shell.canvas_id,
+                CanvasAtom.atom_id.in_(subtree_ids),
+                CanvasAtom.mindmap_shell_id == shell_id,
+            )
+            .all()
+        )
+        for ca in members:
+            ca.mindmap_shell_id = None
+
+        # 若脫離 root，砍掉它的 tree_parent relation（變成新樹的 root）
+        if int(atom_id) != shell.root_atom_id:
+            top_rel = _get_tree_parent(s, int(atom_id))
+            if top_rel:
+                top_rel.is_deleted = True
+
+        s.flush()
+        return jsonify({
+            'message': f'已脫離 {len(members)} 個節點',
+            'extracted_atom_ids': [ca.atom_id for ca in members],
+        })
 
 
 # ============================================================

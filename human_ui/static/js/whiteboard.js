@@ -22,6 +22,8 @@ function whiteboardApp(canvasId) {
         connections: [],
         groups: [],
         textboxes: [],
+        mindmapShells: [],
+        treeParents: [],
         canvases: [],
         tags: [],
         tagCategories: [],
@@ -281,6 +283,23 @@ function whiteboardApp(canvasId) {
         // ============================================
         // Init
         // ============================================
+        // 雙陣列分流：心智圖節點與一般卡片各自獨立 iterate，避免兩個 template 重複 render
+        // 用 getter 而非預先計算欄位，alpine reactivity 會自動 track this.atoms 變更
+        // ============================================
+        get cardAtoms() {
+            return this.atoms.filter(function(ca) {
+                var v = ca && ca.mindmap_shell_id;
+                return v === null || v === undefined;
+            });
+        },
+        get mindmapAtoms() {
+            return this.atoms.filter(function(ca) {
+                var v = ca && ca.mindmap_shell_id;
+                return v !== null && v !== undefined;
+            });
+        },
+
+        // ============================================
         async init() {
             var urlParams = new URLSearchParams(window.location.search);
             var rm = urlParams.get('render');
@@ -303,8 +322,16 @@ function whiteboardApp(canvasId) {
                 this.startPolling();
             });
             const self = this;
-            document.addEventListener('keydown', function(e) { self.handleKeyDown(e); });
-            document.addEventListener('mouseup', () => { if (this.isConnDragging) this.cancelConnDrag(); });
+            // 用穩定的 bound handler 註冊，addEventListener 以 (event, handler, capture) 三元組去重，
+            // 即使 init() 被呼叫多次（如 alpine 重建 scope），同一 handler 只註冊一次
+            if (!this._kbdHandler) {
+                this._kbdHandler = function(e) { self.handleKeyDown(e); };
+                document.addEventListener('keydown', this._kbdHandler);
+            }
+            if (!this._mupHandler) {
+                this._mupHandler = function() { if (self.isConnDragging) self.cancelConnDrag(); };
+                document.addEventListener('mouseup', this._mupHandler);
+            }
             this.$refs.viewport.addEventListener('mousedown', function(e) {
                 if (e.button === 2) {
                     self.rightDragPending = true;
@@ -350,6 +377,13 @@ function whiteboardApp(canvasId) {
             this.connections = canvas.connections || [];
             this.groups = canvas.groups || [];
             this.textboxes = canvas.textboxes || [];
+            this.mindmapShells = canvas.mindmap_shells || [];
+            this.treeParents = canvas.tree_parents || [];
+            // 載入後重算心智圖樹的 layout（位置即時從關係樹推導）
+            if (this._rebuildTreeIndex) {
+                this._rebuildTreeIndex();
+                this.recalcAllMindmapLayouts();
+            }
             this.archivedCanvasCount = allCanvases.filter(c => c.is_archived).length;
             this.canvases = this.showArchivedCanvases ? allCanvases : allCanvases.filter(c => !c.is_archived);
             this.tags = tags;
@@ -471,6 +505,19 @@ function whiteboardApp(canvasId) {
                 this.renderConnections();
                 return;
             }
+            if (this.dragMindmapShell) {
+                var mdx = (e.clientX - this.mindmapShellDragStartX) / this.zoom;
+                var mdy = (e.clientY - this.mindmapShellDragStartY) / this.zoom;
+                this.dragMindmapShell.pos_x = this.mindmapShellDragStartPos.x + mdx;
+                this.dragMindmapShell.pos_y = this.mindmapShellDragStartPos.y + mdy;
+                var selfM = this;
+                this.atoms.forEach(function(ca) {
+                    var s = selfM.mindmapShellDragMemberStarts && selfM.mindmapShellDragMemberStarts[ca.atom_id];
+                    if (s) { ca.pos_x = s.x + mdx; ca.pos_y = s.y + mdy; }
+                });
+                this.renderConnections();
+                return;
+            }
             if (this.resizeTextbox) {
                 this.resizeTextbox.width = Math.max(160, this.resizeTextboxStartW + (e.clientX - this.resizeTextboxStartX) / this.zoom);
                 this.resizeTextbox.height = Math.max(80, this.resizeTextboxStartH + (e.clientY - this.resizeTextboxStartY) / this.zoom);
@@ -533,6 +580,18 @@ function whiteboardApp(canvasId) {
             if (this.dragTextbox) {
                 API.updateTextbox(this.dragTextbox.id, { pos_x: this.dragTextbox.pos_x, pos_y: this.dragTextbox.pos_y });
                 this.dragTextbox = null;
+            }
+            if (this.dragMindmapShell) {
+                var sh = this.dragMindmapShell;
+                API.updateMindmapShell(sh.id, { pos_x: sh.pos_x, pos_y: sh.pos_y });
+                var selfMM = this;
+                this.atoms.forEach(function(ca) {
+                    if (selfMM.mindmapShellDragMemberStarts && selfMM.mindmapShellDragMemberStarts[ca.atom_id]) {
+                        API.updateCanvasAtom(ca.id, { pos_x: ca.pos_x, pos_y: ca.pos_y });
+                    }
+                });
+                this.dragMindmapShell = null;
+                this.mindmapShellDragMemberStarts = null;
             }
             if (this.resizeTextbox) {
                 API.updateTextbox(this.resizeTextbox.id, { width: this.resizeTextbox.width, height: this.resizeTextbox.height });
@@ -655,6 +714,8 @@ function whiteboardApp(canvasId) {
         },
 
         deselectCard() { this.selectedAtomId = null; this.selectedAtomDetails = null; this.blockChain = null; this.highlightedAtomIds = []; },
+        // 完全離開心智圖模式（含清空方向鍵停留位置）。僅在用戶明確點到非心智圖元素時呼叫。
+        leaveMindmapMode() { this.activeMindmapAtomId = null; this.activeMindmapShellId = null; this.editingMindmapAtomId = null; },
 
         onCardClick(ca) {
             if (this._justDragged) { this._justDragged = false; return; }
@@ -1430,6 +1491,9 @@ function whiteboardApp(canvasId) {
     }
     if (typeof whiteboardExchangeMixin === 'function') {
         _mergeInto(app, whiteboardExchangeMixin());
+    }
+    if (typeof whiteboardMindmapMixin === 'function') {
+        _mergeInto(app, whiteboardMindmapMixin());
     }
 
     return app;

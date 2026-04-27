@@ -16,6 +16,7 @@
 <script src="/beakcortex/static/js/whiteboard-textboxes.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-media.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard-exchange.js?v={{ cache_ver }}"></script>
+<script src="/beakcortex/static/js/whiteboard-mindmap.js?v={{ cache_ver }}"></script>
 <script src="/beakcortex/static/js/whiteboard.js?v={{ cache_ver }}"></script>
 {% endblock %}
 
@@ -123,8 +124,21 @@
                     </div>
                 </template>
 
-                <!-- 原子卡片 -->
-                <template x-for="ca in atoms" :key="ca.id">
+                <!-- 心智圖殼（在卡片下層） -->
+                <template x-for="sh in mindmapShells" :key="'mm-shell-' + sh.id">
+                    <div class="wb-mindmap-shell"
+                         :id="'mindmap-shell-' + sh.id"
+                         :style="getMindmapShellStyle(sh)"
+                         @mousedown="onMindmapShellMouseDown($event, sh)"
+                         @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_shell', sh: sh }">
+                        <div class="wb-mindmap-shell-label"
+                             :style="getMindmapShellLabelStyle(sh)"
+                             x-text="sh.title"></div>
+                    </div>
+                </template>
+
+                <!-- 原子卡片（已從 iteration 過濾掉心智圖節點，由獨立 mini-node template 渲染） -->
+                <template x-for="ca in cardAtoms" :key="ca.id">
                     <div class="wb-card"
                          x-show="isAtomVisible(ca)"
                          :id="'card-' + ca.atom_id"
@@ -231,6 +245,34 @@
                         </div>
 
                         <div class="wb-card-resize" @mousedown.stop.prevent="onResizeMouseDown($event, ca)"></div>
+                    </div>
+                </template>
+
+                <!-- 心智圖節點（mini 卡，僅標題） -->
+                <template x-for="ca in mindmapAtoms" :key="'mm-node-' + ca.atom_id">
+                    <div class="wb-mindmap-node"
+                         :id="'card-' + ca.atom_id"
+                         :class="{
+                             'mindmap-node-active': activeMindmapAtomId === ca.atom_id,
+                             'mindmap-node-editing': editingMindmapAtomId === ca.atom_id,
+                         }"
+                         :style="getCardStyle(ca)"
+                         @click.stop="onMindmapNodeClick(ca, $event)"
+                         @dblclick.stop="onMindmapNodeDblClick(ca, $event)"
+                         @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_node', ca: ca }">
+                        <template x-if="editingMindmapAtomId !== ca.atom_id">
+                            <span class="wb-mindmap-node-title"
+                                  x-text="ca.atom ? (ca.atom.title || '(空白)') : ''"></span>
+                        </template>
+                        <template x-if="editingMindmapAtomId === ca.atom_id">
+                            <input class="wb-mindmap-title-input"
+                                   type="text"
+                                   :id="'mm-title-input-' + ca.atom_id"
+                                   :value="editingMindmapTitle"
+                                   @input="onMindmapTitleInput(ca.atom_id, $event.target.value)"
+                                   @blur="finishMindmapTitleEdit(ca.atom_id)"
+                                   @click.stop>
+                        </template>
                     </div>
                 </template>
             </div>
