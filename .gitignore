@@ -31,6 +31,12 @@ backups/
 # 舊 MVP 參考（合併單目錄前的 prod 殘留，僅本機保留）
 OLD/
 
+# 視窗檢測除錯輸出（誤入版控，本機保留）
+window_inspector.output
+
+# Relay receiver 本機設定（含主機 IP 與絕對路徑，僅本機保留；範本見 config.yaml.example）
+orchestrator/windows/relay/config.yaml
+
 # Node.js (Tiptap build)
 node_modules/
 

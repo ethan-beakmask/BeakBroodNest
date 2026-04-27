@@ -17,9 +17,14 @@ TEMP_BRANCH="_github_filtered"
 # 個別檔案
 EXCLUDE_FILES=(
     "CLAUDE.md"
+    "AGENTS.md"
     # scripts - 內部工具
     "scripts/push_github.sh"
     "scripts/schedule.json"
+    # 一次性 / 內部 prompt / 認證細節
+    "prompts/gantt_generator.md"
+    "docs/schema_comparison_20260422.md"
+    "docs/AUTH_GUIDE.md"
 )
 
 echo "=== 過濾推送到 GitHub ==="
