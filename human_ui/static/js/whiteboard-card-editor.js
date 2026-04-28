@@ -78,9 +78,24 @@ function whiteboardCardEditorMixin() {
                 this._focusEditor(existing.id);
                 return;
             }
+            // race guard:同一 atomId 在 await 期間第二次呼叫直接 ignore,避免重複建立 editor
+            if (!this._ceOpening) this._ceOpening = {};
+            if (this._ceOpening[atomId]) return;
+            this._ceOpening[atomId] = true;
 
-            var resp = await API.getAtom(atomId);
-            if (!resp || resp.error) { this.showToast('無法載入卡片', 'error'); return; }
+            var resp;
+            try {
+                resp = await API.getAtom(atomId);
+            } catch (e) {
+                delete this._ceOpening[atomId];
+                this.showToast('無法載入卡片', 'error');
+                return;
+            }
+            if (!resp || resp.error) {
+                delete this._ceOpening[atomId];
+                this.showToast('無法載入卡片', 'error');
+                return;
+            }
             var atom = resp;
             var typeCfg = this.atomTypeConfig[atom.atom_type] || {};
             var editorId = ++this._ceSeq;
@@ -94,6 +109,9 @@ function whiteboardCardEditorMixin() {
             if (ca2 && ca2.atom && atom.updated_at) {
                 ca2.atom.updated_at = atom.updated_at;
             }
+
+            // 釋放 race guard:之後再呼叫會被 openEditors.find 攔截
+            delete this._ceOpening[atomId];
 
             this.openEditors.push({
                 id: editorId,
@@ -443,6 +461,115 @@ function whiteboardCardEditorMixin() {
 
         discardAllAndClose() {
             this._closeAllEditors();
+        },
+
+        // 儲存目前游標所在的卡片(Ctrl+S 攔截瀏覽器預設「另存網頁」)
+        async saveCurrentEditor() {
+            var active = document.activeElement;
+            var pane = active && active.closest ? active.closest('[data-ce-id]') : null;
+            if (!pane) {
+                // 找不到 focus 的 editor: 退而求其次,存全部 dirty
+                var dirty = this.openEditors.filter(function(e) { return e.dirty && !e.readonly; });
+                if (dirty.length === 0) {
+                    this.showToast('沒有未儲存變更', 'info', 1200);
+                    return;
+                }
+                for (var i = 0; i < dirty.length; i++) await this.saveEditor(dirty[i].id);
+                this.showToast('已儲存 ' + dirty.length + ' 張', 'info', 1200);
+                return;
+            }
+            var editorId = parseInt(pane.getAttribute('data-ce-id'), 10);
+            if (!editorId) return;
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed) return;
+            if (ed.readonly) { this.showToast('卡片唯讀', 'warn', 1200); return; }
+            if (!ed.dirty) { this.showToast('無變更', 'info', 1000); return; }
+            await this.saveEditor(editorId);
+            this.showToast('已儲存', 'info', 1000);
+        },
+
+        _confirmDiscardAndClose() {
+            var dirtyCount = this.openEditors.filter(function(e) { return e.dirty; }).length;
+            if (dirtyCount === 0) { this.discardAllAndClose(); return; }
+            if (confirm('有 ' + dirtyCount + ' 張未儲存的卡片,確定全部捨棄並關閉？')) {
+                this.discardAllAndClose();
+            }
+        },
+
+        // chord 熱鍵 state
+        _ceChordPrefix: null,
+        _ceChordTimer: null,
+
+        _ceClearChord() {
+            this._ceChordPrefix = null;
+            if (this._ceChordTimer) { clearTimeout(this._ceChordTimer); this._ceChordTimer = null; }
+        },
+
+        // 由 handleKeyDown 在 cardEditorOpen 時呼叫
+        // 回傳 true = 已處理,外層 return
+        _handleCardEditorKeydown(e) {
+            var ctrl = e.ctrlKey || e.metaKey;
+
+            // chord prefix 已啟動: 等下一鍵
+            if (this._ceChordPrefix === 'k') {
+                if (e.key === 's' || e.key === 'S') {
+                    e.preventDefault();
+                    this._ceClearChord();
+                    this.saveAllAndClose();
+                    return true;
+                }
+                if (e.key === 'q' || e.key === 'Q') {
+                    e.preventDefault();
+                    this._ceClearChord();
+                    this._confirmDiscardAndClose();
+                    return true;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    this._ceClearChord();
+                    return true;
+                }
+                // 其他鍵取消 chord(讓事件繼續傳遞)
+                this._ceClearChord();
+                return false;
+            }
+
+            // Ctrl+S = 儲存當前卡片
+            if (ctrl && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+                e.preventDefault();
+                this.saveCurrentEditor();
+                return true;
+            }
+
+            // Ctrl+K = 啟動 chord
+            if (ctrl && !e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                this._ceChordPrefix = 'k';
+                this.showToast('Ctrl+K 啟動 -- S=全部儲存並關閉  Q=全部捨棄並關閉', 'info', 2500);
+                var self = this;
+                if (this._ceChordTimer) clearTimeout(this._ceChordTimer);
+                this._ceChordTimer = setTimeout(function() { self._ceClearChord(); }, 2500);
+                return true;
+            }
+
+            return false;
+        },
+
+        // beforeunload: dirty 時瀏覽器自跳系統 dialog 提醒
+        // 用於攔截 Ctrl+W / 重整 / 關分頁 -- 訊息無法客製,只能阻止意外離開
+        _ceInstallBeforeUnload() {
+            if (this._ceBeforeUnloadInstalled) return;
+            var self = this;
+            this._ceBeforeUnloadHandler = function(e) {
+                if (!self.cardEditorOpen) return;
+                var hasDirty = self.openEditors.some(function(ed) { return ed.dirty; });
+                if (!hasDirty) return;
+                e.preventDefault();
+                e.returnValue = '';
+                return '';
+            };
+            window.addEventListener('beforeunload', this._ceBeforeUnloadHandler);
+            this._ceBeforeUnloadInstalled = true;
         },
 
         // 兼容舊呼叫（ESC 鍵等）

@@ -57,7 +57,11 @@ function whiteboardUndoMixin() {
             // （防 init/listener 多重註冊或 alpine 對某些事件的雙派發）
             if (e.__bcHandled) return;
             e.__bcHandled = true;
-            if (this.cardEditorOpen) return;
+            if (this.cardEditorOpen) {
+                // 卡片編輯器熱鍵: Ctrl+S 儲存當前 / Ctrl+K,S 全部儲存並關 / Ctrl+K,Q 全部捨棄並關
+                if (this._handleCardEditorKeydown && this._handleCardEditorKeydown(e)) return;
+                return;
+            }
 
             // Ctrl/Cmd 組合鍵優先處理（undo/redo/select-all）
             if ((e.ctrlKey || e.metaKey) && !e.altKey) {

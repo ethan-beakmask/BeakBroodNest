@@ -507,6 +507,86 @@ body { overflow: auto; }
         <li><strong>Esc</strong> -- 取消目前操作 / 關閉面板</li>
         <li><strong>F</strong>（縮放列）-- Fit View，自動縮放到全覽</li>
         <li><strong>M</strong>（縮放列）-- 切換小地圖</li>
+        <li><strong>Ctrl + Z / Ctrl + Shift + Z</strong> -- Undo / Redo（含心智圖、連線、變色）</li>
+        <li><strong>Ctrl + A</strong> -- 全選白板上可見的卡片</li>
+        <li><strong>Delete / Backspace</strong> -- 把選中的卡片送入白板字紙簍</li>
+        <li><strong>Shift + 拖曳卡片邊緣到另一張卡片</strong> -- 跳 modal 選 relation_type 建連線</li>
+        <li><strong>雙擊連線</strong> -- 開啟連線編輯 modal（改 type / 顏色 / label / 刪除）</li>
+    </ul>
+
+    <h2>卡片編輯器（多卡片同時編輯）</h2>
+    <p>雙擊卡片進入編輯器後，可同時開 N 張卡片並排編輯。所有熱鍵在卡片編輯器開啟時生效：</p>
+    <ul>
+        <li><strong>Ctrl + S</strong> -- 儲存目前游標所在的卡片（攔截瀏覽器「另存網頁」）</li>
+        <li><strong>Ctrl + K, S</strong> -- 全部儲存並關閉編輯器（chord：先按 Ctrl+K 放開，再按 S；2.5 秒內未按下則取消）</li>
+        <li><strong>Ctrl + K, Q</strong> -- 全部捨棄變更並關閉（含確認對話框，避免誤觸）</li>
+        <li><strong>Esc</strong> -- 關閉編輯器（含 dirty 確認）</li>
+        <li><strong>Ctrl + W / Ctrl + Q</strong> -- 瀏覽器層級保留，無法網頁攔截；但有未儲存變更時，瀏覽器會自跳「變更可能不會儲存」系統 dialog</li>
+    </ul>
+    <p>採用 VS Code 風格的 chord 設計，跨 macOS / Windows / Linux 無快捷鍵衝突。</p>
+
+    <h2>內聯結構化輸入（;; 連打）</h2>
+    <p>在卡片編輯器內連打 <code>;;</code> 可叫出結構化輸入選單：</p>
+    <ul>
+        <li><strong>;;</strong> -- 觸發 schema 選單（任務、日期、人物、檔案、Item 等預設 schema）</li>
+        <li>選定 schema 後填入欄位 -- 該段文字會變成「結構化 entry」（卡片右側欄會列出，可在白板上單獨拉連線）</li>
+        <li><strong>從 entry 右側錨點拖曳</strong> -- 建立 entry-level 連線（細虛線）</li>
+        <li>已收合的 ;; 物件可在 toolbar 點按重新展開／編輯</li>
+    </ul>
+
+    <h2>心智圖殼操作</h2>
+    <p>右鍵任何卡片可選「建立心智圖（以此卡片為 root）」-- 該卡片變成 root，殼自動框住原位置。</p>
+
+    <h3 style="font-size:15px;font-weight:600;margin-top:16px;">節點熱鍵（焦點在心智圖節點時）</h3>
+    <ul>
+        <li><strong>Tab</strong> -- 在當前節點下新增子節點（往深層）</li>
+        <li><strong>Enter</strong>（非編輯）-- 新增同層 sibling（root 例外，會新增子節點）</li>
+        <li><strong>Enter</strong>（編輯標題中）-- 只結束編輯，不新增同層（避免誤觸丟輸入）</li>
+        <li><strong>Tab</strong>（編輯標題中）-- 結束編輯並新增子節點（連續往深層延伸）</li>
+        <li><strong>Esc</strong>（編輯標題中）-- 取消編輯</li>
+        <li><strong>Delete / Backspace</strong> -- 刪除節點及其整個子樹（送字紙簍可救回）</li>
+        <li><strong>方向鍵</strong> -- 跨子樹同 depth 移動：
+            <ul>
+                <li>tree-right / tree-right-diag：↑↓ 同 depth 跨子樹（B1 ↑ 直達 A4）；← 父；→ 第一個子</li>
+                <li>tree-down：←→ 同 depth 跨子樹；↑ 父；↓ 第一個子</li>
+            </ul>
+        </li>
+        <li><strong>可印字元</strong> -- 立刻進入標題編輯模式並接收該字元</li>
+        <li><strong>Ctrl + E / F2</strong> -- 開啟詳細編輯器（完整 markdown / entries 編輯）</li>
+    </ul>
+
+    <h3 style="font-size:15px;font-weight:600;margin-top:16px;">節點滑鼠操作</h3>
+    <ul>
+        <li><strong>單擊</strong> -- 設為 active（吃熱鍵）</li>
+        <li><strong>雙擊</strong> -- 編輯標題</li>
+        <li><strong>拖曳子節點</strong> -- 同層排序 / 拖出殼變獨立卡（葉子）或變新心智圖（有子樹）/ 拖到別殼變該殼子樹</li>
+        <li><strong>Ctrl + 拖曳 root 節點</strong> -- root 必須 Ctrl 才啟動拖曳（避免誤拖整棵樹），純點擊只 select</li>
+        <li><strong>Shift + 拖曳節點</strong> -- 建 connection 線（含 root；節點 ↔ 節點 / 節點 ↔ 普通卡 / 節點 ↔ 文字框）</li>
+        <li><strong>右側 ▶/▼</strong> -- 展開 / 摺疊子樹（per-session，重整不保留）</li>
+    </ul>
+
+    <h3 style="font-size:15px;font-weight:600;margin-top:16px;">心智圖殼右鍵選單</h3>
+    <ul>
+        <li><strong>展開向右 / 展開向右-斜向 / 展開向下</strong> -- 切換 layout（斜向：同層 sibling 階梯式右移）</li>
+        <li><strong>底色</strong> -- 9 色色板選殼背景色</li>
+        <li><strong>框線</strong> -- 實線 / 虛線 / 無框（保留底色）/ 全透明（殼隱形，僅見節點）</li>
+        <li><strong>解除殼</strong> -- 殼消失，節點變獨立卡片留在白板上</li>
+        <li><strong>刪除殼+所有節點</strong> -- 連節點一起送字紙簍</li>
+    </ul>
+
+    <h3 style="font-size:15px;font-weight:600;margin-top:16px;">心智圖節點右鍵選單</h3>
+    <ul>
+        <li><strong>編輯標題</strong> / <strong>脫離殼</strong></li>
+        <li><strong>外框 / 底色</strong> -- 多選變色：先框選多張節點，再右鍵任一張，色板套用到全部選中（顯示「套用到選中 N 張」）；單張未選時只套該張</li>
+        <li><strong>重置外框與底色</strong> -- 回到預設視覺</li>
+        <li><strong>刪除節點+子樹</strong> -- 送字紙簍</li>
+    </ul>
+
+    <h2>連線操作補充</h2>
+    <ul>
+        <li><strong>連線變動入 undo stack</strong> -- 建線、刪線、改 type / 色都可 Ctrl+Z 反悔</li>
+        <li><strong>樹線（tree_parent）與連線並存</strong> -- 樹線是灰色貝茲（無箭頭），canvas_connection 是彩色帶箭頭+label，視覺區分</li>
+        <li><strong>心智圖節點之間 connection</strong> -- 強制繞行 32px，避免同層 X 相同造成直線重疊</li>
     </ul>
 
 </div>

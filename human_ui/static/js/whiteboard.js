@@ -337,6 +337,7 @@ function whiteboardApp(canvasId) {
             if (!this._kbdHandler) {
                 this._kbdHandler = function(e) { self.handleKeyDown(e); };
                 document.addEventListener('keydown', this._kbdHandler);
+                if (this._ceInstallBeforeUnload) this._ceInstallBeforeUnload();
             }
             if (!this._mupHandler) {
                 this._mupHandler = function() { if (self.isConnDragging) self.cancelConnDrag(); };
