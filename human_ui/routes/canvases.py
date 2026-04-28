@@ -1293,13 +1293,15 @@ def attach_atom_to_mindmap(shell_id):
 
     body: {
         atom_id: int,                # 要收入的 atom（必須已在此白板上）
-        parent_atom_id: int|null     # 父節點；null 則接到 shell.root_atom_id 之下
+        parent_atom_id: int|null,    # 父節點；null 則接到 shell.root_atom_id 之下
+        include_subtree: bool        # true=連同子樹一起搬（跨殼搬移用）
     }
     防呆:cycle 偵測（不能附加到自己或自己的後代）。
     """
     data = request.get_json() or {}
     atom_id = data.get('atom_id')
     parent_atom_id = data.get('parent_atom_id')
+    include_subtree = bool(data.get('include_subtree', False))
     if not atom_id:
         return jsonify({'error': '需要 atom_id'}), 400
     atom_id = int(atom_id)
@@ -1330,7 +1332,44 @@ def attach_atom_to_mindmap(shell_id):
         if not ca:
             return jsonify({'error': 'atom 不在此白板上'}), 400
 
+        old_shell_id = ca.mindmap_shell_id
         ca.mindmap_shell_id = shell_id
+
+        # 跨殼搬移時把子樹的 mindmap_shell_id 一併改過來
+        moved_subtree_count = 0
+        old_shell_deleted = False
+        if include_subtree and old_shell_id and old_shell_id != shell_id:
+            sub_atoms = (
+                s.query(CanvasAtom)
+                .filter(
+                    CanvasAtom.canvas_id == shell.canvas_id,
+                    CanvasAtom.atom_id.in_(descendants),
+                    CanvasAtom.atom_id != atom_id,
+                    CanvasAtom.mindmap_shell_id == old_shell_id,
+                )
+                .all()
+            )
+            for sca in sub_atoms:
+                sca.mindmap_shell_id = shell_id
+            moved_subtree_count = len(sub_atoms)
+
+            old_shell = s.get(CanvasMindmapShell, old_shell_id)
+            if old_shell and old_shell.root_atom_id == atom_id:
+                old_shell.root_atom_id = None
+
+            # 舊殼若變空 -- 自動刪除收尾
+            s.flush()
+            remaining = (
+                s.query(CanvasAtom)
+                .filter(
+                    CanvasAtom.canvas_id == shell.canvas_id,
+                    CanvasAtom.mindmap_shell_id == old_shell_id,
+                )
+                .count()
+            )
+            if remaining == 0 and old_shell:
+                s.delete(old_shell)
+                old_shell_deleted = True
 
         existing_rel = _get_tree_parent(s, atom_id)
         if existing_rel:
@@ -1353,28 +1392,40 @@ def attach_atom_to_mindmap(shell_id):
             'message': '已附加到心智圖',
             'canvas_atom': ca.to_dict(),
             'tree_parent_relation': rel.to_dict(),
+            'moved_subtree_count': moved_subtree_count,
+            'old_shell_id': old_shell_id,
+            'old_shell_deleted': old_shell_deleted,
         })
 
 
 @bp.route('/api/canvas-mindmap-shells/<int:shell_id>/extract', methods=['POST'])
 def extract_mindmap_subtree(shell_id):
-    """把節點及其子樹從殼脫離（清 mindmap_shell_id），保留 tree_parent relations。
+    """把節點及其子樹從殼脫離。
 
-    body: { atom_id: int }
-    脫離後變獨立卡，但樹結構保留（可日後再拖回某殼）。
-    若脫離的是殼的 root，殼變空，由前端決定是否一併刪除殼。
+    body: {
+        atom_id: int,
+        as_new_shell: bool (預設 false),
+        new_shell_pos_x, new_shell_pos_y: float (僅 as_new_shell=true 用)
+    }
+    模式:
+      as_new_shell=false -- 子樹的 mindmap_shell_id 全清,變獨立卡片群,
+                            tree_parent 保留;脫離 root 則砍 top_rel(變樹根)
+      as_new_shell=true  -- 建新殼接管子樹,拖出節點變新殼的 root
+    若脫離的是殼的 root,殼變空,由前端決定是否刪除。
     """
     data = request.get_json() or {}
     atom_id = data.get('atom_id')
     if not atom_id:
         return jsonify({'error': '需要 atom_id'}), 400
+    atom_id = int(atom_id)
+    as_new_shell = bool(data.get('as_new_shell', False))
 
     with session_scope() as s:
         shell = s.get(CanvasMindmapShell, shell_id)
         if not shell:
             return jsonify({'error': '心智圖殼不存在'}), 404
 
-        subtree_ids = _tree_descendants(s, int(atom_id))
+        subtree_ids = _tree_descendants(s, atom_id)
 
         members = (
             s.query(CanvasAtom)
@@ -1385,19 +1436,62 @@ def extract_mindmap_subtree(shell_id):
             )
             .all()
         )
-        for ca in members:
-            ca.mindmap_shell_id = None
 
-        # 若脫離 root，砍掉它的 tree_parent relation（變成新樹的 root）
-        if int(atom_id) != shell.root_atom_id:
-            top_rel = _get_tree_parent(s, int(atom_id))
+        new_shell_dict = None
+        if as_new_shell:
+            atom = s.get(KnowledgeAtom, atom_id)
+            new_title = (atom.title or '心智圖') if atom else '心智圖'
+            new_shell = CanvasMindmapShell(
+                canvas_id=shell.canvas_id,
+                title=new_title,
+                pos_x=float(data.get('new_shell_pos_x', shell.pos_x + 40)),
+                pos_y=float(data.get('new_shell_pos_y', shell.pos_y + 40)),
+                width=400,
+                height=240,
+                color=shell.color,
+                layout=shell.layout,
+                z_index=shell.z_index,
+            )
+            s.add(new_shell)
+            s.flush()
+            new_shell.root_atom_id = atom_id
+            for ca in members:
+                ca.mindmap_shell_id = new_shell.id
+            new_shell_dict = new_shell.to_dict()
+        else:
+            for ca in members:
+                ca.mindmap_shell_id = None
+
+        # 拖出的若不是原殼 root，砍掉它的 tree_parent relation（變成新樹/獨立的根）
+        if atom_id != shell.root_atom_id:
+            top_rel = _get_tree_parent(s, atom_id)
             if top_rel:
                 top_rel.is_deleted = True
+        else:
+            # 拖出的是原殼 root -- root_atom_id 失效
+            shell.root_atom_id = None
 
         s.flush()
+
+        # 原殼若變空 -- 自動刪除收尾
+        old_shell_deleted = False
+        remaining = (
+            s.query(CanvasAtom)
+            .filter(
+                CanvasAtom.canvas_id == shell.canvas_id,
+                CanvasAtom.mindmap_shell_id == shell_id,
+            )
+            .count()
+        )
+        if remaining == 0:
+            s.delete(shell)
+            old_shell_deleted = True
+
         return jsonify({
             'message': f'已脫離 {len(members)} 個節點',
             'extracted_atom_ids': [ca.atom_id for ca in members],
+            'new_shell': new_shell_dict,
+            'old_shell_deleted': old_shell_deleted,
         })
 
 
@@ -1919,12 +2013,7 @@ def update_canvas_connection(conn_id):
                 if rel:
                     rel.label = data['label']
 
-        if 'color' in data:
-            conn.color = data['color']
-        if 'line_style' in data:
-            conn.line_style = data['line_style']
-
-        # 變更關係類型
+        # 先處理 relation_type（會帶入 registry 預設樣式）,再讓 color/line_style 可覆寫
         if 'relation_type' in data:
             new_type = data['relation_type']
             if new_type not in UnifiedRelation.VALID_TYPES:
@@ -1935,10 +2024,14 @@ def update_canvas_connection(conn_id):
                     rel.relation_type = new_type
                     s.flush()
                     s.refresh(rel)
-                    # 更新連線樣式
                     style = _get_relation_style(s, new_type)
                     conn.color = style['color']
                     conn.line_style = style['line_style']
+
+        if 'color' in data:
+            conn.color = data['color']
+        if 'line_style' in data:
+            conn.line_style = data['line_style']
 
         s.flush()
         return jsonify(conn.to_dict())

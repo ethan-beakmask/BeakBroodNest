@@ -128,6 +128,7 @@
                 <template x-for="sh in mindmapShells" :key="'mm-shell-' + sh.id">
                     <div class="wb-mindmap-shell"
                          :id="'mindmap-shell-' + sh.id"
+                         :class="{ 'mindmap-shell-cross-target': mindmapDragCrossShellId === sh.id }"
                          :style="getMindmapShellStyle(sh)"
                          @mousedown="onMindmapShellMouseDown($event, sh)"
                          @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_shell', sh: sh }">
@@ -275,9 +276,13 @@
                              'mindmap-node-active': activeMindmapAtomId === ca.atom_id,
                              'mindmap-node-editing': editingMindmapAtomId === ca.atom_id,
                              'mindmap-node-dragging': mindmapDragNode && mindmapDragNode.atom_id === ca.atom_id && mindmapDragMoved,
+                             'mindmap-node-multiselected': selectedAtomIds.includes(ca.atom_id),
+                             'conn-drop-target': isConnDragging && connDragHoverAtomId === ca.atom_id,
                          }"
-                         :style="getCardStyle(ca)"
+                         :style="getMindmapNodeStyle(ca)"
                          @mousedown="onMindmapNodeMouseDown($event, ca)"
+                         @mouseenter="onCardMouseEnterForConn(ca)"
+                         @mouseleave="onCardMouseLeaveForConn(ca)"
                          @dblclick.stop="onMindmapNodeDblClick(ca, $event)"
                          @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_node', ca: ca }">
                         <template x-if="editingMindmapAtomId !== ca.atom_id">

@@ -148,12 +148,19 @@ const API = {
         return this.del(url);
     },
     addMindmapNode(shellId, data)          { return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes', data); },
-    attachMindmapAtom(shellId, atomId, parentAtomId) {
-        return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/attach', { atom_id: atomId, parent_atom_id: parentAtomId });
+    attachMindmapAtom(shellId, atomId, parentAtomId, includeSubtree) {
+        return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/attach', {
+            atom_id: atomId,
+            parent_atom_id: parentAtomId,
+            include_subtree: !!includeSubtree,
+        });
     },
     moveMindmapNode(shellId, atomId, data) { return this.put('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes/' + atomId + '/move', data); },
     deleteMindmapNode(shellId, atomId)     { return this.del('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/nodes/' + atomId); },
-    extractMindmapSubtree(shellId, atomId) { return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/extract', { atom_id: atomId }); },
+    extractMindmapSubtree(shellId, atomId, opts) {
+        var body = Object.assign({ atom_id: atomId }, opts || {});
+        return this.post('/beakcortex/api/canvas-mindmap-shells/' + shellId + '/extract', body);
+    },
 
     // Promote entry to atom
     promoteEntry(entryId)           { return this.post('/beakcortex/api/entries/' + entryId + '/promote', {}); },

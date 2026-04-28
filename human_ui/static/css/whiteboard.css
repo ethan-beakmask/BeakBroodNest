@@ -1814,3 +1814,20 @@
     opacity: 0.4;
 }
 
+/* 跨殼搬移目標殼 -- 高亮邊框 */
+.wb-mindmap-shell.mindmap-shell-cross-target {
+    box-shadow: 0 0 0 3px #f59e0b inset;
+    background: #fef3c7 !important;
+}
+
+/* 心智圖節點多選標記（框選或多選右鍵套色用） */
+.wb-mindmap-node.mindmap-node-multiselected {
+    box-shadow: 0 0 0 2px #f59e0b, 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* 心智圖節點作為 connection drop target -- 邊框高亮 */
+.wb-mindmap-node.conn-drop-target {
+    box-shadow: 0 0 0 2px #3b82f6;
+    background: #dbeafe !important;
+}
+

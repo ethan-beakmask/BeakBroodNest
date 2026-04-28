@@ -125,6 +125,22 @@ function whiteboardConnectionsMixin() {
                 if (tgtKind === 'textbox') payload.target_textbox_id = tgtTbId;
                 var resp = await API.post('/beakcortex/api/canvas-connections', payload);
                 if (resp && !resp.error) {
+                    var newConnId = resp.id;
+                    var self = this;
+                    this.pushUndo({
+                        type: 'create_connection',
+                        desc: '建立連線',
+                        undo: async function() {
+                            try { await API.deleteConnection(newConnId); } catch (e) {}
+                            await self.loadData();
+                            self.$nextTick(function() { self.renderConnections(); });
+                        },
+                        redo: async function() {
+                            try { await API.post('/beakcortex/api/canvas-connections', payload); } catch (e) {}
+                            await self.loadData();
+                            self.$nextTick(function() { self.renderConnections(); });
+                        },
+                    });
                     await this.loadData();
                     this.renderConnections();
                 }
@@ -147,6 +163,22 @@ function whiteboardConnectionsMixin() {
 
                 var resp = await API.post('/beakcortex/api/canvas-connections', payload);
                 if (resp && !resp.error) {
+                    var newConnId = resp.id;
+                    var self = this;
+                    this.pushUndo({
+                        type: 'create_connection',
+                        desc: '建立連線',
+                        undo: async function() {
+                            try { await API.deleteConnection(newConnId); } catch (e) {}
+                            await self.loadData();
+                            self.$nextTick(function() { self.renderConnections(); });
+                        },
+                        redo: async function() {
+                            try { await API.post('/beakcortex/api/canvas-connections', payload); } catch (e) {}
+                            await self.loadData();
+                            self.$nextTick(function() { self.renderConnections(); });
+                        },
+                    });
                     await this.loadData();
                     this.renderConnections();
                     this.showToast(this.relationLabelMap[relationType] || relationType, 'success', 1500);
@@ -444,17 +476,22 @@ function whiteboardConnectionsMixin() {
             // atoms/mindmapShells/treeParents 連續重新賦值的 nextTick 內），用 querySelector
             // 作 fallback 確保 SVG 取得到
             var svg = this.$refs.connSvg || document.querySelector('.wb-connections:not(.wb-preview-layer)');
-            if (!svg) return;
+            if (!svg) {
+                if (this.renderMinimap) this.renderMinimap();
+                return;
+            }
             svg.innerHTML = '';
             this._connGeometry = [];
             // 心智圖樹線優先繪製（在連線下層）
             if (this.renderMindmapTreeLines) this.renderMindmapTreeLines(svg);
             if (this.rtLineStyle === 'none') {
                 this.renderStats = { total: this.connections.length, rendered: 0 };
+                if (this.renderMinimap) this.renderMinimap();
                 return;
             }
             var visibleIds = this.filteredAtomIds;
             // 連線可見性：atom 端點受 filter 控制；textbox 端點一律可見
+            // 樹線(灰色)與 connection(彩色)並存,不去重
             var baseConns = this.connections.filter(function(c) {
                 var srcOk = (c.from_kind === 'textbox') || visibleIds.includes(c.source_atom_id);
                 var tgtOk = (c.to_kind   === 'textbox') || visibleIds.includes(c.target_atom_id);
@@ -464,6 +501,8 @@ function whiteboardConnectionsMixin() {
             this.renderStats = { total: this.connections.length, rendered: renderList.length };
             if (this.rtEngine === 'grouped') this._renderGrouped(svg, renderList);
             else this._renderIndividual(svg, renderList);
+            // 心智圖節點移動/排序/層級切換等只重繪連線,minimap 也跟著更新
+            if (this.renderMinimap) this.renderMinimap();
         },
 
         // 計算同對端點的偏移量（多條線避重疊）
@@ -590,6 +629,21 @@ function whiteboardConnectionsMixin() {
                 }
                 var pairInfo = self._calcPairOffset(conn, renderList);
                 var offset = isEntryConn ? 0 : pairInfo.offset;
+                // 心智圖節點之間 connection: 強制繞行,避免在小卡密集排列時退化為直線/重疊
+                if (!isEntryConn && isAtomToAtom) {
+                    var srcCa2 = self.atoms.find(function(a) { return a.atom_id === conn.source_atom_id; });
+                    var tgtCa2 = self.atoms.find(function(a) { return a.atom_id === conn.target_atom_id; });
+                    if (srcCa2 && tgtCa2 && srcCa2.mindmap_shell_id && tgtCa2.mindmap_shell_id) {
+                        var MM_BASE = 32;
+                        if (pairInfo.total === 1) {
+                            offset = MM_BASE;
+                        } else {
+                            // 多條時 spread 拉大,保留奇偶分散方向
+                            var idx = pairInfo.index, total = pairInfo.total;
+                            offset = (idx - (total - 1) / 2) * (MM_BASE * 1.6);
+                        }
+                    }
+                }
                 var lc = conn.color || '#94a3b8';
                 var mid = isEntryConn
                     ? 'arr-sm-' + lc.replace('#', '')
@@ -646,19 +700,24 @@ function whiteboardConnectionsMixin() {
         showConnTypeChangeModal(connId, currentType) {
             this.connTypeChangeTarget = connId;
             this.selectedRelationType = currentType || 'references';
-            // 讀取現有 label
             var conn = this.connections.find(function(c) { return c.id === connId; });
             this.connTypeChangeLabel = conn ? (conn.label || '') : '';
+            // 若用戶已自訂色（與 registry 預設不同），就把該色帶入色板選中態;否則空(=預設)
+            this.connTypeChangeColor = '';
+            if (conn && conn.color) {
+                var rt = (this.relationTypeList || []).find(function(x) { return x.value === conn.relation_type; });
+                if (!rt || rt.color !== conn.color) {
+                    this.connTypeChangeColor = conn.color;
+                }
+            }
             this.showConnTypeModal = true;
         },
 
         async deleteConnFromModal() {
             if (!this.connTypeChangeTarget) return;
             var connId = this.connTypeChangeTarget;
-            // 先完成刪除+重繪，最後才關 modal（避免 Alpine DOM 更新覆蓋 SVG）
-            await API.deleteConnection(connId);
-            await this.loadData();
-            this.renderConnections();
+            // 走 deleteConnection 才會 push undo,然後關 modal
+            await this.deleteConnection(connId);
             this.showConnTypeModal = false;
             this.connTypeChangeTarget = null;
             this.connTypeChangeLabel = '';
@@ -669,6 +728,8 @@ function whiteboardConnectionsMixin() {
             try {
                 var payload = { relation_type: this.selectedRelationType };
                 if (this.connTypeChangeLabel !== undefined) payload.label = this.connTypeChangeLabel;
+                // color 空字串 = 用 relation_type 預設色（後端會由 registry 帶入）
+                if (this.connTypeChangeColor) payload.color = this.connTypeChangeColor;
                 var resp = await API.put('/beakcortex/api/canvas-connections/' + this.connTypeChangeTarget, payload);
                 // 本地更新 connection 屬性 + 同步重繪
                 var connId = this.connTypeChangeTarget;

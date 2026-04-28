@@ -1071,6 +1071,18 @@
                         <input class="form-control" x-model="connTypeChangeLabel" placeholder="關係描述..."
                                @keydown.enter="confirmConnTypeChange()">
                     </div>
+                    <div class="form-group">
+                        <label>顏色（覆寫 relation_type 預設色）</label>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                            <template x-for="c in connColorPalette" :key="'cc-'+c">
+                                <div @click="connTypeChangeColor = c"
+                                     :style="'width:24px;height:24px;border-radius:4px;cursor:pointer;background:' + c + ';' + (connTypeChangeColor === c ? 'box-shadow:0 0 0 2px #1f2937;' : 'box-shadow:0 0 0 1px #cbd5e1;')"></div>
+                            </template>
+                            <button class="btn btn-sm" type="button"
+                                    style="margin-left:8px;font-size:11px;"
+                                    @click="connTypeChangeColor = ''">使用預設</button>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-sm"
@@ -1493,6 +1505,8 @@
                              x-text="pdfReaderViewMode(contextMenu.ca) === 'reader' ? '切換為縮圖（thumbnail）' : '切換為閱讀器（reader）'"></div>
                     </template>
                     <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="promoteToMindmapRoot(contextMenu.ca); closeContextMenu()">建立心智圖（以此卡片為 root）</div>
+                    <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="sendToCanvasTrash(contextMenu.ca); closeContextMenu()">丟到字紙簍（可救回）</div>
                     <div class="context-menu-item" @click="removeFromCanvas(contextMenu.ca); closeContextMenu()">從白板移除（解除連結，不可救回）</div>
                     <div class="context-menu-item danger"
@@ -1528,6 +1542,14 @@
                         <span x-text="contextMenu.sh.layout === 'tree-down' ? '✓ 展開向下' : '展開向下'"></span>
                     </div>
                     <div class="context-menu-separator"></div>
+                    <div style="padding:6px 10px;font-size:11px;color:var(--text-muted, #6c757d);">底色</div>
+                    <div style="padding:0 10px 8px;display:flex;gap:5px;flex-wrap:wrap;">
+                        <template x-for="c in shellColorPalette" :key="'sc-'+c">
+                            <div @click="setMindmapShellColor(contextMenu.sh.id, c); closeContextMenu()"
+                                 :style="'width:20px;height:20px;border-radius:3px;cursor:pointer;background:' + c + ';' + (contextMenu.sh.color === c ? 'box-shadow:0 0 0 2px #1f2937;' : 'box-shadow:0 0 0 1px #cbd5e1;')"></div>
+                        </template>
+                    </div>
+                    <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'shell_only'); closeContextMenu()">解除殼（節點留在白板上）</div>
                     <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'with_atoms'); closeContextMenu()" style="color:var(--danger);">刪除殼+所有節點（送字紙簍）</div>
                 </div>
@@ -1536,6 +1558,25 @@
                 <div>
                     <div class="context-menu-item" @click="onMindmapNodeDblClick(contextMenu.ca); closeContextMenu()">編輯標題</div>
                     <div class="context-menu-item" @click="extractMindmapSubtree(contextMenu.ca.mindmap_shell_id, contextMenu.ca.atom_id); closeContextMenu()">脫離殼（子樹一起變獨立卡）</div>
+                    <div class="context-menu-separator"></div>
+                    <div style="padding:4px 10px;font-size:11px;color:var(--text-muted, #6c757d);">
+                        <span x-text="(selectedAtomIds.includes(contextMenu.ca.atom_id) ? '套用到選中 ' + selectedAtomIds.length + ' 張' : '只套用到此節點')"></span>
+                    </div>
+                    <div style="padding:2px 10px 2px;font-size:11px;color:var(--text-muted, #6c757d);">外框</div>
+                    <div style="padding:0 10px 4px;display:flex;gap:4px;flex-wrap:wrap;">
+                        <template x-for="c in nodeColorPalette" :key="'nb-'+c">
+                            <div @click="setMindmapNodeVisual(contextMenu.ca, c, 'border'); closeContextMenu()"
+                                 :style="'width:18px;height:18px;border-radius:3px;cursor:pointer;background:#fff;box-shadow:inset 0 0 0 2px ' + c + ', 0 0 0 1px #cbd5e1;'"></div>
+                        </template>
+                    </div>
+                    <div style="padding:2px 10px;font-size:11px;color:var(--text-muted, #6c757d);">底色</div>
+                    <div style="padding:0 10px 6px;display:flex;gap:4px;flex-wrap:wrap;">
+                        <template x-for="c in nodeColorPalette" :key="'nbg-'+c">
+                            <div @click="setMindmapNodeVisual(contextMenu.ca, c, 'bg'); closeContextMenu()"
+                                 :style="'width:18px;height:18px;border-radius:3px;cursor:pointer;background:' + c + ';box-shadow:0 0 0 1px #cbd5e1;'"></div>
+                        </template>
+                    </div>
+                    <div class="context-menu-item" @click="setMindmapNodeVisual(contextMenu.ca, null, null); closeContextMenu()" style="font-size:12px;">重置外框與底色</div>
                     <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="_deleteMindmapNode(contextMenu.ca.mindmap_shell_id, contextMenu.ca.atom_id); closeContextMenu()" style="color:var(--danger);">刪除節點+子樹</div>
                 </div>

@@ -87,6 +87,16 @@ function whiteboardApp(canvasId) {
         showConnTypeModal: false,
         connTypeChangeTarget: null,
         connTypeChangeLabel: '',
+        connTypeChangeColor: '',  // 空字串=用 relation_type 預設色
+
+        // 共用視覺色板（連線、殼底色、節點視覺）
+        bcColorPalette: [
+            '#94a3b8', '#3b82f6', '#ef4444', '#f59e0b',
+            '#10b981', '#8b5cf6', '#ec4899', '#0891b2', '#64748b',
+        ],
+        get connColorPalette() { return this.bcColorPalette; },
+        get shellColorPalette() { return this.bcColorPalette; },
+        get nodeColorPalette() { return this.bcColorPalette; },
         connDragShiftKey: false,
         showUISettingsModal: false,
         showBatchTagModal: false,
@@ -1119,13 +1129,74 @@ function whiteboardApp(canvasId) {
             if (this.pendingConnection.targetEntryId) payload.target_entry_id = this.pendingConnection.targetEntryId;
             var resp = await API.createConnection(payload);
             this.showRelationModal = false; this.pendingConnection = null; this.mode = 'select';
-            if (resp && !resp.error) { this.connections.push(resp); this.renderConnections(); }
+            if (resp && !resp.error) {
+                this.connections.push(resp);
+                this.renderConnections();
+                var newConnId = resp.id;
+                var self = this;
+                this.pushUndo({
+                    type: 'create_connection',
+                    desc: '建立連線',
+                    undo: async function() {
+                        try { await API.deleteConnection(newConnId); } catch (e) {}
+                        await self.loadData();
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                    redo: async function() {
+                        try { await API.createConnection(payload); } catch (e) {}
+                        await self.loadData();
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                });
+            }
         },
 
         async deleteConnection(connId) {
+            // 先取現有 connection 內容,作為 undo 用 payload
+            var conn = this.connections.find(function(c) { return c.id === connId; });
+            var payload = null;
+            if (conn) {
+                payload = {
+                    canvas_id: this.canvasId,
+                    source_atom_id: conn.source_atom_id,
+                    target_atom_id: conn.target_atom_id,
+                    relation_type: conn.relation_type,
+                    label: conn.label || '',
+                };
+                if (conn.from_kind) payload.from_kind = conn.from_kind;
+                if (conn.to_kind) payload.to_kind = conn.to_kind;
+                if (conn.source_textbox_id) payload.source_textbox_id = conn.source_textbox_id;
+                if (conn.target_textbox_id) payload.target_textbox_id = conn.target_textbox_id;
+                if (conn.source_entry_id) payload.source_entry_id = conn.source_entry_id;
+                if (conn.target_entry_id) payload.target_entry_id = conn.target_entry_id;
+            }
             await API.deleteConnection(connId);
             await this.loadData();
             this.renderConnections();
+            if (payload) {
+                var self = this;
+                this.pushUndo({
+                    type: 'delete_connection',
+                    desc: '刪除連線',
+                    undo: async function() {
+                        try { await API.createConnection(payload); } catch (e) {}
+                        await self.loadData();
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                    redo: async function() {
+                        // redo 後 conn id 變了,用 payload 找最近一條同源同目同類連線刪除
+                        await self.loadData();
+                        var match = self.connections.find(function(c) {
+                            return c.source_atom_id === payload.source_atom_id
+                                && c.target_atom_id === payload.target_atom_id
+                                && c.relation_type === payload.relation_type;
+                        });
+                        if (match) { try { await API.deleteConnection(match.id); } catch (e) {} }
+                        await self.loadData();
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                });
+            }
         },
 
         // ============================================
