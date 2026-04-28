@@ -46,7 +46,7 @@
 - MCP 設定: `/opt/.mcp.json`（故意置於父目錄讓所有 /opt/* 子專案向上搜尋共用 beak_cortex；`/mcp` 命令 UI 會把路徑誤標為 `/opt/BeakCortex/.mcp.json`，那是 UI 拼接 project 路徑的顯示行為，實檔在父目錄）
 - 規劃文件: `docs/VISION.md`
 - 舊 MVP 參考: `OLD/`（不入版控）
-- 對外發佈: `scripts/push_github.sh`（過濾內部檔案後 force push 到 GitHub `ethan-beakmask/BeakCortex`）
+- 對外發佈: 直接 `git push github master`（本專案已整理為適合公開，認證走 ssh：`ethan-beakmask/BeakCortex`）
 
 ## 修改規範
 - 直接於 `/opt/BeakCortex/` 編輯任何檔案，工作區即版控倉庫
@@ -106,21 +106,17 @@ ExecStart: `gunicorn --bind 127.0.0.1:5171 ... human_ui.app:app`，對外經 ngi
 ```
 與正式 gunicorn (5171) 並存，皆連同一個 `beak_cortex` DB。
 
-### 推送到 GitHub（過濾內部檔）
+### 推送到 GitHub
+本專案已整理為可直接公開，所有 remote 一視同仁直接 push：
 ```bash
-bash /opt/BeakCortex/scripts/push_github.sh
+git push origin master   # 內部 forgejo
+git push github master   # 公開 GitHub（ssh 認證）
 ```
-腳本內 `EXCLUDE_FILES` 排除清單為單一真相來源（含 CLAUDE.md / AGENTS.md / 內部 prompt / 認證細節等），force push 到 `github` remote 前過濾。
 
-#### 禁止裸 push 到 github
-本機 `.git/hooks/pre-push` 已設攔截，**只允許 `_github_filtered` 分支推到 github remote**。任何工具/腳本/Claude 嘗試 `git push github master` 或 `git push --all` 等會被擋下。
+`/upcom` 等自動 push 流程：對 `github` 與 `origin` 都直接 push 即可，不需要特殊跳過。
 
-**`/upcom` 與其他自動 push 流程的對應規則**：
-- 步驟 3 「逐一 push 全部 remote」對 `github` remote **必須跳過**，改提示用戶手動執行 `bash scripts/push_github.sh`
-- 對 `origin`(內部 forgejo) 直接 push 即可
-- 不要試圖呼叫 `push_github.sh` 自動執行（force push 是高風險動作，須人類確認時機）
+**歷史保留**（已不再強制使用，但檔案留著以備未來情境變化）：
+- `scripts/push_github.sh` -- 早期過濾內部檔再 force push 的腳本（含 EXCLUDE_FILES）
+- `scripts/pre-push.sample` -- 早期 pre-push hook（攔截裸 push 到 github）
 
-**新 clone 此倉庫時須手動安裝 hook**（hook 不入版控）：
-```bash
-cp /opt/BeakCortex/scripts/pre-push.sample .git/hooks/pre-push && chmod +x .git/hooks/pre-push
-```
+> 注意：本放行**只適用本專案**。其他 /opt/* 專案（如 BeakPlatform）尚未整理為可公開狀態，全域規範仍要求過濾後才能對外推送。
