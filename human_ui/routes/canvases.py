@@ -13,7 +13,7 @@ from core.models import (
     Canvas, CanvasAtom, CanvasConnection, CanvasTrash,
     CanvasGroup, CanvasTextbox, CanvasMindmapShell,
     Tag, atom_tags, canvas_group_members,
-    AtomEntry, EntrySchema,
+    AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
 )
 from core import relations as rel_service
 
@@ -308,6 +308,35 @@ def get_canvas(slug):
                     'schema_icon': er.schema_icon,
                     'schema_color': er.schema_color,
                 })
+
+            # 對 idcard entries 補上 field_values，供白板渲染識別證縮圖
+            idcard_entry_ids = [
+                e['id']
+                for elist in entries_map.values()
+                for e in elist
+                if e.get('schema_code') == 'idcard'
+            ]
+            if idcard_entry_ids:
+                fv_rows = (
+                    s.query(
+                        EntryFieldValue.entry_id,
+                        EntrySchemaField.name,
+                        EntryFieldValue.value,
+                    )
+                    .join(
+                        EntrySchemaField,
+                        EntrySchemaField.id == EntryFieldValue.field_id,
+                    )
+                    .filter(EntryFieldValue.entry_id.in_(idcard_entry_ids))
+                    .all()
+                )
+                fv_map = {}
+                for eid, fname, fvalue in fv_rows:
+                    fv_map.setdefault(eid, {})[fname] = fvalue
+                for elist in entries_map.values():
+                    for e in elist:
+                        if e.get('schema_code') == 'idcard':
+                            e['field_values'] = fv_map.get(e['id'], {})
 
         # --- 2. 批次載入標籤 ---
         tags_map = {}

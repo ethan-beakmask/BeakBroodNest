@@ -376,6 +376,10 @@ function whiteboardCardEditorMixin() {
                 ca.atom.title = title; ca.atom.content = md; ca.atom.content_json = json;
                 ca.atom.updated_at = serverTs;
                 if (serverThumb !== undefined) ca.atom.thumbnail_url = serverThumb;
+                // 同步最新 entries（含 field_values）給白板渲染 -- idcard 主帳卡縮圖會用到
+                if (typeof syncResult !== 'undefined' && syncResult && syncResult.entries) {
+                    ca.atom.entries = syncResult.entries;
+                }
             }
             ed._knownServerTs = serverTs;
             if (this.selectedAtomDetails && this.selectedAtomDetails.id === ed.atomId) {

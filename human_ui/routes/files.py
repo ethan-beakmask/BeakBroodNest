@@ -179,6 +179,58 @@ def download_file(token):
         return resp
 
 
+@bp.route('/api/files', methods=['GET'])
+def list_files():
+    """列出已上傳檔案，預設只給 image 供相簿挑選。
+
+    query params:
+      kind: image|file（預設 image）
+      q:    原檔名 ILIKE 模糊搜尋
+      page: 1-based（預設 1）
+      page_size: 每頁筆數（預設 60，上限 200）
+    """
+    kind = (request.args.get('kind') or 'image').strip().lower()
+    if kind not in ('image', 'file'):
+        return jsonify({'error': 'kind 必須是 image 或 file'}), 400
+
+    q = (request.args.get('q') or '').strip()
+    try:
+        page = max(1, int(request.args.get('page') or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = min(200, max(1, int(request.args.get('page_size') or 60)))
+    except (TypeError, ValueError):
+        page_size = 60
+
+    with session_scope() as s:
+        query = (
+            s.query(UploadedFile)
+            .filter(UploadedFile.kind == kind, UploadedFile.is_deleted == False)
+        )
+        if q:
+            query = query.filter(UploadedFile.original_filename.ilike(f'%{q}%'))
+
+        total = query.count()
+        rows = (
+            query.order_by(UploadedFile.uploaded_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        items = []
+        for r in rows:
+            d = r.to_dict()
+            d['url'] = f'/beakcortex/files/{r.token}'
+            items.append(d)
+        return jsonify({
+            'total': total,
+            'page': page,
+            'page_size': page_size,
+            'items': items,
+        })
+
+
 @bp.route('/api/files/<token>', methods=['GET'])
 def get_file_meta(token):
     """取得檔案 metadata（不回傳檔案內容）"""

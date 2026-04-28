@@ -181,26 +181,54 @@ class SlashMenuView {
         const state = slashKey.getState(this.editorView.state)
         if (!state) return
 
-        // Replace the current paragraph with a structuredEntry
         const { from } = state
-        const tr = this.editorView.state.tr
-        const end = from + this.editorView.state.doc.nodeAt(from).nodeSize
+        const view = this.editorView
+        const paragraph = view.state.doc.nodeAt(from)
+        if (!paragraph) { this._hide(); return }
+        const end = from + paragraph.nodeSize
 
-        const entryNode = this.editorView.state.schema.nodes.structuredEntry.create({
+        const entryAttrs = {
             schemaCode: schema.code,
             schemaId: schema.id,
             fieldValues: {},
             collapsed: false,
-        })
+        }
 
-        tr.replaceWith(from, end, entryNode)
-        this.editorView.dispatch(tr)
+        const entryNode = view.state.schema.nodes.structuredEntry.create(entryAttrs)
+
         this._hide()
 
-        // Focus the new entry's content
-        setTimeout(() => {
-            this.editor.commands.focus()
-        }, 50)
+        // 路徑 1：直接 replaceWith 替換 ;;XXX 所在 paragraph
+        // ProseMirror 對 table cell（content: 'block+'）也允許 structuredEntry（group: 'block'），
+        // 所以 paragraph -> structuredEntry 的替換在 cell 內理論上合法。
+        let dispatched = false
+        try {
+            const tr = view.state.tr.replaceWith(from, end, entryNode)
+            if (tr.docChanged) {
+                view.dispatch(tr)
+                dispatched = true
+            }
+        } catch (e) {
+            // schema constraint 失敗（例如 cell content 不允許），落到 fallback
+            console.warn('[slashCommand] replaceWith failed, fallback to insertContentAt:', e)
+        }
+
+        // 路徑 2 fallback：清掉 ;;XXX 文字並 insertContent。
+        // 適用 replaceWith 被 schema 拒絕時（少見的容器型態）。
+        if (!dispatched) {
+            this.editor.chain()
+                .focus()
+                .deleteRange({ from, to: end })
+                .insertContentAt(from, { type: 'structuredEntry', attrs: entryAttrs })
+                .run()
+        }
+
+        // ;;idcard 建立後，請 NodeView constructor 自動把焦點切到第一欄
+        if (schema.code === 'idcard') {
+            window._pendingIdCardFocusEntry = true
+        }
+
+        setTimeout(() => this.editor.commands.focus(), 50)
     }
 
     destroy() {

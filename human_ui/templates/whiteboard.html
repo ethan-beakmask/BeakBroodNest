@@ -189,7 +189,9 @@
                         <div class="wb-card-anchor left" @mousedown.stop.prevent="startConnDrag($event, ca, 'left')"></div>
                         <div class="wb-card-anchor right" @mousedown.stop.prevent="startConnDrag($event, ca, 'right')"></div>
 
-                        <div class="wb-card-header" @mousedown.stop="onCardMouseDown($event, ca)">
+                        <div class="wb-card-header"
+                             x-show="!hasPrimaryIdCard(ca)"
+                             @mousedown.stop="onCardMouseDown($event, ca)">
                             <span class="wb-card-type"
                                   :style="getTypeBadgeStyle(ca.atom ? ca.atom.atom_type : 'F')"
                                   x-text="atomTypeConfig[ca.atom ? ca.atom.atom_type : 'F'] ? atomTypeConfig[ca.atom ? ca.atom.atom_type : 'F'].label : '?'"></span>
@@ -202,6 +204,35 @@
                             <template x-if="hasThumbnail(ca)">
                                 <div class="wb-thumbnail-image">
                                     <img :src="ca.atom.thumbnail_url" :alt="ca.atom ? ca.atom.title : ''" draggable="false">
+                                </div>
+                            </template>
+                            <!-- 主帳卡 idcard：取代縮圖以識別證版型呈現 -->
+                            <template x-if="!hasThumbnail(ca) && !isMediaCard(ca) && hasPrimaryIdCard(ca)">
+                                <div class="wb-card-idcard">
+                                    <div class="wb-card-idcard-body">
+                                        <div class="wb-card-idcard-image">
+                                            <template x-if="primaryIdCardImageUrl(ca)">
+                                                <img :src="primaryIdCardImageUrl(ca)" :alt="ca.atom ? ca.atom.title : ''" draggable="false">
+                                            </template>
+                                            <template x-if="!primaryIdCardImageUrl(ca)">
+                                                <span class="wb-card-idcard-image-empty">無圖</span>
+                                            </template>
+                                        </div>
+                                        <div class="wb-card-idcard-fields">
+                                            <template x-if="primaryIdCardLine(ca, 1)">
+                                                <span class="wb-card-idcard-line wb-card-idcard-line-1" x-text="primaryIdCardLine(ca, 1)"></span>
+                                            </template>
+                                            <template x-if="primaryIdCardLine(ca, 2)">
+                                                <span class="wb-card-idcard-line wb-card-idcard-line-2" x-text="primaryIdCardLine(ca, 2)"></span>
+                                            </template>
+                                            <template x-if="primaryIdCardLine(ca, 3)">
+                                                <span class="wb-card-idcard-line wb-card-idcard-line-3" x-text="primaryIdCardLine(ca, 3)"></span>
+                                            </template>
+                                            <template x-if="primaryIdCardLine(ca, 4)">
+                                                <span class="wb-card-idcard-line wb-card-idcard-line-4" x-text="primaryIdCardLine(ca, 4)"></span>
+                                            </template>
+                                        </div>
+                                    </div>
                                 </div>
                             </template>
                             <!-- 媒體卡片：PDF（第一頁縮圖 + 檔名） -->
@@ -227,9 +258,9 @@
                                     </div>
                                 </div>
                             </template>
-                            <!-- 結構化 entry 行列（有 entries 且非 media、非縮圖卡） -->
+                            <!-- 結構化 entry 行列（有 entries 且非 media、非縮圖卡、非主帳卡） -->
                             <div class="wb-card-entries"
-                                 x-show="!isMediaCard(ca) && !hasThumbnail(ca) && editingAtomId !== ca.atom_id && ca.atom && ca.atom.entries && ca.atom.entries.length > 0">
+                                 x-show="!isMediaCard(ca) && !hasThumbnail(ca) && !hasPrimaryIdCard(ca) && editingAtomId !== ca.atom_id && ca.atom && ca.atom.entries && ca.atom.entries.length > 0">
                                 <template x-for="entry in (ca.atom && ca.atom.entries ? ca.atom.entries : [])" :key="entry.id">
                                     <div class="wb-entry-row"
                                          :id="'entry-' + ca.atom_id + '-' + entry.id"
@@ -242,9 +273,9 @@
                                     </div>
                                 </template>
                             </div>
-                            <!-- 純文字 markdown（無 entries 且非 media、非縮圖卡） -->
+                            <!-- 純文字 markdown（無 entries 且非 media、非縮圖卡、非主帳卡） -->
                             <div class="wb-card-content wb-markdown"
-                                 x-show="!isMediaCard(ca) && !hasThumbnail(ca) && editingAtomId !== ca.atom_id && !(ca.atom && ca.atom.entries && ca.atom.entries.length > 0)"
+                                 x-show="!isMediaCard(ca) && !hasThumbnail(ca) && !hasPrimaryIdCard(ca) && editingAtomId !== ca.atom_id && !(ca.atom && ca.atom.entries && ca.atom.entries.length > 0)"
                                  x-html="renderMarkdown(ca.atom ? ca.atom.content : '', 800)"></div>
                             <template x-if="editingAtomId === ca.atom_id">
                                 <textarea :id="'edit-' + ca.atom_id"

@@ -378,6 +378,22 @@ def sync_entries(atom_id):
                         _save_field_values(s, entry, ed['field_values'])
                     incoming_ids.add(entry.id)
                     result_entries.append(entry)
+                else:
+                    # entryId 失效（DB 中已不存在或屬於別 atom）
+                    # → self-heal：視為新建，避免 content_json 與 atom_entries 永久 desync
+                    entry = AtomEntry(
+                        atom_id=atom_id,
+                        schema_id=schema.id,
+                        sort_order=i,
+                        raw_text=ed.get('raw_text', ''),
+                        summary=ed.get('summary', ''),
+                    )
+                    s.add(entry)
+                    s.flush()
+                    if ed.get('field_values'):
+                        _save_field_values(s, entry, ed['field_values'])
+                    incoming_ids.add(entry.id)
+                    result_entries.append(entry)
             else:
                 # 新建
                 entry = AtomEntry(

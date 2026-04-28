@@ -353,39 +353,73 @@ class CardEditor {
     }
 
     /**
+     * 收集 doc 內所有要進 entries 表的節點，並回傳 {node, pos, isFreetext} 陣列。
+     * 規則：
+     *   - 頂層非空 paragraph / heading 等 → freetext entry（保持索引穩定）
+     *   - 頂層 structuredEntry → entry
+     *   - 巢狀 structuredEntry（table cell / blockquote / list 內）→ entry
+     *     （巢狀 freetext 不轉 entry，避免 entries 爆量）
+     * extractEntries 與 writeBackEntryIds 共用此走訪以保證索引對齊。
+     */
+    _collectStructuredItems() {
+        if (!this.editor) return []
+        const doc = this.editor.state.doc
+        const items = []
+        const seenPos = new Set()
+
+        // 階段 1：頂層 blocks
+        doc.forEach((node, offset) => {
+            if (node.type.name === 'pdfReader' || node.type.name === 'pdfThumbnail') return
+            if (node.type.name === 'structuredEntry') {
+                items.push({ node, pos: offset, isFreetext: false })
+                seenPos.add(offset)
+                return
+            }
+            const text = node.textContent
+            if (text.trim() || node.type.name !== 'paragraph') {
+                items.push({ node, pos: offset, isFreetext: true })
+            }
+        })
+
+        // 階段 2：補抓巢狀 structuredEntry（table cell / blockquote / list / etc.）
+        doc.descendants((sub, pos) => {
+            if (sub.type.name === 'structuredEntry') {
+                if (!seenPos.has(pos)) {
+                    items.push({ node: sub, pos, isFreetext: false })
+                }
+                return false  // entry 內部不再 descend
+            }
+            return true
+        })
+
+        items.sort((a, b) => a.pos - b.pos)
+        return items
+    }
+
+    /**
      * 從 ProseMirror 文件中提取所有 structuredEntry nodes。
      * 回傳陣列供 sync API 使用。
      */
     extractEntries() {
-        if (!this.editor) return []
-        const entries = []
-        const doc = this.editor.state.doc
-        doc.forEach((node, offset, index) => {
-            // 媒體 atom node（PDF）不視為任何 entry
-            if (node.type.name === 'pdfReader' || node.type.name === 'pdfThumbnail') return
-            if (node.type.name === 'structuredEntry') {
-                entries.push({
-                    id: node.attrs.entryId || null,
-                    schema_code: node.attrs.schemaCode || 'freetext',
-                    schema_id: node.attrs.schemaId || null,
-                    raw_text: node.textContent,
-                    field_values: node.attrs.fieldValues || {},
-                    sort_order: index,
-                })
-            } else {
-                // Non-entry blocks (paragraph, heading, etc.) -> freetext entry
-                const text = node.textContent
-                if (text.trim() || node.type.name !== 'paragraph') {
-                    entries.push({
-                        schema_code: 'freetext',
-                        raw_text: text,
-                        field_values: {},
-                        sort_order: index,
-                    })
+        const items = this._collectStructuredItems()
+        return items.map((it, sortOrder) => {
+            if (it.isFreetext) {
+                return {
+                    schema_code: 'freetext',
+                    raw_text: it.node.textContent,
+                    field_values: {},
+                    sort_order: sortOrder,
                 }
             }
+            return {
+                id: it.node.attrs.entryId || null,
+                schema_code: it.node.attrs.schemaCode || 'freetext',
+                schema_id: it.node.attrs.schemaId || null,
+                raw_text: it.node.textContent,
+                field_values: it.node.attrs.fieldValues || {},
+                sort_order: sortOrder,
+            }
         })
-        return entries
     }
 
     /**
@@ -397,24 +431,18 @@ class CardEditor {
      */
     writeBackEntryIds(syncEntries) {
         if (!this.editor || !syncEntries || syncEntries.length === 0) return
+        const items = this._collectStructuredItems()
         const view = this.editor.view
-        const state = view.state
-        const tr = state.tr
-        let idx = 0
+        const tr = view.state.tr
         let mutated = false
-        state.doc.forEach((node, offset) => {
-            // 與 extractEntries 同樣的「空 paragraph」過濾，保持索引對齊
-            if (node.type.name !== 'structuredEntry') {
-                const text = node.textContent
-                if (!text.trim() && node.type.name === 'paragraph') return
-            }
+        // setNodeMarkup 是同 size 操作，後續 pos 仍有效
+        items.forEach((it, idx) => {
             const sched = syncEntries[idx]
-            idx += 1
             if (!sched) return
-            if (node.type.name !== 'structuredEntry') return
+            if (it.isFreetext) return
             if (!sched.id || sched.schema_code === 'freetext') return
-            if (node.attrs.entryId === sched.id) return
-            tr.setNodeMarkup(offset, undefined, { ...node.attrs, entryId: sched.id })
+            if (it.node.attrs.entryId === sched.id) return
+            tr.setNodeMarkup(it.pos, undefined, { ...it.node.attrs, entryId: sched.id })
             mutated = true
         })
         if (mutated) view.dispatch(tr)

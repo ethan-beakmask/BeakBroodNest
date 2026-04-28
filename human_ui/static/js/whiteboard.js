@@ -879,6 +879,34 @@ function whiteboardApp(canvasId) {
             return !!(ca && ca.atom && ca.atom.thumbnail_url);
         },
 
+        // 主帳卡縮圖判定：卡片內含 idcard entry 且 is_primary=true
+        primaryIdCardEntry(ca) {
+            if (!ca || !ca.atom || !ca.atom.entries) return null;
+            for (var i = 0; i < ca.atom.entries.length; i++) {
+                var e = ca.atom.entries[i];
+                if (e.schema_code !== 'idcard') continue;
+                var fv = e.field_values || {};
+                if (fv.is_primary === 'true' || fv.is_primary === true) {
+                    return e;
+                }
+            }
+            return null;
+        },
+        hasPrimaryIdCard(ca) {
+            return this.primaryIdCardEntry(ca) !== null;
+        },
+        primaryIdCardImageUrl(ca) {
+            var e = this.primaryIdCardEntry(ca);
+            if (!e) return '';
+            var token = ((e.field_values || {}).image_token || '').trim();
+            return token ? '/beakcortex/files/' + encodeURIComponent(token) : '';
+        },
+        primaryIdCardLine(ca, n) {
+            var e = this.primaryIdCardEntry(ca);
+            if (!e) return '';
+            return ((e.field_values || {})['line' + n] || '').trim();
+        },
+
         _firstRowIsImage(ca) {
             if (!ca || !ca.atom) return false;
             // 優先看 content_json：第一個 block 是 image，或第一個 paragraph 的第一個 inline 是 image
@@ -918,6 +946,7 @@ function whiteboardApp(canvasId) {
                 // 媒體卡片（PDF）或顯式縮圖卡：三種模式皆跳過，維持卡片原始尺寸
                 if (ca.atom && ca.atom.content_type === 'media') return;
                 if (self.hasThumbnail(ca)) return;
+                if (self.hasPrimaryIdCard(ca)) return;
                 var h;
                 if (entries > 0) {
                     if (self.cardSizeMode === 'min') {
