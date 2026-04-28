@@ -59,6 +59,9 @@ function whiteboardMindmapMixin() {
         MM_PAD_X: 24,
         MM_PAD_Y: 48,   // 殼上緣標題列高度
         MM_PAD_BOTTOM: 16,
+        // radial: root 在中心，子節點在以 root 為圓心的同心圓上
+        MM_RADIUS_STEP: 180,    // 每層半徑增量
+        MM_RADIAL_PAD: 40,      // 殼邊與最外圈卡片的間距
 
         // ---- 樹索引（從 treeParents 建立） ----
         // 每次 loadData 後呼叫 _rebuildTreeIndex
@@ -151,6 +154,11 @@ function whiteboardMindmapMixin() {
             if (!shell || !shell.root_atom_id) return;
             this._rebuildTreeIndex();
 
+            if (shell.layout === 'radial' || shell.layout === 'radial-rotated') {
+                this._recalcRadial(shell, shell.layout === 'radial-rotated');
+                return;
+            }
+
             var rootX = shell.pos_x + this.MM_PAD_X;
             var rootY = shell.pos_y + this.MM_PAD_Y;
             var bounds;
@@ -168,6 +176,98 @@ function whiteboardMindmapMixin() {
             var newH = Math.max(120, bounds.bottom - shell.pos_y + this.MM_PAD_BOTTOM);
             shell.width = newW;
             shell.height = newH;
+        },
+
+        // ---- Radial layout: root 中心、子節點在同心圓 ----
+        // 角度配額按 leaf-count 加權，避免分支重疊
+        _countSubtreeLeaves(atomId) {
+            if (this._isCollapsed(atomId)) return 1;
+            var children = this._childrenByParent[atomId] || [];
+            if (children.length === 0) return 1;
+            var sum = 0;
+            for (var i = 0; i < children.length; i++) {
+                sum += this._countSubtreeLeaves(children[i]);
+            }
+            return sum;
+        },
+
+        _placeSubtreeRadial(atomId, cx, cy, angleStart, angleEnd, depth, bounds, applyRotation) {
+            var ca = this._getCanvasAtomByAtomId(atomId);
+            if (!ca) return;
+
+            if (depth === 0) {
+                ca.pos_x = cx - this.MM_NODE_W / 2;
+                ca.pos_y = cy - this.MM_NODE_H / 2;
+                ca._mm_rotate = 0;
+            } else {
+                var midAngle = (angleStart + angleEnd) / 2;
+                var r = depth * this.MM_RADIUS_STEP;
+                ca.pos_x = cx + r * Math.cos(midAngle) - this.MM_NODE_W / 2;
+                ca.pos_y = cy + r * Math.sin(midAngle) - this.MM_NODE_H / 2;
+                if (applyRotation) {
+                    var rotRad = midAngle;
+                    if (Math.cos(midAngle) < 0) rotRad += Math.PI;
+                    ca._mm_rotate = rotRad * 180 / Math.PI;
+                } else {
+                    ca._mm_rotate = 0;
+                }
+            }
+            ca.width = this.MM_NODE_W;
+            ca.height = this.MM_NODE_H;
+
+            if (bounds) {
+                var x1 = ca.pos_x, x2 = ca.pos_x + this.MM_NODE_W;
+                var y1 = ca.pos_y, y2 = ca.pos_y + this.MM_NODE_H;
+                if (x1 < bounds.minX) bounds.minX = x1;
+                if (x2 > bounds.maxX) bounds.maxX = x2;
+                if (y1 < bounds.minY) bounds.minY = y1;
+                if (y2 > bounds.maxY) bounds.maxY = y2;
+            }
+
+            var children = this._isCollapsed(atomId) ? [] : (this._childrenByParent[atomId] || []);
+            if (children.length === 0) return;
+
+            var totalLeaves = 0;
+            var leafArr = [];
+            for (var i = 0; i < children.length; i++) {
+                var lc = this._countSubtreeLeaves(children[i]);
+                leafArr.push(lc);
+                totalLeaves += lc;
+            }
+            if (totalLeaves <= 0) totalLeaves = children.length;
+            var totalAngle = angleEnd - angleStart;
+            var cursor = angleStart;
+            for (var j = 0; j < children.length; j++) {
+                var portion = totalAngle * (leafArr[j] / totalLeaves);
+                this._placeSubtreeRadial(children[j], cx, cy, cursor, cursor + portion, depth + 1, bounds, applyRotation);
+                cursor += portion;
+            }
+        },
+
+        _recalcRadial(shell, applyRotation) {
+            // 圓心 = 殼當前中心；layout 完後保持中心不變、調整 width/height
+            var cx = shell.pos_x + (shell.width || 400) / 2;
+            var cy = shell.pos_y + (shell.height || 240) / 2;
+            var bounds = { minX: cx, maxX: cx, minY: cy, maxY: cy };
+            // -PI/2 起算 = 12 點鐘方向開始繞，視覺較自然
+            this._placeSubtreeRadial(
+                shell.root_atom_id, cx, cy,
+                -Math.PI / 2, Math.PI * 3 / 2, 0, bounds, !!applyRotation
+            );
+            var pad = this.MM_RADIAL_PAD;
+            var halfW = Math.max(
+                150,
+                Math.max(cx - bounds.minX, bounds.maxX - cx) + pad
+            );
+            var halfH = Math.max(
+                80,
+                Math.max(cy - bounds.minY, bounds.maxY - cy) + pad
+            );
+            // 殼上緣有標題列，下方多保留 PAD_Y/2 給視覺平衡
+            shell.pos_x = cx - halfW;
+            shell.pos_y = cy - halfH - this.MM_PAD_Y / 2;
+            shell.width = halfW * 2;
+            shell.height = halfH * 2 + this.MM_PAD_Y / 2;
         },
 
         // ---- Tree Layout (tree-right-diag): 同層 sibling 每張往右錯開 1/4 卡寬 ----
@@ -324,6 +424,14 @@ function whiteboardMindmapMixin() {
             var vs = this.parseVisualStyle(ca);
             if (vs.border) s += ' border:1.5px solid ' + vs.border + ';';
             if (vs.bg) s += ' background:' + vs.bg + ';';
+            // radial-rotated 模式:套用 rotation；編輯中不旋轉以方便輸入
+            if (ca.mindmap_shell_id && ca._mm_rotate &&
+                this.editingMindmapAtomId !== ca.atom_id) {
+                var sh = this.getShellById(ca.mindmap_shell_id);
+                if (sh && sh.layout === 'radial-rotated') {
+                    s += ' transform: rotate(' + ca._mm_rotate + 'deg);';
+                }
+            }
             return s;
         },
 
@@ -593,6 +701,8 @@ function whiteboardMindmapMixin() {
                 if (next !== null && next !== undefined) {
                     e.preventDefault();
                     this.activeMindmapAtomId = next;
+                    var selfNav = this;
+                    this.$nextTick(function() { selfNav.ensureAtomVisible(next); });
                     return true;
                 }
                 return false;
@@ -648,6 +758,7 @@ function whiteboardMindmapMixin() {
                     var inp = document.getElementById('mm-title-input-' + resp.atom.id);
                     if (inp) { inp.focus(); }
                     self.renderConnections();
+                    self.ensureAtomVisible(resp.atom.id);
                 });
                 // undo:reverse = 刪節點
                 var newAtomId = resp.atom.id;
@@ -787,6 +898,21 @@ function whiteboardMindmapMixin() {
             return parent;
         },
 
+        // ---- 從矩形中心沿世界方向 (dx,dy) 到「旋轉 rotDeg 的 w×h 矩形」邊界 ----
+        // 旋轉保長度，邊界點世界坐標 = (cx + dx*t, cy + dy*t)，
+        // 其中 t = min(w/2/|lx|, h/2/|ly|)，(lx,ly) = (dx,dy) 反向旋轉到卡片自身坐標
+        _rectEdgeAlong(cx, cy, rotDeg, w, h, dx, dy) {
+            if (dx === 0 && dy === 0) return { x: cx, y: cy };
+            var rad = -(rotDeg || 0) * Math.PI / 180;
+            var cs = Math.cos(rad), sn = Math.sin(rad);
+            var lx = dx * cs - dy * sn;
+            var ly = dx * sn + dy * cs;
+            var t1 = lx !== 0 ? (w / 2) / Math.abs(lx) : Infinity;
+            var t2 = ly !== 0 ? (h / 2) / Math.abs(ly) : Infinity;
+            var t = Math.min(t1, t2);
+            return { x: cx + dx * t, y: cy + dy * t };
+        },
+
         // ---- SVG 樹線 (parent -> child)，獨立於 canvas_connections ----
         // 固定灰色折線/貝茲,純結構視覺;relation_type connection 由 renderConnections 並存渲染
         renderMindmapTreeLines(svg) {
@@ -810,7 +936,19 @@ function whiteboardMindmapMixin() {
                 var cW = child.width || self.MM_NODE_W;
                 var cH = child.height || self.MM_NODE_H;
 
-                if (layout === 'tree-down') {
+                if (layout === 'radial' || layout === 'radial-rotated') {
+                    // 連線端點精確到「旋轉矩形邊界」，避免穿過卡片
+                    var pcx = parent.pos_x + pW / 2;
+                    var pcy = parent.pos_y + pH / 2;
+                    var ccx = child.pos_x + cW / 2;
+                    var ccy = child.pos_y + cH / 2;
+                    var ddx = ccx - pcx, ddy = ccy - pcy;
+                    var pRot = parent._mm_rotate || 0;
+                    var cRot = child._mm_rotate || 0;
+                    var pe = self._rectEdgeAlong(pcx, pcy, pRot, pW, pH, ddx, ddy);
+                    var ce = self._rectEdgeAlong(ccx, ccy, cRot, cW, cH, -ddx, -ddy);
+                    path += 'M ' + pe.x + ' ' + pe.y + ' L ' + ce.x + ' ' + ce.y + ' ';
+                } else if (layout === 'tree-down') {
                     var px = parent.pos_x + pW / 2;
                     var py = parent.pos_y + pH;
                     var cx = child.pos_x + cW / 2;

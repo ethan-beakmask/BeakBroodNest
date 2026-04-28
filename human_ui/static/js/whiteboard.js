@@ -1509,6 +1509,31 @@ function whiteboardApp(canvasId) {
             if (vp) { var rect = vp.getBoundingClientRect(); this.panX = rect.width / 2 - (ca.pos_x + 130) * this.zoom; this.panY = rect.height / 2 - (ca.pos_y + 80) * this.zoom; this.updateTransform(); this.renderConnections(); this.saveViewport(); }
         },
 
+        // 確保卡片在 viewport 內可見;超出邊界時最小幅度 pan 回視野(留 60px margin)
+        ensureAtomVisible(atomId) {
+            var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
+            if (!ca) return;
+            var vp = this.$refs.viewport;
+            if (!vp) return;
+            var rect = vp.getBoundingClientRect();
+            var w = (ca.width || 140) * this.zoom;
+            var h = (ca.height || 30) * this.zoom;
+            var screenX = ca.pos_x * this.zoom + this.panX;
+            var screenY = ca.pos_y * this.zoom + this.panY;
+            var margin = 60;
+            var dx = 0, dy = 0;
+            if (screenX < margin) dx = margin - screenX;
+            else if (screenX + w > rect.width - margin) dx = rect.width - margin - (screenX + w);
+            if (screenY < margin) dy = margin - screenY;
+            else if (screenY + h > rect.height - margin) dy = rect.height - margin - (screenY + h);
+            if (dx === 0 && dy === 0) return;
+            this.panX += dx;
+            this.panY += dy;
+            this.updateTransform();
+            this.renderConnections();
+            if (this.saveViewport) this.saveViewport();
+        },
+
         isAtomOnCanvas(atomId) { return this.atoms.some(function(ca) { return ca.atom_id === atomId; }); },
 
         // ============================================

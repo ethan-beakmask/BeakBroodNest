@@ -840,7 +840,8 @@
                                    x-model="ed.title"
                                    :disabled="ed.readonly"
                                    placeholder="輸入標題..."
-                                   @input="ed.dirty = true">
+                                   @input="ed.dirty = true"
+                                   @keydown.enter.prevent="focusEditorContent(ed.id)">
                             <div class="card-editor-meta">
                                 <span x-text="ed.atomType"></span>
                                 <span x-text="'#' + ed.atomId"></span>
@@ -1483,7 +1484,15 @@
 
     <!-- 右鍵選單 -->
     <template x-if="contextMenu">
-        <div class="context-menu" :style="'left:' + contextMenu.x + 'px; top:' + contextMenu.y + 'px;'" @click.stop>
+        <div class="context-menu"
+             x-init="$nextTick(() => {
+                 const r = $el.getBoundingClientRect();
+                 const pad = 8;
+                 if (r.bottom > window.innerHeight) $el.style.top  = Math.max(pad, window.innerHeight - r.height - pad) + 'px';
+                 if (r.right  > window.innerWidth)  $el.style.left = Math.max(pad, window.innerWidth  - r.width  - pad) + 'px';
+             })"
+             :style="'left:' + contextMenu.x + 'px; top:' + contextMenu.y + 'px;'"
+             @click.stop>
             <template x-if="contextMenu.type === 'canvas'">
                 <div>
                     <div class="context-menu-item" @click="contextAddAtom()">新增卡片</div>
@@ -1543,6 +1552,12 @@
                     </div>
                     <div class="context-menu-item" @click="setShellLayout(contextMenu.sh.id, 'tree-down'); closeContextMenu()">
                         <span x-text="contextMenu.sh.layout === 'tree-down' ? '✓ 展開向下' : '展開向下'"></span>
+                    </div>
+                    <div class="context-menu-item" @click="setShellLayout(contextMenu.sh.id, 'radial'); closeContextMenu()">
+                        <span x-text="contextMenu.sh.layout === 'radial' ? '✓ 同心圓 (radial)' : '同心圓 (radial)'"></span>
+                    </div>
+                    <div class="context-menu-item" @click="setShellLayout(contextMenu.sh.id, 'radial-rotated'); closeContextMenu()">
+                        <span x-text="contextMenu.sh.layout === 'radial-rotated' ? '✓ 同心圓-旋轉卡片' : '同心圓-旋轉卡片'"></span>
                     </div>
                     <div class="context-menu-separator"></div>
                     <div style="padding:6px 10px;font-size:11px;color:var(--text-muted, #6c757d);">底色</div>

@@ -288,6 +288,14 @@ function whiteboardCardEditorMixin() {
             if (ed) ed.dirty = true;
         },
 
+        // 標題輸入框按 Enter 後將焦點移到內容編輯區開頭
+        focusEditorContent(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed || ed.readonly) return;
+            var ce = _ceStore[ed.atomId];
+            if (ce && ce.editor) ce.editor.commands.focus('start');
+        },
+
         _focusEditor(editorId) {
             var el = document.querySelector('[data-ce-id="' + editorId + '"]');
             if (!el) return;
