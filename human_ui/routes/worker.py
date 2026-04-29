@@ -58,7 +58,7 @@ def worker_kb_search():
             pattern = f'%{keyword}%'
             q = q.filter(
                 KnowledgeAtom.title.ilike(pattern) |
-                KnowledgeAtom.content.ilike(pattern)
+                KnowledgeAtom.content_plain.ilike(pattern)
             )
 
         if tag_name:

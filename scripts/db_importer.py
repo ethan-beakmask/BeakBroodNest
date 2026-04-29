@@ -616,8 +616,12 @@ def import_single_db(jsonl_path: str) -> bool:
         conn.close()
 
 
-def import_batch_db() -> None:
-    """批次匯入所有 JSONL 到 DB"""
+def import_batch_db(since_days: int = 0, limit: int = 0) -> None:
+    """批次匯入 JSONL 到 DB
+
+    since_days: 只處理 mtime 在近 N 天內的檔案（0=不限）
+    limit:      最多處理 N 個檔案（0=不限），按 mtime 由舊到新
+    """
     projects_dir, display_path = get_claude_projects_path()
 
     if not projects_dir:
@@ -631,8 +635,21 @@ def import_batch_db() -> None:
         print(f"[INFO] {projects_dir} 中沒有找到 .jsonl 檔案")
         return
 
-    # 按修改時間排序
+    # mtime 過濾（since_days）
+    if since_days > 0:
+        import time
+        cutoff = time.time() - since_days * 86400
+        before_n = len(files)
+        files = [f for f in files if os.path.getmtime(f) >= cutoff]
+        print(f"[INFO] --since {since_days} 天過濾：{before_n} -> {len(files)} 個檔案")
+
+    # 按修改時間排序（舊到新）
     files.sort(key=lambda x: os.path.getmtime(x))
+
+    # limit 截斷
+    if limit > 0 and len(files) > limit:
+        print(f"[INFO] --limit {limit} 截斷：{len(files)} -> {limit} 個檔案")
+        files = files[:limit]
 
     conn = _get_db_connection()
     print(f"[INFO] 開始批次匯入 {len(files)} 個 JSONL 檔案")
@@ -752,12 +769,16 @@ def main():
                         help='輸入的 JSONL 檔案路徑或編號')
     parser.add_argument('-convertall', action='store_true',
                         help='批次匯入所有檔案')
+    parser.add_argument('--since', type=int, default=0, metavar='DAYS',
+                        help='僅匯入最近 N 天內修改的 jsonl（0=不限）')
+    parser.add_argument('--limit', type=int, default=0, metavar='N',
+                        help='最多匯入 N 個檔案（0=不限，按 mtime 由舊到新）')
 
     args = parser.parse_args()
 
     # 批次匯入
     if args.convertall:
-        import_batch_db()
+        import_batch_db(since_days=args.since, limit=args.limit)
         sys.exit(0)
 
     # 單檔匯入

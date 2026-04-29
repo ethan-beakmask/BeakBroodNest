@@ -24,6 +24,14 @@
             "cron": "30 3 * * *",
             "enabled": true,
             "timeout_seconds": 180
+        },
+        {
+            "name": "nightly_review",
+            "description": "每日復盤 Pipeline P0~P3（每日 08:25，通勤時段，避開夜間風扇噪音）",
+            "command": ["{venv_python}", "{scripts_dir}/nightly_pipeline.py"],
+            "cron": "25 8 * * *",
+            "enabled": true,
+            "timeout_seconds": 3600
         }
     ]
 }

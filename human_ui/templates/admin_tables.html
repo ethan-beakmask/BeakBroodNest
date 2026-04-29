@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>資料表總覽 - BeakCortex</title>
+    <link rel="icon" href="/beakcortex/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/beakcortex/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <script defer src="/beakcortex/static/vendor/alpine.min.js"></script>
+    <style>
+        body { background: #f8f9fa; }
+        .at-page { display: grid; grid-template-columns: 320px 1fr; gap: 12px; }
+        @media (max-width: 900px) { .at-page { grid-template-columns: 1fr; } }
+
+        .at-card { background: #fff; border: 1px solid #dee2e6; border-radius: 4px; }
+
+        /* 左側表清單 */
+        .at-tlist { font-size: 12px; max-height: calc(100vh - 220px); overflow-y: auto; }
+        .at-tlist-row { padding: 4px 8px; cursor: pointer; border-bottom: 1px solid #f1f3f5;
+                        display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .at-tlist-row:hover { background: #f8f9fa; }
+        .at-tlist-row.active { background: #e7f1ff; border-left: 3px solid #0d6efd; padding-left: 5px; }
+        .at-tlist-row.stale { background: #fff5f5; color: #b91c1c; }
+        .at-tlist-row.stale.active { background: #ffe3e3; }
+        .at-tlist-name { font-family: monospace; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .at-tlist-meta { font-size: 10px; color: #6c757d; white-space: nowrap; }
+        .at-tlist-row.active .at-tlist-meta { color: #0d6efd; }
+        .at-tlist-comment { display: block; font-size: 10px; color: #868e96; font-weight: normal;
+                            font-family: system-ui; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .at-kind-badge { font-size: 9px; padding: 1px 4px; border-radius: 2px; background: #dee2e6; color: #495057; font-weight: 500; }
+        .at-kind-badge.view { background: #cfe2ff; color: #084298; }
+        .at-kind-badge.matview { background: #d1e7dd; color: #0a3622; }
+
+        /* 右側內容區 */
+        .at-content { font-size: 12px; }
+        .at-content-head { padding: 8px 12px; border-bottom: 1px solid #dee2e6; }
+        .at-content-title { font-family: monospace; font-weight: 700; font-size: 14px; }
+        .at-content-meta { color: #6c757d; font-size: 11px; }
+
+        .at-rows-table { width: 100%; font-size: 11px; }
+        .at-rows-table th {
+            background: #f1f3f5; font-weight: 600; padding: 4px 8px;
+            border-bottom: 2px solid #dee2e6; white-space: nowrap;
+            position: sticky; top: 0;
+        }
+        .at-rows-table td { padding: 4px 8px; border-bottom: 1px solid #f1f3f5; vertical-align: top;
+                            max-width: 320px; word-wrap: break-word; }
+        .at-rows-table tr.expanded { background: #f8f9fa; }
+        .at-rows-table tr.expand-target { cursor: pointer; }
+        .at-rows-table tr.expand-target:hover { background: #f8f9fa; }
+        .at-cell-trunc { color: #495057; }
+        .at-cell-meta { color: #adb5bd; font-size: 10px; }
+        .at-cell-null { color: #adb5bd; font-style: italic; }
+        .at-cell-pk { font-family: monospace; font-weight: 600; color: #0d6efd; }
+        .at-cell-ts { font-family: monospace; color: #495057; white-space: nowrap; }
+        .at-row-detail { padding: 8px 16px 12px 16px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; }
+        .at-row-detail pre { font-size: 11px; max-height: 400px; overflow: auto; background: #fff;
+                              padding: 8px; border: 1px solid #dee2e6; border-radius: 4px; margin: 0; }
+        .at-rows-scroll { max-height: calc(100vh - 280px); overflow: auto; }
+
+        /* 摘要卡 */
+        .stat-card { border: 1px solid #dee2e6; }
+        .stat-value { font-size: 22px; font-weight: 700; color: #495057; }
+        .stat-label { font-size: 11px; color: #6c757d; letter-spacing: 0.5px; }
+
+        .at-empty { padding: 40px; text-align: center; color: #adb5bd; }
+    </style>
+</head>
+<body>
+
+<div x-data="adminTables()" x-init="load()">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-light bg-white border-bottom">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center gap-3">
+                <a class="navbar-brand mb-0" href="/beakcortex/"
+                   style="font-weight:700;font-size:15px;color:#3b82f6;letter-spacing:-0.3px;">BeakCortex</a>
+                {% include 'partials/nav_menu.html' %}
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <button class="btn btn-sm btn-outline-secondary" @click="load(); if(selectedTable) loadRows(selectedTable);"
+                        :disabled="loading">
+                    <span x-show="!loading">重新整理</span>
+                    <span x-show="loading">載入中...</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-2">
+
+        <!-- 摘要 -->
+        <div class="row g-2 mb-2">
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-1">
+                        <div class="stat-value" x-text="summary.total_tables ?? 0"></div>
+                        <div class="stat-label">資料表總數</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-1">
+                        <div class="stat-value" :class="(summary.no_comment ?? 0) > 0 ? 'text-warning' : ''"
+                             x-text="summary.no_comment ?? 0"></div>
+                        <div class="stat-label">無用途註解</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-1">
+                        <div class="stat-value" :class="(summary.stale_candidates ?? 0) > 0 ? 'text-danger' : ''"
+                             x-text="summary.stale_candidates ?? 0"></div>
+                        <div class="stat-label">廢棄候選</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card stat-card">
+                    <div class="card-body text-center py-1">
+                        <div class="stat-value" x-text="totalRows.toLocaleString()"></div>
+                        <div class="stat-label">所有表筆數總和</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主區：左右分欄 -->
+        <div class="at-page">
+
+            <!-- 左：表清單 -->
+            <div class="at-card">
+                <div class="p-2 border-bottom">
+                    <input type="text" class="form-control form-control-sm" placeholder="搜尋表名 / 用途..."
+                           x-model="filterText">
+                    <div class="d-flex gap-2 mt-1">
+                        <label class="form-check-label small">
+                            <input type="checkbox" class="form-check-input" x-model="onlyStale"> 廢棄候選
+                        </label>
+                        <label class="form-check-label small">
+                            <input type="checkbox" class="form-check-input" x-model="onlyNoComment"> 無註解
+                        </label>
+                        <span class="ms-auto text-muted small" x-text="`${filteredTables.length}/${tables.length}`"></span>
+                    </div>
+                </div>
+                <div class="at-tlist">
+                    <template x-for="t in filteredTables" :key="t.name">
+                        <div class="at-tlist-row" :class="rowClass(t)" @click="selectTable(t.name)">
+                            <div style="flex:1; min-width:0;">
+                                <div class="at-tlist-name">
+                                    <span x-text="t.name"></span>
+                                    <span x-show="t.kind !== 'table'" class="at-kind-badge"
+                                          :class="t.kind" x-text="t.kind"></span>
+                                </div>
+                                <span class="at-tlist-comment" x-text="t.comment || '（無註解）'"></span>
+                            </div>
+                            <div class="at-tlist-meta text-end">
+                                <div x-text="t.row_count !== null ? t.row_count.toLocaleString() : '?'"></div>
+                                <div x-text="formatTsShort(t.last_write_at)"></div>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="!loading && filteredTables.length === 0" class="text-center text-muted py-3 small">
+                        無符合條件
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右：內容 -->
+            <div class="at-card at-content">
+                <template x-if="!selectedTable">
+                    <div class="at-empty">
+                        <div class="mb-2" style="font-size:32px;">←</div>
+                        左側點選一張表，右側將顯示最新 30 筆內容
+                    </div>
+                </template>
+
+                <template x-if="selectedTable">
+                    <div>
+                        <div class="at-content-head">
+                            <div class="at-content-title" x-text="selectedTable"></div>
+                            <div class="at-content-meta">
+                                <span x-text="rowsMeta.comment || '（無註解）'"></span><br>
+                                <span x-show="rowsMeta.order_by">
+                                    排序：<code x-text="rowsMeta.order_by ? (rowsMeta.order_by.col + ' ' + rowsMeta.order_by.dir) : ''"></code>
+                                </span>
+                                <span x-show="!rowsMeta.order_by" class="text-muted">（無 ts_col 也無 PK，自然順序）</span>
+                                ｜共 <span x-text="rowsMeta.returned"></span> 筆
+                                ｜PK: <code x-text="rowsMeta.primary_keys?.join(',') || '--'"></code>
+                            </div>
+                        </div>
+
+                        <div x-show="rowsLoading" class="at-empty">載入中...</div>
+                        <div x-show="rowsError" class="at-empty text-danger" x-text="rowsError"></div>
+
+                        <div x-show="!rowsLoading && !rowsError && rowsMeta.rows && rowsMeta.rows.length === 0"
+                             class="at-empty">空表，無資料</div>
+
+                        <div x-show="!rowsLoading && !rowsError && rowsMeta.rows && rowsMeta.rows.length > 0"
+                             class="at-rows-scroll">
+                            <table class="at-rows-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 24px;"></th>
+                                        <template x-for="c in visibleColumns" :key="c.name">
+                                            <th>
+                                                <span x-text="c.name"></span>
+                                                <span x-show="c.is_pk" class="text-primary" style="font-size:9px;">PK</span>
+                                                <span x-show="c.is_ts" class="text-success" style="font-size:9px;">TS</span>
+                                                <span class="at-cell-meta" x-text="'(' + c.type + ')'"></span>
+                                            </th>
+                                        </template>
+                                    </tr>
+                                </thead>
+                                <template x-for="(row, idx) in rowsMeta.rows" :key="idx">
+                                    <tbody>
+                                        <tr class="expand-target" :class="expandedRow === idx ? 'expanded' : ''"
+                                            @click="toggleExpand(idx)">
+                                            <td>
+                                                <span x-text="expandedRow === idx ? '▼' : '▶'" class="text-muted"></span>
+                                            </td>
+                                            <template x-for="c in visibleColumns" :key="c.name">
+                                                <td>
+                                                    <template x-if="row[c.name] === null || row[c.name] === undefined">
+                                                        <span class="at-cell-null">null</span>
+                                                    </template>
+                                                    <template x-if="row[c.name] !== null && row[c.name] !== undefined && isPreviewObj(row[c.name])">
+                                                        <span>
+                                                            <span class="at-cell-trunc" x-text="row[c.name]._preview"></span>
+                                                            <span x-show="row[c.name]._truncated && row[c.name]._full_len"
+                                                                  class="at-cell-meta"
+                                                                  x-text="' (' + row[c.name]._full_len + ' chars)'"></span>
+                                                        </span>
+                                                    </template>
+                                                    <template x-if="row[c.name] !== null && row[c.name] !== undefined && !isPreviewObj(row[c.name])">
+                                                        <span :class="cellClass(c)" x-text="formatCell(row[c.name], c)"></span>
+                                                    </template>
+                                                </td>
+                                            </template>
+                                        </tr>
+                                        <tr x-show="expandedRow === idx">
+                                            <td :colspan="visibleColumns.length + 1" class="at-row-detail">
+                                                <pre x-text="rowFullJson(row)"></pre>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </template>
+                            </table>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <p class="text-muted small mt-2 mb-0">
+            左側標紅：筆數=0 且找不到任何寫入時間（廢棄候選）。
+            右側點任一列可展開檢視完整 JSON。
+            vector 欄位（如 embedding）一律不顯示以避免噪音。
+        </p>
+
+    </div>
+</div>
+
+<script>
+function adminTables() {
+    return {
+        tables: [],
+        summary: {},
+        loading: false,
+        filterText: '',
+        onlyStale: false,
+        onlyNoComment: false,
+
+        selectedTable: '',
+        rowsMeta: {},
+        rowsLoading: false,
+        rowsError: '',
+        expandedRow: -1,
+
+        async load() {
+            this.loading = true;
+            try {
+                const resp = await fetch('/beakcortex/api/admin/tables');
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                this.tables = data.tables || [];
+                this.summary = data.summary || {};
+                // hash 自動選表
+                if (!this.selectedTable && location.hash) {
+                    const hashName = decodeURIComponent(location.hash.slice(1));
+                    if (this.tables.some(t => t.name === hashName)) {
+                        this.selectTable(hashName);
+                    }
+                }
+            } catch (e) {
+                alert('載入失敗: ' + e.message);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        get totalRows() {
+            return this.tables.reduce((sum, t) => sum + (t.row_count || 0), 0);
+        },
+
+        isStale(t) {
+            return (t.row_count === 0) && (t.last_write_at === null);
+        },
+
+        rowClass(t) {
+            const classes = [];
+            if (this.selectedTable === t.name) classes.push('active');
+            if (this.isStale(t)) classes.push('stale');
+            return classes.join(' ');
+        },
+
+        get filteredTables() {
+            let arr = this.tables;
+            const q = this.filterText.trim().toLowerCase();
+            if (q) {
+                arr = arr.filter(t =>
+                    t.name.toLowerCase().includes(q) ||
+                    (t.comment || '').toLowerCase().includes(q)
+                );
+            }
+            if (this.onlyStale) arr = arr.filter(t => this.isStale(t));
+            if (this.onlyNoComment) arr = arr.filter(t => !t.comment);
+            return arr;
+        },
+
+        get visibleColumns() {
+            if (!this.rowsMeta.columns) return [];
+            return this.rowsMeta.columns.filter(c => c.is_default_visible);
+        },
+
+        async selectTable(name) {
+            this.selectedTable = name;
+            this.expandedRow = -1;
+            location.hash = encodeURIComponent(name);
+            await this.loadRows(name);
+        },
+
+        async loadRows(name) {
+            this.rowsLoading = true;
+            this.rowsError = '';
+            this.rowsMeta = {};
+            try {
+                const resp = await fetch(`/beakcortex/api/admin/tables/${encodeURIComponent(name)}/latest?limit=30`);
+                if (!resp.ok) {
+                    const txt = await resp.text();
+                    throw new Error('HTTP ' + resp.status + ' ' + txt.slice(0, 200));
+                }
+                this.rowsMeta = await resp.json();
+            } catch (e) {
+                this.rowsError = '載入失敗: ' + e.message;
+            } finally {
+                this.rowsLoading = false;
+            }
+        },
+
+        toggleExpand(idx) {
+            this.expandedRow = this.expandedRow === idx ? -1 : idx;
+        },
+
+        isPreviewObj(v) {
+            return v && typeof v === 'object' && !Array.isArray(v) && '_preview' in v;
+        },
+
+        cellClass(col) {
+            if (col.is_pk) return 'at-cell-pk';
+            if (col.is_ts) return 'at-cell-ts';
+            return '';
+        },
+
+        formatCell(v, col) {
+            if (v === null || v === undefined) return '';
+            if (col.is_ts && typeof v === 'string') {
+                const d = new Date(v);
+                if (!isNaN(d.getTime())) {
+                    const pad = n => String(n).padStart(2, '0');
+                    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                }
+            }
+            if (typeof v === 'boolean') return v ? 'true' : 'false';
+            return String(v);
+        },
+
+        formatTsShort(ts) {
+            if (!ts) return '--';
+            const d = new Date(ts);
+            if (isNaN(d.getTime())) return '?';
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        },
+
+        rowFullJson(row) {
+            // 把 _full 解出來成完整 row
+            const out = {};
+            for (const k in row) {
+                const v = row[k];
+                if (this.isPreviewObj(v) && '_full' in v) {
+                    out[k] = v._full;
+                } else if (this.isPreviewObj(v)) {
+                    out[k] = v._preview;
+                } else {
+                    out[k] = v;
+                }
+            }
+            return JSON.stringify(out, null, 2);
+        },
+    };
+}
+</script>
+
+</body>
+</html>

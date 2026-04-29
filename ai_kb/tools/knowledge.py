@@ -239,10 +239,11 @@ def register(mcp):
             def _keyword_search():
                 use_trgm = query and len(query) > 2
 
+                # 搜尋走 content_plain（HTML stripped），避免 <font> / <span style> 把關鍵字切斷
                 if use_trgm:
                     sim_expr = func.greatest(
                         func.similarity(KnowledgeAtom.title, query),
-                        func.similarity(KnowledgeAtom.content, query),
+                        func.similarity(KnowledgeAtom.content_plain, query),
                     )
                     pattern = f'%{query}%'
                     q = (
@@ -251,7 +252,7 @@ def register(mcp):
                         .filter(KnowledgeAtom.is_deleted == False)
                         .filter(
                             KnowledgeAtom.title.ilike(pattern) |
-                            KnowledgeAtom.content.ilike(pattern)
+                            KnowledgeAtom.content_plain.ilike(pattern)
                         )
                     )
                 else:
@@ -265,7 +266,7 @@ def register(mcp):
                         pattern = f'%{query}%'
                         q = q.filter(
                             KnowledgeAtom.title.ilike(pattern) |
-                            KnowledgeAtom.content.ilike(pattern)
+                            KnowledgeAtom.content_plain.ilike(pattern)
                         )
 
                 q = _apply_filters(q)

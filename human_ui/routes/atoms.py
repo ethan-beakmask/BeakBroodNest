@@ -27,7 +27,7 @@ def list_atoms():
         if use_trgm:
             sim_expr = func.greatest(
                 func.similarity(KnowledgeAtom.title, keyword),
-                func.similarity(KnowledgeAtom.content, keyword),
+                func.similarity(KnowledgeAtom.content_plain, keyword),
             )
             pattern = f'%{keyword}%'
             q = (
@@ -35,7 +35,7 @@ def list_atoms():
                 .filter(KnowledgeAtom.is_deleted == False)
                 .filter(
                     KnowledgeAtom.title.ilike(pattern) |
-                    KnowledgeAtom.content.ilike(pattern)
+                    KnowledgeAtom.content_plain.ilike(pattern)
                 )
             )
         else:
@@ -45,7 +45,7 @@ def list_atoms():
                 pattern = f'%{keyword}%'
                 q = q.filter(
                     KnowledgeAtom.title.ilike(pattern) |
-                    KnowledgeAtom.content.ilike(pattern)
+                    KnowledgeAtom.content_plain.ilike(pattern)
                 )
 
         # 篩選參數
@@ -519,7 +519,7 @@ def hybrid_search():
             .filter(
                 KnowledgeAtom.is_deleted == False,
                 KnowledgeAtom.title.ilike(pattern) |
-                KnowledgeAtom.content.ilike(pattern)
+                KnowledgeAtom.content_plain.ilike(pattern)
             )
             .order_by(KnowledgeAtom.vitality_score.desc())
             .limit(limit)

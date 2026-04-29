@@ -26,10 +26,10 @@ def check_consistency(
 
     limit = min(limit, 50)
 
-    # 相似度計算：取 title 和 content 的最大相似度
+    # 相似度計算：取 title 和 content_plain（HTML stripped）的最大相似度
     sim_expr = func.greatest(
         func.similarity(KnowledgeAtom.title, content),
-        func.similarity(KnowledgeAtom.content, content),
+        func.similarity(KnowledgeAtom.content_plain, content),
     )
 
     q = (

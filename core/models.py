@@ -6,7 +6,8 @@ import datetime
 import secrets
 from sqlalchemy import (
     Integer, BigInteger, String, Text, Float, Boolean, DateTime, Date,
-    ForeignKey, UniqueConstraint, Index, CheckConstraint, Numeric
+    ForeignKey, UniqueConstraint, Index, CheckConstraint, Numeric,
+    event,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -146,6 +147,9 @@ class KnowledgeAtom(Base):
     # 軟刪除
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # HTML strip 後的純文字（搜尋與 embedding 用，由 ORM event hook 維護）
+    content_plain: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # 關聯
     schema: Mapped["AtomSchema | None"] = relationship()
     tags: Mapped[list["Tag"]] = relationship(
@@ -164,11 +168,21 @@ class KnowledgeAtom(Base):
         Index('idx_atoms_needs_embedding', 'needs_embedding'),
     )
 
+    @staticmethod
+    def _sync_content_plain(_mapper, _connection, target):
+        """ORM event：每次 INSERT/UPDATE 從 content 重算 content_plain。
+        所有 11 個寫入路徑（routes/MCP/scripts）都會自動觸發，呼叫端零改動。
+        若 content 為 None，content_plain 為空字串。
+        """
+        from core.html_strip import strip_html
+        target.content_plain = strip_html(target.content or '')
+
     def to_dict(self, include_tags=False, include_values=False):
         d = {
             'id': self.id,
             'title': self.title,
             'content': self.content,
+            'content_plain': self.content_plain,
             'content_json': self.content_json,
             'content_type': self.content_type,
             'thumbnail_url': self.thumbnail_url,
@@ -190,6 +204,11 @@ class KnowledgeAtom(Base):
         if include_values and self.field_values:
             d['field_values'] = {fv.field.name: fv.value for fv in self.field_values if fv.field}
         return d
+
+
+# 註冊 KnowledgeAtom 的 content -> content_plain 自動同步
+event.listen(KnowledgeAtom, 'before_insert', KnowledgeAtom._sync_content_plain)
+event.listen(KnowledgeAtom, 'before_update', KnowledgeAtom._sync_content_plain)
 
 
 # ============================================================

@@ -74,15 +74,26 @@ def collect_error_stats(conn, conversation_id: str = None) -> dict:
     """
     從 P1 訊號統計易出錯的技術項目。
 
+    探索性失敗識別（C 案）：
+      若 tool_failure / error 訊號發生後 EXPLORATION_WINDOW 個 turn 內出現 retry 訊號，
+      視為「Claude 嘗試後換方式」的正常探索行為，從 by_type.tool_failure / by_type.error
+      移到 by_type.exploration；對應的 error_pattern 也移到 by_exploration_pattern。
+      可避免把日常探索誤計為真錯誤。
+
     回傳:
     {
-        "by_type": {"error": 79, "tool_failure": 53, ...},
+        "by_type": {"error": 79, "tool_failure": 53, "exploration": 30, ...},
         "by_tool": {"Bash": 30, "Edit": 15, ...},
-        "by_error_pattern": {"permission denied": 5, "ModuleNotFoundError": 3, ...},
+        "by_error_pattern": {...},          # 真錯誤
+        "by_exploration_pattern": {...},    # 探索性失敗
         "by_file": {"/opt/xxx/app.py": 8, ...},
         "conversations_analyzed": 10
     }
     """
+    import re
+
+    EXPLORATION_WINDOW = 5  # tool_failure/error 後 N turn 內若有 retry，視為探索
+
     cur = conn.cursor()
 
     # 篩選條件
@@ -106,9 +117,11 @@ def collect_error_stats(conn, conversation_id: str = None) -> dict:
         'by_type': {},
         'by_tool': {},
         'by_error_pattern': {},
+        'by_exploration_pattern': {},
         'by_file': {},
         'conversations_analyzed': set(),
         'total_signal_turns': len(rows),
+        'exploration_window': EXPLORATION_WINDOW,
     }
 
     # 常見錯誤模式
@@ -130,33 +143,61 @@ def collect_error_stats(conn, conversation_id: str = None) -> dict:
         ('already exists', 'already exists'),
     ]
 
-    import re
+    # 第一輪：parse signals + 建 retry 索引
+    parsed = []  # (conv_id_str, turn_seq, role, tool_name, content, signals_list)
+    retry_turns = set()  # {(conv_id_str, turn_seq)}
     for row in rows:
         conv_id, turn_seq, role, tool_name, content, signals = row
-        stats['conversations_analyzed'].add(str(conv_id))
-
         if isinstance(signals, str):
             signals = json.loads(signals)
+        signals = signals or []
+        cid = str(conv_id)
+        parsed.append((cid, turn_seq, role, tool_name, content, signals))
+        for sig in signals:
+            if sig.get('type') == 'retry':
+                retry_turns.add((cid, turn_seq))
 
-        for sig in (signals or []):
+    def _is_exploratory(cid, turn_seq):
+        """tool_failure / error 後 EXPLORATION_WINDOW 個 turn 內有 retry → 探索性"""
+        for i in range(1, EXPLORATION_WINDOW + 1):
+            if (cid, turn_seq + i) in retry_turns:
+                return True
+        return False
+
+    # 第二輪：統計
+    for cid, turn_seq, role, tool_name, content, signals in parsed:
+        stats['conversations_analyzed'].add(cid)
+
+        # 該 turn 是否含 tool_failure / error 訊號 + 後續是否 retry
+        has_failure_sig = any(s.get('type') in ('tool_failure', 'error') for s in signals)
+        is_explore = has_failure_sig and _is_exploratory(cid, turn_seq)
+
+        # by_type 統計
+        for sig in signals:
             sig_type = sig.get('type', 'unknown')
-            stats['by_type'][sig_type] = stats['by_type'].get(sig_type, 0) + 1
+            if is_explore and sig_type in ('tool_failure', 'error'):
+                stats['by_type']['exploration'] = stats['by_type'].get('exploration', 0) + 1
+            else:
+                stats['by_type'][sig_type] = stats['by_type'].get(sig_type, 0) + 1
 
         # 工具統計
         if tool_name:
             stats['by_tool'][tool_name] = stats['by_tool'].get(tool_name, 0) + 1
 
-        # 錯誤模式匹配
+        # 錯誤模式匹配 → 探索與真錯誤分桶
         content_str = content or ''
         for pattern, label in error_patterns:
             if re.search(pattern, content_str, re.IGNORECASE):
-                stats['by_error_pattern'][label] = stats['by_error_pattern'].get(label, 0) + 1
+                if is_explore:
+                    stats['by_exploration_pattern'][label] = stats['by_exploration_pattern'].get(label, 0) + 1
+                else:
+                    stats['by_error_pattern'][label] = stats['by_error_pattern'].get(label, 0) + 1
                 break  # 每個 turn 只匹配第一個模式
 
     stats['conversations_analyzed'] = len(stats['conversations_analyzed'])
 
     # 排序
-    for key in ['by_type', 'by_tool', 'by_error_pattern', 'by_file']:
+    for key in ['by_type', 'by_tool', 'by_error_pattern', 'by_exploration_pattern', 'by_file']:
         stats[key] = dict(sorted(stats[key].items(), key=lambda x: x[1], reverse=True))
 
     return stats

@@ -38,12 +38,16 @@ def generate_embedding(text_content: str) -> list[float]:
 
 
 def atom_to_text(atom: KnowledgeAtom) -> str:
-    """將原子轉換為嵌入用文本（title + content）"""
+    """將原子轉換為嵌入用文本（title + content_plain）。
+    優先用 content_plain（HTML stripped），避免 <font> / <span style> 噪音污染向量；
+    若 content_plain 為 None（極少見，例如 migration 後尚未回填），fallback 用 content。
+    """
     parts = []
     if atom.title:
         parts.append(atom.title)
-    if atom.content:
-        parts.append(atom.content)
+    body = atom.content_plain if atom.content_plain is not None else atom.content
+    if body:
+        parts.append(body)
     return '\n'.join(parts) if parts else ''
 
 
