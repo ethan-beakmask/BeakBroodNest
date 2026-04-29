@@ -5,13 +5,15 @@
 import { Editor, Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 
-// 額外 list 熱鍵 (與文字框對齊) + Tab 守門
+// 額外 list 熱鍵 (與文字框對齊) + Tab 守門 + Enter 守門
 //   Ctrl+Shift+6 = 清單 (BulletList)
 //   Ctrl+Shift+7 = 編號 (OrderedList) -- Tiptap StarterKit 已內建
 //   Ctrl+Shift+8 = 清單 (BulletList) -- Tiptap StarterKit 已內建
 // Tab / Shift+Tab: 同 key 在多個 extension 註冊時 Tiptap 會以後註冊者覆寫,
 //   所以這裡完整接管,內部呼叫 sinkListItem/liftListItem 處理 list 巢狀,
 //   不論成不成功一律 return true 吃掉,防 focus 跳出編輯器。
+// Enter: ListItem 預設只跑 splitListItem,空項時 splitListItem return false 不會
+//   自動 lift,使空 li 連續累積。這裡接管後改成 split 失敗→lift,空項按 Enter 即退出清單。
 const ListHotkeys = Extension.create({
     name: 'listHotkeys',
     addKeyboardShortcuts() {
@@ -26,6 +28,17 @@ const ListHotkeys = Extension.create({
                 editor.commands.liftListItem('listItem')
                     || editor.commands.liftListItem('taskItem');
                 return true;
+            },
+            Enter: ({ editor }) => {
+                if (editor.isActive('listItem')) {
+                    return editor.commands.splitListItem('listItem')
+                        || editor.commands.liftListItem('listItem');
+                }
+                if (editor.isActive('taskItem')) {
+                    return editor.commands.splitListItem('taskItem')
+                        || editor.commands.liftListItem('taskItem');
+                }
+                return false;
             },
         }
     },

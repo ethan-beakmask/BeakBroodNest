@@ -1588,6 +1588,7 @@
             <template x-if="contextMenu.type === 'mindmap_node'">
                 <div>
                     <div class="context-menu-item" @click="onMindmapNodeDblClick(contextMenu.ca); closeContextMenu()">編輯標題</div>
+                    <div class="context-menu-item" @click="openCardEditor(contextMenu.ca.atom_id); closeContextMenu()">編輯卡片（Ctrl+E）</div>
                     <div class="context-menu-item" @click="extractMindmapSubtree(contextMenu.ca.mindmap_shell_id, contextMenu.ca.atom_id); closeContextMenu()">脫離殼（子樹一起變獨立卡）</div>
                     <div class="context-menu-separator"></div>
                     <div style="padding:4px 10px;font-size:11px;color:var(--text-muted, #6c757d);">
