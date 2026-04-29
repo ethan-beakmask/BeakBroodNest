@@ -1615,3 +1615,32 @@
             </template>
         </div>
     </template>
+<!-- ============================================
+     Toolbar 按鈕標 tabindex=-1,避免 contenteditable 的 Tab 跑到 toolbar
+     觸發如「-表(刪除整張表)」之類的危險按鈕。
+     ============================================ -->
+<script>
+(function () {
+    const SEL = '.ce-pane-toolbar button, .ce-pane-toolbar-2 button, .ce-pane-toolbar-pdf button'
+    const apply = (root) => {
+        if (!root || !root.querySelectorAll) return
+        root.querySelectorAll(SEL).forEach(b => {
+            if (b.tabIndex !== -1) b.tabIndex = -1
+        })
+    }
+    const start = () => {
+        apply(document)
+        const obs = new MutationObserver(muts => {
+            for (const m of muts) {
+                m.addedNodes.forEach(n => { if (n.nodeType === 1) apply(n) })
+            }
+        })
+        obs.observe(document.body, { childList: true, subtree: true })
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', start)
+    } else {
+        start()
+    }
+})()
+</script>

@@ -9,9 +9,10 @@ import StarterKit from '@tiptap/starter-kit'
 //   Ctrl+Shift+6 = 清單 (BulletList)
 //   Ctrl+Shift+7 = 編號 (OrderedList) -- Tiptap StarterKit 已內建
 //   Ctrl+Shift+8 = 清單 (BulletList) -- Tiptap StarterKit 已內建
-// Tab / Shift+Tab: 同 key 在多個 extension 註冊時 Tiptap 會以後註冊者覆寫,
-//   所以這裡完整接管,內部呼叫 sinkListItem/liftListItem 處理 list 巢狀,
-//   不論成不成功一律 return true 吃掉,防 focus 跳出編輯器。
+// Tab / Shift+Tab:
+//   - 在 listItem / taskItem 內 -> sink/lift,return true 阻止跳出編輯器
+//   - 不在 list 內 -> return false 讓 PM Table 等 extension 處理
+//     (例如表格 cell 內 Tab 應走 PM Table 的 goToNextCell)
 // Enter: ListItem 預設只跑 splitListItem,空項時 splitListItem return false 不會
 //   自動 lift,使空 li 連續累積。這裡接管後改成 split 失敗→lift,空項按 Enter 即退出清單。
 const ListHotkeys = Extension.create({
@@ -20,14 +21,32 @@ const ListHotkeys = Extension.create({
         return {
             'Mod-Shift-6': () => this.editor.commands.toggleBulletList(),
             Tab: ({ editor }) => {
-                editor.commands.sinkListItem('listItem')
-                    || editor.commands.sinkListItem('taskItem');
-                return true;
+                if (editor.isActive('listItem') || editor.isActive('taskItem')) {
+                    editor.commands.sinkListItem('listItem')
+                        || editor.commands.sinkListItem('taskItem');
+                    return true;
+                }
+                // 在表格內 Tab 跨 cell;最後一格自動創新列
+                if (editor.isActive('table')) {
+                    if (!editor.commands.goToNextCell('next')) {
+                        editor.commands.addRowAfter();
+                        editor.commands.goToNextCell('next');
+                    }
+                    return true;
+                }
+                return false;
             },
             'Shift-Tab': ({ editor }) => {
-                editor.commands.liftListItem('listItem')
-                    || editor.commands.liftListItem('taskItem');
-                return true;
+                if (editor.isActive('listItem') || editor.isActive('taskItem')) {
+                    editor.commands.liftListItem('listItem')
+                        || editor.commands.liftListItem('taskItem');
+                    return true;
+                }
+                if (editor.isActive('table')) {
+                    editor.commands.goToNextCell('previous');
+                    return true;
+                }
+                return false;
             },
             Enter: ({ editor }) => {
                 if (editor.isActive('listItem')) {

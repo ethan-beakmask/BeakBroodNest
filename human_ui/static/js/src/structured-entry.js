@@ -30,6 +30,67 @@ function _entryDepth(state) {
     return -1
 }
 
+// 共用:判斷 selection 是否為 NodeSelection 且選中 structuredEntry。
+function _isEntryNodeSelection(sel) {
+    return sel instanceof NodeSelection
+        && sel.node
+        && sel.node.type.name === 'structuredEntry'
+}
+
+// 共用:在 caret 位於 textblock 末尾且下一個 sibling 是 entry 時,把 selection 設為 NodeSelection。
+function _enterEntryAfterIfAdjacent(editor) {
+    const state = editor.state
+    const { $from, empty } = state.selection
+    if (!empty) return false
+    const parent = $from.parent
+    if ($from.parentOffset !== parent.content.size) return false
+    try {
+        const after = $from.after($from.depth)
+        const next = state.doc.nodeAt(after)
+        if (next && next.type.name === 'structuredEntry') {
+            const tr = state.tr.setSelection(NodeSelection.create(state.doc, after))
+            editor.view.dispatch(tr)
+            editor.view.focus()
+            return true
+        }
+    } catch (_) { /* ignore */ }
+    return false
+}
+
+// 共用:在 caret 位於 textblock 開頭且前一個 sibling 是 entry 時,把 selection 設為 NodeSelection。
+function _enterEntryBeforeIfAdjacent(editor) {
+    const state = editor.state
+    const { $from, empty } = state.selection
+    if (!empty) return false
+    if ($from.parentOffset !== 0) return false
+    try {
+        const before = $from.before($from.depth)
+        if (before <= 0) return false
+        const $before = state.doc.resolve(before)
+        const prev = $before.nodeBefore
+        if (prev && prev.type.name === 'structuredEntry') {
+            const prevPos = before - prev.nodeSize
+            const tr = state.tr.setSelection(NodeSelection.create(state.doc, prevPos))
+            editor.view.dispatch(tr)
+            editor.view.focus()
+            return true
+        }
+    } catch (_) { /* ignore */ }
+    return false
+}
+
+// 共用:當前 NodeSelection 對 entry 時開 modal 編輯。
+function _openEditOnSelectedEntry(editor) {
+    const sel = editor.state.selection
+    if (!_isEntryNodeSelection(sel)) return false
+    const dom = editor.view.nodeDOM(sel.from)
+    if (dom && typeof dom._beakOpenEdit === 'function') {
+        dom._beakOpenEdit()
+        return true
+    }
+    return false
+}
+
 // 共用:判斷 selection 是否在 structuredEntry 內(供 paste 攔截使用)。
 function _isSelectionInEntry(state) {
     const { $from } = state.selection
@@ -175,52 +236,95 @@ export const StructuredEntry = Node.create({
     },
 
     addKeyboardShortcuts() {
-        // entry NodeView 永遠 contentEditable=false,PM caret 不會停在 entry 內。
-        // 這裡的 handlers 主要保護「entry 邊界外的鍵盤誤刪 / 跨入」:
-        //   ArrowUp/Down                  -> 從前/後段跨進 entry 時直接跳過
-        //   Enter / Shift-Enter / Mod-Enter -> 不允許在 entry 內 splitBlock(理論上不會觸發)
-        //   Tab / Shift-Tab               -> entry 內無 focusable,跳出
-        //   Backspace 在 entry 後 textblock 開頭 -> 吃掉,禁外部刪入 entry
-        //   Delete    在 entry 前 textblock 末端  -> 吃掉,禁外部刪入 entry
-        //   F2                            -> NodeSelection 指向 entry 時開 modal 編輯
+        // entry NodeView 永遠 contentEditable=false。鍵盤行為:
+        //   ArrowDown 從前段末尾 -> 將下一個 entry 設為 NodeSelection (停在 entry)
+        //   ArrowDown 在 entry NodeSelection -> 跳到下一個非 entry textblock
+        //   ArrowUp   對稱
+        //   Enter on NodeSelection(entry) -> 開 modal
+        //   F2 on NodeSelection(entry)    -> 開 modal
+        //   Tab on NodeSelection(entry)   -> 跳到下一個位置 (同 ArrowDown)
+        //   Backspace/Delete on NodeSelection(entry) -> 吃掉 (entry 只能由 [x] 刪除)
+        //   Backspace 在 entry 後段首字 / Delete 在 entry 前段末字 -> 吃掉
         return {
             ArrowUp: ({ editor }) => {
-                if (_entryDepth(editor.state) < 0) return false
-                return _focusBeforeCurrentEntry(editor)
+                const state = editor.state
+                const sel = state.selection
+                // 已 NodeSelection 在 entry 上 -> 跳出到上一個位置
+                if (_isEntryNodeSelection(sel)) {
+                    return _focusBackwardFromPos(editor, sel.from)
+                }
+                // 萬一 caret 跑進 entry inline -> redirect 出去
+                if (_entryDepth(state) >= 0) {
+                    return _focusBeforeCurrentEntry(editor)
+                }
+                // 在 textblock 開頭 + 前一個 sibling 是 entry -> 設 NodeSelection
+                return _enterEntryBeforeIfAdjacent(editor)
             },
             ArrowDown: ({ editor }) => {
-                if (_entryDepth(editor.state) < 0) return false
-                return _focusAfterCurrentEntry(editor)
+                const state = editor.state
+                const sel = state.selection
+                if (_isEntryNodeSelection(sel)) {
+                    const node = state.doc.nodeAt(sel.from)
+                    if (!node) return false
+                    return _focusForwardFromPos(editor, sel.from + node.nodeSize)
+                }
+                if (_entryDepth(state) >= 0) {
+                    return _focusAfterCurrentEntry(editor)
+                }
+                return _enterEntryAfterIfAdjacent(editor)
             },
             Enter: ({ editor }) => {
+                const sel = editor.state.selection
+                // entry NodeSelection -> 開 modal
+                if (_isEntryNodeSelection(sel)) {
+                    return _openEditOnSelectedEntry(editor)
+                }
                 if (_entryDepth(editor.state) < 0) return false
                 return _focusAfterCurrentEntry(editor)
             },
             'Shift-Enter': ({ editor }) => {
+                if (_isEntryNodeSelection(editor.state.selection)) {
+                    return _openEditOnSelectedEntry(editor)
+                }
                 if (_entryDepth(editor.state) < 0) return false
                 return _focusAfterCurrentEntry(editor)
             },
             'Mod-Enter': ({ editor }) => {
+                if (_isEntryNodeSelection(editor.state.selection)) {
+                    return _openEditOnSelectedEntry(editor)
+                }
                 if (_entryDepth(editor.state) < 0) return false
                 return _focusAfterCurrentEntry(editor)
             },
             Tab: ({ editor }) => {
-                if (_entryDepth(editor.state) < 0) return false
+                const state = editor.state
+                const sel = state.selection
+                if (_isEntryNodeSelection(sel)) {
+                    const node = state.doc.nodeAt(sel.from)
+                    if (!node) return false
+                    return _focusForwardFromPos(editor, sel.from + node.nodeSize)
+                }
+                if (_entryDepth(state) < 0) return false
                 return _focusAfterCurrentEntry(editor)
             },
             'Shift-Tab': ({ editor }) => {
+                const sel = editor.state.selection
+                if (_isEntryNodeSelection(sel)) {
+                    return _focusBackwardFromPos(editor, sel.from)
+                }
                 if (_entryDepth(editor.state) < 0) return false
                 return _focusBeforeCurrentEntry(editor)
             },
             Backspace: ({ editor }) => {
                 const state = editor.state
-                const { $from, empty } = state.selection
+                const sel = state.selection
+                // NodeSelection 對 entry -> 吃掉(entry 只能透過 [x] 刪除)
+                if (_isEntryNodeSelection(sel)) return true
+                const { $from, empty } = sel
                 if (!empty) return false
                 if (_entryDepth(state) >= 0) {
-                    // 萬一 PM 不慎把 caret 放進 entry,直接 redirect 出去
                     return _focusBeforeCurrentEntry(editor)
                 }
-                // 在 textblock 開頭 + 前一個 sibling 是 entry -> 吃掉
                 if ($from.parentOffset !== 0) return false
                 try {
                     const before = $from.before($from.depth)
@@ -233,7 +337,9 @@ export const StructuredEntry = Node.create({
             },
             Delete: ({ editor }) => {
                 const state = editor.state
-                const { $from, empty } = state.selection
+                const sel = state.selection
+                if (_isEntryNodeSelection(sel)) return true
+                const { $from, empty } = sel
                 if (!empty) return false
                 if (_entryDepth(state) >= 0) {
                     return _focusAfterCurrentEntry(editor)
@@ -248,15 +354,8 @@ export const StructuredEntry = Node.create({
                 return false
             },
             F2: ({ editor }) => {
-                const sel = editor.state.selection
-                if (sel instanceof NodeSelection
-                    && sel.node
-                    && sel.node.type.name === 'structuredEntry') {
-                    const dom = editor.view.nodeDOM(sel.from)
-                    if (dom && typeof dom._beakOpenEdit === 'function') {
-                        dom._beakOpenEdit()
-                        return true
-                    }
+                if (_isEntryNodeSelection(editor.state.selection)) {
+                    return _openEditOnSelectedEntry(editor)
                 }
                 return false
             },
