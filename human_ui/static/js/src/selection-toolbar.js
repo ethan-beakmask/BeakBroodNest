@@ -147,6 +147,7 @@ class SelectionToolbarView {
                 + MAX_CONVERT_LEN + ' 字內再轉換'
             this.dropdown.appendChild(warn)
             this.dropdown.style.display = 'block'
+            this._adjustDropdownPosition()
             return
         }
 
@@ -176,6 +177,24 @@ class SelectionToolbarView {
         }
 
         this.dropdown.style.display = 'block'
+        this._adjustDropdownPosition()
+    }
+
+    _adjustDropdownPosition() {
+        // dropdown 預設往下展;如下方空間不夠則翻到 toolbar 上方
+        this.dropdown.style.top = '100%'
+        this.dropdown.style.bottom = 'auto'
+        this.dropdown.style.marginTop = '4px'
+        this.dropdown.style.marginBottom = '0'
+        const ddRect = this.dropdown.getBoundingClientRect()
+        const tbRect = this.toolbar.getBoundingClientRect()
+        const viewportH = window.innerHeight
+        if (tbRect.bottom + ddRect.height + 4 > viewportH && tbRect.top - ddRect.height - 4 > 0) {
+            this.dropdown.style.top = 'auto'
+            this.dropdown.style.bottom = '100%'
+            this.dropdown.style.marginTop = '0'
+            this.dropdown.style.marginBottom = '4px'
+        }
     }
 
     _convertSelection(schema) {

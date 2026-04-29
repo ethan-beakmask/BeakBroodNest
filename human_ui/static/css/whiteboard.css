@@ -933,6 +933,66 @@
 .wb-textbox-anchor.left:hover   { transform: translateY(-50%) scale(1.2); }
 .wb-textbox-anchor.right:hover  { transform: translateY(-50%) scale(1.2); }
 
+/* ---- OrderedList 三層 (1. -> a. -> i.) ----
+   套用於文字框渲染輸出 (.wb-textbox-rendered) 與 Tiptap 卡片編輯內容 (.card-editor-content)
+*/
+.wb-3level ol, .card-editor-content ol {
+    list-style-type: decimal;
+    padding-left: 1.8em;
+    margin: 2px 0;
+}
+.wb-3level ol ol, .card-editor-content ol ol {
+    list-style-type: lower-alpha;
+}
+.wb-3level ol ol ol, .card-editor-content ol ol ol {
+    list-style-type: lower-roman;
+}
+.wb-3level ul, .card-editor-content ul {
+    list-style-type: disc;
+    padding-left: 1.6em;
+    margin: 2px 0;
+}
+.wb-3level ul ul, .card-editor-content ul ul {
+    list-style-type: circle;
+}
+.wb-3level ul ul ul, .card-editor-content ul ul ul {
+    list-style-type: square;
+}
+.wb-3level li, .card-editor-content li {
+    margin: 1px 0;
+}
+.wb-3level p { margin: 0 0 2px 0; }
+
+/* 文字框: 渲染檢視 vs 編輯 */
+.wb-textbox-rendered {
+    overflow: auto;
+    white-space: normal;
+    word-break: break-word;
+    cursor: text;
+}
+.wb-textbox-rendered:empty::before {
+    content: '點擊編輯…';
+    color: rgba(0,0,0,0.35);
+    font-style: italic;
+}
+.wb-textbox-edit {
+    white-space: pre-wrap;
+    caret-color: #2563eb;     /* 藍色游標,在透明 / 任何文字色背景下都看得見 */
+    outline: none;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 4px;      /* 留 4px 給最後一列 descender / caret 的下緣 */
+    scroll-padding-bottom: 8px;
+}
+.wb-textbox-rendered {
+    padding-bottom: 4px;
+}
+
+/* 卡片編輯器: 同樣強化游標可見性 */
+.card-editor-content {
+    caret-color: #2563eb;
+}
+
 /* ---- Minimap ---- */
 .wb-minimap {
     position: absolute;

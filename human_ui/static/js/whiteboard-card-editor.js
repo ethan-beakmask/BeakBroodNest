@@ -655,11 +655,44 @@ function whiteboardCardEditorMixin() {
             this.ceStagingOpen = !this.ceStagingOpen;
         },
 
-        // value 為 hex 色碼或 'erase'；同值再點 → null（關閉）
+        // value 為 hex 色碼或 'erase'
+        // 規則：
+        //   有圈選   → 直接套到該段（連續模式狀態不動）；同色點擊視為「順手關閉連續」
+        //   無圈選   → 切換連續模式（同值再點 → null 關閉）
         ceToggleColorPen(editorId, value) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            var ce = ed ? _ceStore[ed.atomId] : null;
+            if (ce && ce.editor && !ed.readonly) {
+                var sel = ce.editor.state.selection;
+                if (!sel.empty) {
+                    var collapseTo = sel.to;
+                    var chain = ce.editor.chain();
+                    if (value === 'erase') chain = chain.unsetColor();
+                    else                   chain = chain.setColor(value);
+                    chain.setTextSelection(collapseTo).run();
+                    this._markEditorDirty(editorId);
+                    if (this.ceColorPen[editorId] === value) this.ceColorPen[editorId] = null;
+                    return;
+                }
+            }
             this.ceColorPen[editorId] = (this.ceColorPen[editorId] === value) ? null : value;
         },
         ceToggleColorHl(editorId, value) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            var ce = ed ? _ceStore[ed.atomId] : null;
+            if (ce && ce.editor && !ed.readonly) {
+                var sel = ce.editor.state.selection;
+                if (!sel.empty) {
+                    var collapseTo = sel.to;
+                    var chain = ce.editor.chain();
+                    if (value === 'erase') chain = chain.unsetHighlight();
+                    else                   chain = chain.setHighlight({ color: value });
+                    chain.setTextSelection(collapseTo).run();
+                    this._markEditorDirty(editorId);
+                    if (this.ceColorHl[editorId] === value) this.ceColorHl[editorId] = null;
+                    return;
+                }
+            }
             this.ceColorHl[editorId] = (this.ceColorHl[editorId] === value) ? null : value;
         },
         ceCancelAllContinuous() {

@@ -2,8 +2,34 @@
  * BeakCortex Card Editor -- Tiptap WYSIWYG Markdown 編輯器
  * 打包後掛載為 window.CardEditor 供 Alpine.js 呼叫
  */
-import { Editor } from '@tiptap/core'
+import { Editor, Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
+
+// 額外 list 熱鍵 (與文字框對齊) + Tab 守門
+//   Ctrl+Shift+6 = 清單 (BulletList)
+//   Ctrl+Shift+7 = 編號 (OrderedList) -- Tiptap StarterKit 已內建
+//   Ctrl+Shift+8 = 清單 (BulletList) -- Tiptap StarterKit 已內建
+// Tab / Shift+Tab: 同 key 在多個 extension 註冊時 Tiptap 會以後註冊者覆寫,
+//   所以這裡完整接管,內部呼叫 sinkListItem/liftListItem 處理 list 巢狀,
+//   不論成不成功一律 return true 吃掉,防 focus 跳出編輯器。
+const ListHotkeys = Extension.create({
+    name: 'listHotkeys',
+    addKeyboardShortcuts() {
+        return {
+            'Mod-Shift-6': () => this.editor.commands.toggleBulletList(),
+            Tab: ({ editor }) => {
+                editor.commands.sinkListItem('listItem')
+                    || editor.commands.sinkListItem('taskItem');
+                return true;
+            },
+            'Shift-Tab': ({ editor }) => {
+                editor.commands.liftListItem('listItem')
+                    || editor.commands.liftListItem('taskItem');
+                return true;
+            },
+        }
+    },
+})
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table'
 import { TaskList } from '@tiptap/extension-task-list'
 import { TaskItem } from '@tiptap/extension-task-item'
@@ -72,6 +98,7 @@ class CardEditor {
                 PdfReader,
                 SlashCommand,
                 SelectionToolbar,
+                ListHotkeys,
             ],
             editorProps: {
                 attributes: {

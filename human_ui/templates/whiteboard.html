@@ -111,15 +111,26 @@
                         <div class="wb-textbox-anchor bottom" @mousedown.stop.prevent="startTextboxConnDrag($event, tb, 'bottom')"></div>
                         <div class="wb-textbox-anchor left"   @mousedown.stop.prevent="startTextboxConnDrag($event, tb, 'left')"></div>
                         <div class="wb-textbox-anchor right"  @mousedown.stop.prevent="startTextboxConnDrag($event, tb, 'right')"></div>
-                        <textarea class="wb-textbox-content"
-                                  :value="tb.content"
-                                  :style="'color:' + tb.text_color + ';'"
-                                  :readonly="isSnapshot"
-                                  @input="onTextboxContentInput(tb, $event.target.value)"
-                                  @focus="startTextboxEdit(tb)"
-                                  @blur="finishTextboxEdit(tb)"
-                                  @mousedown.stop
-                                  @click.stop></textarea>
+                        <!-- 檢視模式:渲染巢狀 ol (CSS 自動 1./a./i. 三層) -->
+                        <template x-if="editingTextboxId !== tb.id">
+                            <div class="wb-textbox-content wb-textbox-rendered wb-3level"
+                                 :style="'color:' + tb.text_color + ';'"
+                                 @click.stop="startTextboxEdit(tb)"
+                                 @mousedown.stop
+                                 x-html="renderTextboxContent(tb.content)"></div>
+                        </template>
+                        <!-- 編輯模式:純文字 textarea, 熱鍵 Ctrl+Shift+7 編號 / Tab 縮排 -->
+                        <template x-if="editingTextboxId === tb.id">
+                            <textarea class="wb-textbox-content wb-textbox-edit"
+                                      x-init="$el.value = tb.content || ''; $nextTick(() => { $el.focus(); var l = $el.value.length; $el.setSelectionRange(l, l); })"
+                                      :style="'color:' + tb.text_color + ';'"
+                                      :readonly="isSnapshot"
+                                      @input="onTextboxContentInput(tb, $event.target.value)"
+                                      @blur="finishTextboxEdit(tb)"
+                                      @keydown="onTextboxKeydown($event, tb)"
+                                      @mousedown.stop
+                                      @click.stop></textarea>
+                        </template>
                         <div class="wb-textbox-resize" @mousedown.stop.prevent="onTextboxResizeMouseDown($event, tb)"></div>
                     </div>
                 </template>

@@ -663,6 +663,13 @@ function whiteboardMindmapMixin() {
                 return false;
             }
 
+            // 焦點在外部輸入元素（文字框 textarea / 卡片內聯編輯 textarea / 其他 input）時不吞熱鍵
+            // 心智圖自身的標題輸入框由上方 editingMindmapAtomId / editingShellId 分支自治處理
+            var et = e.target;
+            if (et && (et.tagName === 'INPUT' || et.tagName === 'TEXTAREA' || et.isContentEditable)) {
+                return false;
+            }
+
             // 非編輯中:有 active 節點時吃熱鍵
             if (!this.activeMindmapAtomId || !this.activeMindmapShellId) return false;
 

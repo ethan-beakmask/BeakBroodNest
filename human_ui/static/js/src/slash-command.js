@@ -141,11 +141,18 @@ class SlashMenuView {
     }
 
     _show(view, from) {
-        // Position near the cursor
+        // Position near the cursor; 如下方空間不夠則翻到游標上方
         const coords = view.coordsAtPos(from + 1)
         this.popup.style.display = 'block'
         this.popup.style.left = coords.left + 'px'
+        // 先暫時放下方以量測高度
         this.popup.style.top = (coords.bottom + 4) + 'px'
+        const popupH = this.popup.offsetHeight
+        const viewportH = window.innerHeight
+        if (coords.bottom + 4 + popupH > viewportH) {
+            // 翻到上方
+            this.popup.style.top = Math.max(4, coords.top - popupH - 4) + 'px'
+        }
 
         // Attach key listener
         this.editorView.dom.addEventListener('keydown', this._keyHandler, true)

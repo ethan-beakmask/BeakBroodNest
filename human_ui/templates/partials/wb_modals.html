@@ -884,8 +884,8 @@
                             <button @click="ceCmd('h3', ed.id)" title="H3">H3</button>
                             <button @click="ceCmd('h4', ed.id)" title="H4">H4</button>
                             <span class="tb-sep"></span>
-                            <button @click="ceCmd('bulletList', ed.id)" title="清單">-</button>
-                            <button @click="ceCmd('orderedList', ed.id)" title="編號">1.</button>
+                            <button @click="ceCmd('bulletList', ed.id)" title="清單 (Ctrl+Shift+6,三層自動 •/◦/▪)">&bull;</button>
+                            <button @click="ceCmd('orderedList', ed.id)" title="編號 (Ctrl+Shift+7,三層自動 1./a./i.)">1.</button>
                             <button @click="ceCmd('taskList', ed.id)" title="任務">[]</button>
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('blockquote', ed.id)" title="引用">"</button>
@@ -928,12 +928,12 @@
                                         :class="{ active: ceColorPen[ed.id] === c.hex }"
                                         :style="'color:' + c.hex"
                                         @click="ceToggleColorPen(ed.id, c.hex)"
-                                        :title="'連續色筆 -- ' + c.label + '（再點關閉）'">A</button>
+                                        :title="'色筆 -- ' + c.label + '（有圈選=直接套用；無圈選=切換連續模式）'">A</button>
                             </template>
                             <button class="ce-color-btn ce-color-clear"
                                     :class="{ active: ceColorPen[ed.id] === 'erase' }"
                                     @click="ceToggleColorPen(ed.id, 'erase')"
-                                    title="連續清除字色（再點關閉）">A&times;</button>
+                                    title="清除字色（有圈選=直接清除；無圈選=切換連續清除模式）">A&times;</button>
                             <span class="tb-sep"></span>
                             <span class="tb-group-label">螢光</span>
                             <template x-for="c in colorHlPalette" :key="'hl-'+c.key">
@@ -941,12 +941,12 @@
                                         :class="{ active: ceColorHl[ed.id] === c.hex }"
                                         :style="'background:' + c.hex"
                                         @click="ceToggleColorHl(ed.id, c.hex)"
-                                        :title="'連續螢光 -- ' + c.label + '（再點關閉）'">&nbsp;</button>
+                                        :title="'螢光 -- ' + c.label + '（有圈選=直接套用；無圈選=切換連續模式）'">&nbsp;</button>
                             </template>
                             <button class="ce-color-btn ce-color-clear"
                                     :class="{ active: ceColorHl[ed.id] === 'erase' }"
                                     @click="ceToggleColorHl(ed.id, 'erase')"
-                                    title="連續清除底色（再點關閉）">&nbsp;&times;</button>
+                                    title="清除底色（有圈選=直接清除；無圈選=切換連續清除模式）">&nbsp;&times;</button>
                             <span style="flex:1;"></span>
                             <span class="ce-continuous-hint" x-show="ceColorPen[ed.id] || ceColorHl[ed.id]">連續模式啟用中（ESC 取消）</span>
                         </div>
