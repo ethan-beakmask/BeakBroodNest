@@ -13,7 +13,7 @@
  *   collapsed   - 欄位面板是否收合
  */
 import { Node, mergeAttributes } from '@tiptap/core'
-import { NodeSelection, TextSelection } from '@tiptap/pm/state'
+import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state'
 import { openImageAlbumPicker } from './image-album.js'
 
 // 共用：在 selection 路徑上找 structuredEntry 的 depth (回傳 -1 表示不在 entry 內)
@@ -80,6 +80,40 @@ function _focusAfterCurrentEntry(editor) {
     tr.setSelection(TextSelection.create(tr.doc, entryAfter + 1))
     editor.view.dispatch(tr)
     editor.view.focus()
+    return true
+}
+
+// 共用:判斷 selection 是否在 structuredEntry 內(供 paste 攔截使用)。
+function _isSelectionInEntry(state) {
+    const { $from } = state.selection
+    for (let d = $from.depth; d > 0; d--) {
+        if ($from.node(d).type.name === 'structuredEntry') return true
+    }
+    return false
+}
+
+// 共用:在當前 entry 的 NodeView dom 內找 focusable 元素(input/textarea/select/[tabindex]),
+// 跳到第一個(reverse=false)或最後一個(reverse=true)。
+// 找不到 focusable 表示該 entry 沒有 fieldsPanel(例如 freetext / file),回 false 讓 caller 改走跳出 entry 邏輯。
+function _focusFirstFocusableInCurrentEntry(editor, reverse) {
+    const d = _entryDepth(editor.state)
+    if (d < 0) return false
+    const { $from } = editor.state.selection
+    const entryPos = $from.before(d)
+    const dom = editor.view.nodeDOM(entryPos)
+    if (!dom || !dom.querySelectorAll) return false
+    const sel = 'input, textarea, select, [tabindex]:not([tabindex="-1"])'
+    const list = Array.from(dom.querySelectorAll(sel)).filter(el => {
+        if (el.disabled) return false
+        if (el.offsetParent === null && el.tagName !== 'BODY') return false
+        return true
+    })
+    if (list.length === 0) return false
+    const target = reverse ? list[list.length - 1] : list[0]
+    try {
+        target.focus()
+        if (target.select) target.select()
+    } catch (_) { /* ignore */ }
     return true
 }
 
@@ -165,11 +199,16 @@ export const StructuredEntry = Node.create({
     },
 
     addKeyboardShortcuts() {
-        // 接管「主旨欄 (contentDOM inline content)」的鍵盤行為:
-        //   ArrowUp/ArrowDown -> 跳脫至 entry 前/後的非 entry textblock (主旨欄統一單行)
-        //   Enter             -> 跳脫至 entry 後 textblock (不允許在 entry 內 splitBlock)
-        //   Shift-Enter       -> 同 Enter (不允許主旨欄產生 hardBreak)
-        // 注意:idcard / fieldsPanel 的 input 走自己的 keydown,事件已 stopPropagation,不會走到這裡。
+        // entry 主旨欄 (contentDOM inline content) 鍵盤規格:
+        //   ArrowUp/ArrowDown            -> 跳脫至 entry 前/後 textblock
+        //   Enter / Shift-Enter / Mod-Enter -> 跳脫至 entry 後 textblock (主旨單行,禁 hardBreak/splitBlock)
+        //   Tab                          -> 跳到當前 entry 的 fieldsPanel 第一個 input;若無 input 則跳出 entry
+        //   Shift-Tab                    -> 跳到上一個 textblock(或上一個 entry 末欄);若上一個是 entry 改 focus 末 input
+        //   Backspace 主旨首字           -> 吃掉(禁與前段 join);entry 是 atomic 邊界,只能透過 [x] 刪除
+        //   Delete 主旨末字              -> 吃掉(禁與後段 join)
+        //   Backspace 在 entry 後段首字 -> 吃掉(禁外部刪入 entry)
+        //   Delete 在 entry 前段末端    -> 吃掉(禁外部刪入 entry)
+        // 注意:fieldsPanel / idcard line input 走自己的 keydown(已 stopPropagation),不會走到這裡。
         return {
             ArrowUp: ({ editor }) => {
                 if (_entryDepth(editor.state) < 0) return false
@@ -187,7 +226,93 @@ export const StructuredEntry = Node.create({
                 if (_entryDepth(editor.state) < 0) return false
                 return _focusAfterCurrentEntry(editor)
             },
+            'Mod-Enter': ({ editor }) => {
+                if (_entryDepth(editor.state) < 0) return false
+                return _focusAfterCurrentEntry(editor)
+            },
+            Tab: ({ editor }) => {
+                if (_entryDepth(editor.state) < 0) return false
+                // 主旨 -> 第一個 input;沒 input 則跳到後 textblock
+                if (_focusFirstFocusableInCurrentEntry(editor, false)) return true
+                return _focusAfterCurrentEntry(editor)
+            },
+            'Shift-Tab': ({ editor }) => {
+                if (_entryDepth(editor.state) < 0) return false
+                // 主旨 Shift+Tab 跳到 entry 之前的 textblock(若是另一個 entry,_moveCaretTo 會放到末端)
+                return _focusBeforeCurrentEntry(editor)
+            },
+            Backspace: ({ editor }) => {
+                const state = editor.state
+                const { $from, empty } = state.selection
+                if (!empty) return false  // 有選取讓 PM 自然處理
+                const d = _entryDepth(state)
+                if (d >= 0) {
+                    // 在 entry 主旨欄內 -- 主旨首字 Backspace 吃掉(禁 join 前段)
+                    const startInline = $from.start(d + 1)
+                    if ($from.pos <= startInline) return true
+                    return false
+                }
+                // 不在 entry 內 -- 檢查是否在 textblock 開頭且前一個 sibling 是 entry
+                if ($from.parentOffset !== 0) return false
+                try {
+                    const before = $from.before($from.depth)
+                    if (before <= 0) return false
+                    const $before = state.doc.resolve(before)
+                    const prev = $before.nodeBefore
+                    if (prev && prev.type.name === 'structuredEntry') return true
+                } catch (_) { /* ignore */ }
+                return false
+            },
+            Delete: ({ editor }) => {
+                const state = editor.state
+                const { $from, empty } = state.selection
+                if (!empty) return false
+                const d = _entryDepth(state)
+                if (d >= 0) {
+                    const endInline = $from.end(d + 1)
+                    if ($from.pos >= endInline) return true
+                    return false
+                }
+                // 不在 entry 內 -- 檢查是否在 textblock 末端且下一個 sibling 是 entry
+                const parent = $from.parent
+                if ($from.parentOffset !== parent.content.size) return false
+                try {
+                    const after = $from.after($from.depth)
+                    const next = state.doc.nodeAt(after)
+                    if (next && next.type.name === 'structuredEntry') return true
+                } catch (_) { /* ignore */ }
+                return false
+            },
         }
+    },
+
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                props: {
+                    // 主旨欄是「單行」-- 貼上含換行的文字時把換行轉空格
+                    transformPastedText: (text, _plain, view) => {
+                        if (!_isSelectionInEntry(view.state)) return text
+                        return text.replace(/\r?\n+/g, ' ')
+                    },
+                    // HTML 貼上:在 entry 內降為純文字並轉空格
+                    transformPastedHTML: (html, view) => {
+                        if (!_isSelectionInEntry(view.state)) return html
+                        try {
+                            const tmp = document.createElement('div')
+                            tmp.innerHTML = html
+                            const text = (tmp.textContent || '').replace(/\r?\n+/g, ' ').trim()
+                            // 用 escape 後當純文字塞回 HTML 字串
+                            return text.replace(/[&<>]/g, (c) => (
+                                c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'
+                            ))
+                        } catch (_) {
+                            return html
+                        }
+                    },
+                },
+            }),
+        ]
     },
 
     addCommands() {
@@ -414,17 +539,18 @@ class StructuredEntryView {
     }
 
     // Tab 導航:在 entry 內 input 順序移動;邊界跳脫到 entry 前/後 textblock。
+    // Shift+Tab 在第一個 input -> 主旨欄(contentDOM,若有可編輯主旨);idcard 等無主旨者跳出 entry。
     _focusNextField(currentEl, reverse) {
         const all = this._collectFocusables()
         const idx = all.indexOf(currentEl)
         if (idx < 0) {
-            // 找不到當前元素,fallback 跳脫
             if (reverse) this._focusBeforeEntry()
             else this._focusAfterEntry()
             return
         }
         if (reverse) {
             if (idx === 0) {
+                if (this._focusSubject()) return
                 this._focusBeforeEntry()
                 return
             }
@@ -437,6 +563,21 @@ class StructuredEntryView {
             }
             const next = all[idx + 1]
             try { next.focus(); if (next.select) next.select() } catch (_) {}
+        }
+    }
+
+    // 把 caret 放到 contentDOM 末尾(主旨欄末端);idcard 沒有可編輯主旨,回 false。
+    _focusSubject() {
+        const code = this.node.attrs.schemaCode || ''
+        if (code === 'idcard') return false
+        const pos = this.getPos()
+        if (pos === undefined) return false
+        try {
+            const inlinePos = pos + 1 + this.node.content.size
+            this.editor.chain().focus().setTextSelection(inlinePos).run()
+            return true
+        } catch (_) {
+            return false
         }
     }
 
