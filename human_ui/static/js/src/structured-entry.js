@@ -1,20 +1,25 @@
 /**
  * BeakCortex StructuredEntry -- Tiptap Node Extension
  *
- * 在 ProseMirror 文件中表示一筆結構化記錄（entry）。
- * 視覺上：[type tag] raw_text   (展開時顯示欄位表單)
+ * Z 階段架構:
+ *   - 文件流內 entry NodeView 是「純展示」(整個 contentEditable=false)
+ *   - 編輯一律走 entry-modal.js 的 modal 對話框
+ *   - 收合 -> 顯示主旨;全展 -> 顯示主旨 + 唯讀欄位
+ *   - 唯一刪除入口是 [x] 按鈕(或 NodeSelection + Backspace 業界慣例)
  *
  * Attributes:
  *   entryId     - DB id (nullable for unsaved)
- *   schemaCode  - entry schema code ('freetext','task','expense'...)
+ *   schemaCode  - entry schema code ('task','idcard','expense'...)
  *   schemaId    - entry schema id
- *   rawText     - 主要文字內容
  *   fieldValues - JSON object {field_name: value}
- *   collapsed   - 欄位面板是否收合
+ *   collapsed   - 是否收合(true=只顯示主旨,false=展示完整唯讀欄位)
+ *
+ * 主旨儲存:仍走 inline content (PM contentDOM,但 hidden 不可編輯)。
+ * idcard 例外:主旨來自 fieldValues.line1,inline 文字保持空。
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state'
-import { openImageAlbumPicker } from './image-album.js'
+import { openEntryModal } from './entry-modal.js'
 
 // 共用：在 selection 路徑上找 structuredEntry 的 depth (回傳 -1 表示不在 entry 內)
 function _entryDepth(state) {
@@ -23,64 +28,6 @@ function _entryDepth(state) {
         if ($from.node(d).type.name === 'structuredEntry') return d
     }
     return -1
-}
-
-// 把 caret 移到指定 textblock。若該 textblock 是 idcard,直接 focus line1 input,
-// 不 dispatch PM transaction--idcard 的 contentDOM 是 hidden,把 PM caret 放進去會
-// 讓用戶後續輸入污染 inline content(產生看不見的殘留文字)。
-function _moveCaretTo(editor, textblockPos, textblockNode, atEnd) {
-    const isIdcard = textblockNode.type.name === 'structuredEntry'
-        && (textblockNode.attrs.schemaCode || '') === 'idcard'
-    if (isIdcard) {
-        queueMicrotask(() => {
-            try {
-                const dom = editor.view.nodeDOM(textblockPos)
-                const inp = dom && dom.querySelector('.se-idcard-line-1')
-                if (inp) {
-                    inp.focus()
-                    try { inp.select() } catch (_) {}
-                }
-            } catch (_) { /* ignore */ }
-        })
-        return true
-    }
-    const inlinePos = atEnd
-        ? textblockPos + 1 + textblockNode.content.size
-        : textblockPos + 1
-    editor.chain().focus().setTextSelection(inlinePos).run()
-    return true
-}
-
-// 共用：跳到 entry 之後「最近的 textblock」(包含其他 entry,讓並列 entry 可以鄰接導航)
-// 沒有後續 textblock 則插一個 paragraph 進入。
-function _focusAfterCurrentEntry(editor) {
-    const d = _entryDepth(editor.state)
-    if (d < 0) return false
-    const { $from } = editor.state.selection
-    const entryAfter = $from.after(d)
-    const doc = editor.state.doc
-    let target = null
-    let targetNode = null
-    doc.nodesBetween(entryAfter, doc.content.size, (n, p) => {
-        if (target !== null) return false
-        if (n.isTextblock) {
-            target = p
-            targetNode = n
-            return false
-        }
-        return true
-    })
-    if (target !== null) {
-        return _moveCaretTo(editor, target, targetNode, false)
-    }
-    // 沒有後續 textblock：在 doc 末插一個 paragraph 並進入
-    const tr = editor.state.tr
-    const para = editor.state.schema.nodes.paragraph.create()
-    tr.insert(entryAfter, para)
-    tr.setSelection(TextSelection.create(tr.doc, entryAfter + 1))
-    editor.view.dispatch(tr)
-    editor.view.focus()
-    return true
 }
 
 // 共用:判斷 selection 是否在 structuredEntry 內(供 paste 攔截使用)。
@@ -92,43 +39,73 @@ function _isSelectionInEntry(state) {
     return false
 }
 
-// 共用:在當前 entry 的 NodeView dom 內找 focusable 元素(input/textarea/select/[tabindex]),
-// 跳到第一個(reverse=false)或最後一個(reverse=true)。
-// 找不到 focusable 表示該 entry 沒有 fieldsPanel(例如 freetext / file),回 false 讓 caller 改走跳出 entry 邏輯。
-function _focusFirstFocusableInCurrentEntry(editor, reverse) {
-    const d = _entryDepth(editor.state)
-    if (d < 0) return false
-    const { $from } = editor.state.selection
-    const entryPos = $from.before(d)
-    const dom = editor.view.nodeDOM(entryPos)
-    if (!dom || !dom.querySelectorAll) return false
-    const sel = 'input, textarea, select, [tabindex]:not([tabindex="-1"])'
-    const list = Array.from(dom.querySelectorAll(sel)).filter(el => {
-        if (el.disabled) return false
-        if (el.offsetParent === null && el.tagName !== 'BODY') return false
-        return true
-    })
-    if (list.length === 0) return false
-    const target = reverse ? list[list.length - 1] : list[0]
-    try {
-        target.focus()
-        if (target.select) target.select()
-    } catch (_) { /* ignore */ }
+// 共用:把 caret 移到指定 textblock 的開頭/末尾。
+// 若該 textblock 是 structuredEntry(其 contentDOM 永遠 hidden),跳過,讓 caller 繼續找下一個。
+function _moveCaretTo(editor, textblockPos, textblockNode, atEnd) {
+    if (textblockNode.type.name === 'structuredEntry') {
+        // entry 不可放 caret -- 由 caller 跳過繼續找
+        return false
+    }
+    const inlinePos = atEnd
+        ? textblockPos + 1 + textblockNode.content.size
+        : textblockPos + 1
+    editor.chain().focus().setTextSelection(inlinePos).run()
     return true
 }
 
-// 共用：跳到 entry 之前「最近的 textblock」尾端(包含其他 entry);無則在 doc 開頭插 paragraph
+// 共用:從給定的 entry pos 往後找「非 entry」的 textblock,跳到開頭。
+// 找不到則在 doc 末插一個 paragraph 並進入。
+function _focusAfterCurrentEntry(editor) {
+    const d = _entryDepth(editor.state)
+    if (d < 0) return false
+    const { $from } = editor.state.selection
+    const entryAfter = $from.after(d)
+    return _focusForwardFromPos(editor, entryAfter)
+}
+
+function _focusForwardFromPos(editor, fromPos) {
+    const doc = editor.state.doc
+    let target = null
+    let targetNode = null
+    doc.nodesBetween(fromPos, doc.content.size, (n, p) => {
+        if (target !== null) return false
+        if (n.isTextblock && n.type.name !== 'structuredEntry') {
+            target = p
+            targetNode = n
+            return false
+        }
+        return true
+    })
+    if (target !== null) {
+        return _moveCaretTo(editor, target, targetNode, false)
+    }
+    // 沒有後續可用 textblock -- 在 doc 末插一個 paragraph
+    const tr = editor.state.tr
+    const insertPos = Math.min(fromPos, editor.state.doc.content.size)
+    const para = editor.state.schema.nodes.paragraph.create()
+    tr.insert(insertPos, para)
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1))
+    editor.view.dispatch(tr)
+    editor.view.focus()
+    return true
+}
+
+// 共用:跳到 entry 之前「最近的非 entry textblock」尾端;無則在 doc 開頭插 paragraph。
 function _focusBeforeCurrentEntry(editor) {
     const d = _entryDepth(editor.state)
     if (d < 0) return false
     const { $from } = editor.state.selection
     const entryBefore = $from.before(d)
+    return _focusBackwardFromPos(editor, entryBefore)
+}
+
+function _focusBackwardFromPos(editor, toPos) {
     const doc = editor.state.doc
     let target = null
     let targetNode = null
-    doc.nodesBetween(0, entryBefore, (n, p) => {
-        if (n.isTextblock) {
-            target = p  // 持續覆蓋以取得「最接近 entry 的 textblock」
+    doc.nodesBetween(0, toPos, (n, p) => {
+        if (n.isTextblock && n.type.name !== 'structuredEntry') {
+            target = p
             targetNode = n
             return false
         }
@@ -137,11 +114,10 @@ function _focusBeforeCurrentEntry(editor) {
     if (target !== null) {
         return _moveCaretTo(editor, target, targetNode, true)
     }
-    // 沒有前置 textblock：在 doc 開頭插 paragraph
     const tr = editor.state.tr
     const para = editor.state.schema.nodes.paragraph.create()
-    tr.insert(entryBefore, para)
-    tr.setSelection(TextSelection.create(tr.doc, entryBefore + 1))
+    tr.insert(0, para)
+    tr.setSelection(TextSelection.create(tr.doc, 1))
     editor.view.dispatch(tr)
     editor.view.focus()
     return true
@@ -187,7 +163,7 @@ export const StructuredEntry = Node.create({
             'data-schema-id': HTMLAttributes.schemaId || '',
             'data-field-values': JSON.stringify(HTMLAttributes.fieldValues || {}),
             'data-collapsed': HTMLAttributes.collapsed ? 'true' : 'false',
-            'class': 'se-block se-' + (HTMLAttributes.schemaCode || 'freetext'),
+            'class': 'se-block se-readonly se-' + (HTMLAttributes.schemaCode || 'freetext'),
         }
         return ['div', mergeAttributes(attrs), 0]
     },
@@ -199,16 +175,14 @@ export const StructuredEntry = Node.create({
     },
 
     addKeyboardShortcuts() {
-        // entry 主旨欄 (contentDOM inline content) 鍵盤規格:
-        //   ArrowUp/ArrowDown            -> 跳脫至 entry 前/後 textblock
-        //   Enter / Shift-Enter / Mod-Enter -> 跳脫至 entry 後 textblock (主旨單行,禁 hardBreak/splitBlock)
-        //   Tab                          -> 跳到當前 entry 的 fieldsPanel 第一個 input;若無 input 則跳出 entry
-        //   Shift-Tab                    -> 跳到上一個 textblock(或上一個 entry 末欄);若上一個是 entry 改 focus 末 input
-        //   Backspace 主旨首字           -> 吃掉(禁與前段 join);entry 是 atomic 邊界,只能透過 [x] 刪除
-        //   Delete 主旨末字              -> 吃掉(禁與後段 join)
-        //   Backspace 在 entry 後段首字 -> 吃掉(禁外部刪入 entry)
-        //   Delete 在 entry 前段末端    -> 吃掉(禁外部刪入 entry)
-        // 注意:fieldsPanel / idcard line input 走自己的 keydown(已 stopPropagation),不會走到這裡。
+        // entry NodeView 永遠 contentEditable=false,PM caret 不會停在 entry 內。
+        // 這裡的 handlers 主要保護「entry 邊界外的鍵盤誤刪 / 跨入」:
+        //   ArrowUp/Down                  -> 從前/後段跨進 entry 時直接跳過
+        //   Enter / Shift-Enter / Mod-Enter -> 不允許在 entry 內 splitBlock(理論上不會觸發)
+        //   Tab / Shift-Tab               -> entry 內無 focusable,跳出
+        //   Backspace 在 entry 後 textblock 開頭 -> 吃掉,禁外部刪入 entry
+        //   Delete    在 entry 前 textblock 末端  -> 吃掉,禁外部刪入 entry
+        //   F2                            -> NodeSelection 指向 entry 時開 modal 編輯
         return {
             ArrowUp: ({ editor }) => {
                 if (_entryDepth(editor.state) < 0) return false
@@ -232,27 +206,21 @@ export const StructuredEntry = Node.create({
             },
             Tab: ({ editor }) => {
                 if (_entryDepth(editor.state) < 0) return false
-                // 主旨 -> 第一個 input;沒 input 則跳到後 textblock
-                if (_focusFirstFocusableInCurrentEntry(editor, false)) return true
                 return _focusAfterCurrentEntry(editor)
             },
             'Shift-Tab': ({ editor }) => {
                 if (_entryDepth(editor.state) < 0) return false
-                // 主旨 Shift+Tab 跳到 entry 之前的 textblock(若是另一個 entry,_moveCaretTo 會放到末端)
                 return _focusBeforeCurrentEntry(editor)
             },
             Backspace: ({ editor }) => {
                 const state = editor.state
                 const { $from, empty } = state.selection
-                if (!empty) return false  // 有選取讓 PM 自然處理
-                const d = _entryDepth(state)
-                if (d >= 0) {
-                    // 在 entry 主旨欄內 -- 主旨首字 Backspace 吃掉(禁 join 前段)
-                    const startInline = $from.start(d + 1)
-                    if ($from.pos <= startInline) return true
-                    return false
+                if (!empty) return false
+                if (_entryDepth(state) >= 0) {
+                    // 萬一 PM 不慎把 caret 放進 entry,直接 redirect 出去
+                    return _focusBeforeCurrentEntry(editor)
                 }
-                // 不在 entry 內 -- 檢查是否在 textblock 開頭且前一個 sibling 是 entry
+                // 在 textblock 開頭 + 前一個 sibling 是 entry -> 吃掉
                 if ($from.parentOffset !== 0) return false
                 try {
                     const before = $from.before($from.depth)
@@ -267,13 +235,9 @@ export const StructuredEntry = Node.create({
                 const state = editor.state
                 const { $from, empty } = state.selection
                 if (!empty) return false
-                const d = _entryDepth(state)
-                if (d >= 0) {
-                    const endInline = $from.end(d + 1)
-                    if ($from.pos >= endInline) return true
-                    return false
+                if (_entryDepth(state) >= 0) {
+                    return _focusAfterCurrentEntry(editor)
                 }
-                // 不在 entry 內 -- 檢查是否在 textblock 末端且下一個 sibling 是 entry
                 const parent = $from.parent
                 if ($from.parentOffset !== parent.content.size) return false
                 try {
@@ -281,6 +245,19 @@ export const StructuredEntry = Node.create({
                     const next = state.doc.nodeAt(after)
                     if (next && next.type.name === 'structuredEntry') return true
                 } catch (_) { /* ignore */ }
+                return false
+            },
+            F2: ({ editor }) => {
+                const sel = editor.state.selection
+                if (sel instanceof NodeSelection
+                    && sel.node
+                    && sel.node.type.name === 'structuredEntry') {
+                    const dom = editor.view.nodeDOM(sel.from)
+                    if (dom && typeof dom._beakOpenEdit === 'function') {
+                        dom._beakOpenEdit()
+                        return true
+                    }
+                }
                 return false
             },
         }
@@ -295,14 +272,12 @@ export const StructuredEntry = Node.create({
                         if (!_isSelectionInEntry(view.state)) return text
                         return text.replace(/\r?\n+/g, ' ')
                     },
-                    // HTML 貼上:在 entry 內降為純文字並轉空格
                     transformPastedHTML: (html, view) => {
                         if (!_isSelectionInEntry(view.state)) return html
                         try {
                             const tmp = document.createElement('div')
                             tmp.innerHTML = html
                             const text = (tmp.textContent || '').replace(/\r?\n+/g, ' ').trim()
-                            // 用 escape 後當純文字塞回 HTML 字串
                             return text.replace(/[&<>]/g, (c) => (
                                 c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'
                             ))
@@ -325,7 +300,6 @@ export const StructuredEntry = Node.create({
                 })
             },
             convertToEntry: (schemaCode, schemaId) => ({ state, dispatch }) => {
-                // Convert current paragraph to structuredEntry
                 const { from, to } = state.selection
                 const node = state.doc.nodeAt(from - 1) || state.doc.nodeAt(from)
                 if (!node) return false
@@ -349,7 +323,7 @@ export const StructuredEntry = Node.create({
 
 
 /**
- * NodeView: 自訂渲染邏輯
+ * NodeView: 純展示模式 (Z 階段)
  */
 class StructuredEntryView {
     constructor(node, getPos, editor) {
@@ -358,31 +332,70 @@ class StructuredEntryView {
         this.editor = editor
         this._schemas = window._entrySchemas || []
 
-        // 外層容器
         this.dom = document.createElement('div')
-        this.dom.className = 'se-block se-' + (node.attrs.schemaCode || 'freetext')
+        this.dom.className = 'se-block se-readonly se-' + (node.attrs.schemaCode || 'freetext')
         this.dom.setAttribute('data-entry', '')
+        this.dom.contentEditable = 'false'
+        // 暴露給 PM keymap F2 開啟編輯
+        this.dom._beakOpenEdit = () => this._openEdit()
 
-        // 上方 tag 列 -- 全部 contentEditable=false,避免瀏覽器 caret 跑進 deleteBtn(x) / badge / toggleBtn 等 span
-        // 這些 span 視覺上看似獨立 UI 控件,實際是 contenteditable region 內的子節點;若不顯式擋住,
-        // 瀏覽器在 NodeView contentDOM hidden 時會把 caret fallback 到這些 span,用戶的鍵入會污染 inline content。
+        // 上方 tag 列
         this.tagRow = document.createElement('div')
         this.tagRow.className = 'se-tag-row'
-        this.tagRow.contentEditable = 'false'
+        this.dom.appendChild(this.tagRow)
 
-        // 拖拉把手
+        // body 區(主旨 + 全展時的唯讀欄位)
+        this.body = document.createElement('div')
+        this.body.className = 'se-body'
+        this.dom.appendChild(this.body)
+
+        // contentDOM 必須存在(schema content: inline*),但永遠 hidden + 不可編輯
+        this.contentDOM = document.createElement('div')
+        this.contentDOM.className = 'se-content-hidden'
+        this.contentDOM.style.display = 'none'
+        this.dom.appendChild(this.contentDOM)
+
+        this._buildTagRow()
+        this._renderBody()
+
+        // 雙擊整個 entry -> 開 modal
+        this.dom.addEventListener('dblclick', (e) => {
+            // 點到 [x] / dragHandle / badge / toggle / editBtn 不要觸發雙擊編輯
+            if (this._isControlEl(e.target)) return
+            e.preventDefault()
+            e.stopPropagation()
+            this._openEdit()
+        })
+
+        // 拖拉:只允許從 dragHandle 起源
+        this.dom.addEventListener('mousedown', (e) => {
+            this._mousedownInHandle = !!(this.dragHandle && this.dragHandle.contains(e.target))
+        }, true)
+        this.dom.addEventListener('dragstart', (e) => {
+            if (!this._mousedownInHandle) e.preventDefault()
+        })
+    }
+
+    _isControlEl(el) {
+        if (!el) return false
+        return !!(el.closest && el.closest('.se-tag-row'))
+    }
+
+    _buildTagRow() {
+        this.tagRow.innerHTML = ''
+
+        // 拖把手
         this.dragHandle = document.createElement('span')
         this.dragHandle.className = 'se-drag-handle'
         this.dragHandle.setAttribute('data-drag-handle', '')
-        this.dragHandle.textContent = '\u2261'  // ≡
+        this.dragHandle.textContent = '≡'  // ≡
         this.dragHandle.title = '拖拉排序'
-        this.dragHandle.contentEditable = 'false'
         this.tagRow.appendChild(this.dragHandle)
 
-        // Type tag badge -- 點擊選取整個 node（供擷取/謄寫）
+        // schema badge -- 點擊 = NodeSelection
         this.badge = document.createElement('span')
         this.badge.className = 'se-badge'
-        this._updateVisualMode()
+        this._updateBadge()
         this.badge.addEventListener('click', (e) => {
             e.stopPropagation()
             e.preventDefault()
@@ -390,14 +403,13 @@ class StructuredEntryView {
         })
         this.tagRow.appendChild(this.badge)
 
-        // 展開/收合按鈕（file / idcard 類型沒有額外欄位面板，省略此鈕）
-        const isFile = (node.attrs.schemaCode || '') === 'file'
-        const isIdCard = (node.attrs.schemaCode || '') === 'idcard'
-        if (!isFile && !isIdCard) {
+        // 展開/收合(file 不顯示)
+        const code = this.node.attrs.schemaCode || ''
+        if (code !== 'file') {
             this.toggleBtn = document.createElement('span')
             this.toggleBtn.className = 'se-toggle-btn'
-            this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
-            this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
+            this.toggleBtn.textContent = this.node.attrs.collapsed ? '+' : '-'
+            this.toggleBtn.title = this.node.attrs.collapsed ? '展開全部欄位 (唯讀)' : '收合'
             this.toggleBtn.addEventListener('click', (e) => {
                 e.stopPropagation()
                 this._toggleCollapsed()
@@ -405,8 +417,22 @@ class StructuredEntryView {
             this.tagRow.appendChild(this.toggleBtn)
         }
 
-        // 刪除 Item 按鈕（freetext 不顯示）
-        if ((node.attrs.schemaCode || 'freetext') !== 'freetext') {
+        // 編輯按鈕 -- 開 modal (file 類型只能透過工具列重新上傳,不開 modal)
+        if (code !== 'file') {
+            this.editBtn = document.createElement('button')
+            this.editBtn.type = 'button'
+            this.editBtn.className = 'se-edit-btn'
+            this.editBtn.textContent = '編輯'
+            this.editBtn.title = '編輯此物件 (F2 / 雙擊)'
+            this.editBtn.addEventListener('click', (e) => {
+                e.stopPropagation()
+                this._openEdit()
+            })
+            this.tagRow.appendChild(this.editBtn)
+        }
+
+        // 刪除(freetext 不顯示;但實務 freetext 走 paragraph,structuredEntry 內不會出現)
+        if ((this.node.attrs.schemaCode || 'freetext') !== 'freetext') {
             this.deleteBtn = document.createElement('span')
             this.deleteBtn.className = 'se-delete-btn'
             this.deleteBtn.textContent = 'x'
@@ -418,183 +444,116 @@ class StructuredEntryView {
             })
             this.tagRow.appendChild(this.deleteBtn)
         }
+    }
 
-        this.dom.appendChild(this.tagRow)
-
-        // file 類型：先加上「檔案連結列」，再放可編輯說明（contentDOM）
-        if (isFile) {
-            this.fileHeader = document.createElement('div')
-            this.fileHeader.className = 'se-file-header'
-            this.fileHeader.contentEditable = 'false'
-            this._renderFileHeader()
-            this.dom.appendChild(this.fileHeader)
-        }
-
-        // 內容區（ProseMirror 管理的 inline content）
-        this.contentDOM = document.createElement('div')
-        this.contentDOM.className = 'se-content'
-        if (isFile) {
-            this.contentDOM.classList.add('se-file-desc')
-            this.contentDOM.setAttribute('data-placeholder', '輸入檔案說明...')
-        }
-        if (isIdCard) {
-            // idcard 不需要可編輯的 inline 內容區，但 ProseMirror 仍要求 contentDOM 存在
-            this.contentDOM.style.display = 'none'
-        }
-        this.dom.appendChild(this.contentDOM)
-
-        // 欄位面板（file 類型不顯示；idcard 走自己的識別證版型）
-        // contentEditable=false 同樣避免瀏覽器 caret fallback 進 fieldsPanel 容器(input 自身仍可編輯)
-        this.fieldsPanel = document.createElement('div')
-        this.fieldsPanel.className = 'se-fields'
-        this.fieldsPanel.contentEditable = 'false'
-        if (isFile) {
-            this.fieldsPanel.style.display = 'none'
-        } else if (isIdCard) {
-            this.dom.classList.add('se-idcard')
-            this.fieldsPanel.style.display = 'block'
-            this._renderIdCard()
-            this._idcardRenderedOnce = true
-            // ;;idcard 剛建立 → 自動 focus line1
-            if (window._pendingIdCardFocusEntry) {
-                window._pendingIdCardFocusEntry = false
-                queueMicrotask(() => {
-                    if (this._idcardInputs && this._idcardInputs[0]) {
-                        this._idcardInputs[0].focus()
-                        try { this._idcardInputs[0].select() } catch (_) {}
-                    }
-                })
-            }
-        } else {
-            this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
-            this._renderFields()
-        }
-        this.dom.appendChild(this.fieldsPanel)
-
-        // 只允許從漢堡把手拖拉：
-        // mousedown 記錄按下位置是否在 handle 內（不改 dom.draggable，避免影響其他功能）；
-        // dragstart 時若不是從 handle 起源，preventDefault 取消拖拉。
-        this.dom.addEventListener('mousedown', (e) => {
-            this._mousedownInHandle = this.dragHandle.contains(e.target)
-        }, true)
-        this.dom.addEventListener('dragstart', (e) => {
-            if (!this._mousedownInHandle) e.preventDefault()
-        })
-
-        // idcard contentDOM 是 hidden,當 PM 從外部把 caret 設到此 entry 內(ArrowDown 跨 entry
-        // 時的常見路徑),DOM 上看不見 caret。監聽 selectionUpdate,把 focus redirect 到 line1,
-        // 並清除可能產生的 inline content 殘留(若 PM 已把字符寫進 hidden contentDOM)。
-        if (isIdCard) {
-            this._onSelUpdate = () => {
-                const pos = this.getPos()
-                if (pos === undefined) return
-                const sel = editor.state.selection
-                const entryEnd = pos + this.node.nodeSize
-                if (sel.from < pos || sel.to > entryEnd) return
-                if (!this._idcardInputs || this._idcardInputs.length === 0) return
-                // 已 focus 在 line1~4 任一就不動;否則 redirect 到 line1
-                if (this._idcardInputs.includes(document.activeElement)) return
-                queueMicrotask(() => {
-                    try { this._idcardInputs[0].focus() } catch (_) {}
-                })
-            }
-            try { editor.on('selectionUpdate', this._onSelUpdate) } catch (_) {}
-
-            // mount 時清除 idcard 殘留的 inline content (主旨欄是 line1 input,不該有 inline)
-            this._scheduleIdcardInlineCleanup()
+    _renderBody() {
+        this.body.innerHTML = ''
+        this.body.appendChild(this._buildSubjectDisplay())
+        if (!this.node.attrs.collapsed) {
+            const fields = this._buildFieldsReadonly()
+            if (fields) this.body.appendChild(fields)
         }
     }
 
-    // idcard 不該有 inline content,若殘留就清掉(可能來自舊版本 PM caret 跑進 contentDOM 時的污染)
-    _scheduleIdcardInlineCleanup() {
-        if ((this.node.attrs.schemaCode || '') !== 'idcard') return
-        if (!this.node.content || this.node.content.size === 0) return
-        queueMicrotask(() => {
-            try {
-                const pos = this.getPos()
-                if (pos === undefined) return
-                const view = this.editor.view
-                const cur = view.state.doc.nodeAt(pos)
-                if (!cur || (cur.attrs.schemaCode || '') !== 'idcard') return
-                if (cur.content.size === 0) return
-                const tr = view.state.tr
-                tr.delete(pos + 1, pos + 1 + cur.content.size)
-                view.dispatch(tr)
-            } catch (_) { /* ignore */ }
-        })
-    }
-
-    // 收集 entry 內所有可 focus 的 form element + 顯式 tabindex 元素(如 idcard 圖框),
-    // 供 Tab 順序導航使用。tabindex="-1" 排除。
-    _collectFocusables() {
-        const sel = 'input, textarea, select, [tabindex]:not([tabindex="-1"])'
-        const list = Array.from(this.dom.querySelectorAll(sel))
-        // 過濾不可見/disabled 的元素
-        return list.filter(el => {
-            if (el.disabled) return false
-            // 簡易可見性檢查:offsetParent 為 null 表 hidden(display:none)
-            if (el.offsetParent === null && el.tagName !== 'BODY') return false
-            return true
-        })
-    }
-
-    // Tab 導航:在 entry 內 input 順序移動;邊界跳脫到 entry 前/後 textblock。
-    // Shift+Tab 在第一個 input -> 主旨欄(contentDOM,若有可編輯主旨);idcard 等無主旨者跳出 entry。
-    _focusNextField(currentEl, reverse) {
-        const all = this._collectFocusables()
-        const idx = all.indexOf(currentEl)
-        if (idx < 0) {
-            if (reverse) this._focusBeforeEntry()
-            else this._focusAfterEntry()
-            return
-        }
-        if (reverse) {
-            if (idx === 0) {
-                if (this._focusSubject()) return
-                this._focusBeforeEntry()
-                return
-            }
-            const prev = all[idx - 1]
-            try { prev.focus(); if (prev.select) prev.select() } catch (_) {}
-        } else {
-            if (idx === all.length - 1) {
-                this._focusAfterEntry()
-                return
-            }
-            const next = all[idx + 1]
-            try { next.focus(); if (next.select) next.select() } catch (_) {}
-        }
-    }
-
-    // 把 caret 放到 contentDOM 末尾(主旨欄末端);idcard 沒有可編輯主旨,回 false。
-    _focusSubject() {
+    _subjectText() {
         const code = this.node.attrs.schemaCode || ''
-        if (code === 'idcard') return false
-        const pos = this.getPos()
-        if (pos === undefined) return false
-        try {
-            const inlinePos = pos + 1 + this.node.content.size
-            this.editor.chain().focus().setTextSelection(inlinePos).run()
-            return true
-        } catch (_) {
-            return false
+        const fv = this.node.attrs.fieldValues || {}
+        if (code === 'idcard') {
+            return (fv.line1 || '').trim()
         }
+        if (code === 'file') {
+            return fv.filename || (this.node.textContent || '')
+        }
+        return this.node.textContent || ''
     }
 
-    _renderFileHeader() {
-        if (!this.fileHeader) return
-        this.fileHeader.innerHTML = ''
+    _buildSubjectDisplay() {
+        const wrap = document.createElement('div')
+        wrap.className = 'se-display-row'
+        const subjectSpan = document.createElement('span')
+        subjectSpan.className = 'se-display-subject'
+        const text = this._subjectText()
+        if (text) {
+            subjectSpan.textContent = text
+        } else {
+            subjectSpan.textContent = '(空白主旨,雙擊編輯)'
+            subjectSpan.classList.add('se-display-subject--empty')
+        }
+        wrap.appendChild(subjectSpan)
+        return wrap
+    }
+
+    _buildFieldsReadonly() {
+        const code = this.node.attrs.schemaCode || ''
+        if (code === 'idcard') return this._buildIdCardReadonly()
+        if (code === 'file') return this._buildFileReadonly()
+        const schema = this._getSchema()
+        if (!schema || !schema.fields || schema.fields.length === 0) return null
+        const grid = document.createElement('div')
+        grid.className = 'se-fields-readonly'
+        const fv = this.node.attrs.fieldValues || {}
+        const sorted = schema.fields.slice().sort((a, b) => a.sort_order - b.sort_order)
+        for (const f of sorted) {
+            const row = document.createElement('div')
+            row.className = 'se-fields-readonly__row'
+            const lbl = document.createElement('span')
+            lbl.className = 'se-fields-readonly__label'
+            lbl.textContent = f.label + ':'
+            row.appendChild(lbl)
+            const val = document.createElement('span')
+            val.className = 'se-fields-readonly__value'
+            const v = fv[f.name]
+            val.textContent = (v == null || v === '') ? '—' : String(v)
+            row.appendChild(val)
+            grid.appendChild(row)
+        }
+        return grid
+    }
+
+    _buildIdCardReadonly() {
+        const wrap = document.createElement('div')
+        wrap.className = 'se-idcard-readonly'
+        const fv = this.node.attrs.fieldValues || {}
+        const token = (fv.image_token || '').trim()
+        const imgBox = document.createElement('div')
+        imgBox.className = 'se-idcard-image'
+        if (token) {
+            const img = document.createElement('img')
+            img.src = '/beakcortex/files/' + encodeURIComponent(token)
+            img.alt = ''
+            img.draggable = false
+            imgBox.appendChild(img)
+        } else {
+            const empty = document.createElement('div')
+            empty.className = 'se-idcard-image-empty'
+            empty.textContent = '(無圖)'
+            imgBox.appendChild(empty)
+        }
+        wrap.appendChild(imgBox)
+        const lines = document.createElement('div')
+        lines.className = 'se-idcard-fields'
+        for (let i = 1; i <= 4; i++) {
+            const line = document.createElement('div')
+            line.className = 'se-idcard-line se-idcard-line-' + i
+            line.textContent = fv['line' + i] || ''
+            lines.appendChild(line)
+        }
+        wrap.appendChild(lines)
+        return wrap
+    }
+
+    _buildFileReadonly() {
+        const wrap = document.createElement('div')
+        wrap.className = 'se-file-header'
         const fv = this.node.attrs.fieldValues || {}
         const token = fv.file_token || ''
         const filename = fv.filename || '(未命名)'
         const sizeBytes = parseInt(fv.size_bytes || '0', 10) || 0
         const mime = fv.mime_type || ''
-
         const icon = document.createElement('span')
         icon.className = 'se-file-icon'
         icon.textContent = '\u{1F4CE}'  // 📎
-        this.fileHeader.appendChild(icon)
-
+        wrap.appendChild(icon)
         const link = document.createElement('a')
         link.className = 'se-file-link'
         if (token) {
@@ -604,12 +563,12 @@ class StructuredEntryView {
             link.title = '點擊下載 ' + filename
         }
         link.textContent = filename
-        this.fileHeader.appendChild(link)
-
+        wrap.appendChild(link)
         const meta = document.createElement('span')
         meta.className = 'se-file-meta'
         meta.textContent = ' (' + this._humanSize(sizeBytes) + (mime ? ' · ' + mime : '') + ')'
-        this.fileHeader.appendChild(meta)
+        wrap.appendChild(meta)
+        return wrap
     }
 
     _humanSize(bytes) {
@@ -621,20 +580,74 @@ class StructuredEntryView {
         return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i]
     }
 
-    _getSchema() {
-        const code = this.node.attrs.schemaCode || 'freetext'
-        return this._schemas.find(s => s.code === code)
+    _openEdit() {
+        const schema = this._getSchema()
+        const code = this.node.attrs.schemaCode || ''
+        if (code === 'file') return  // file 不走 modal 編輯
+        const subject = this._subjectText()
+        openEntryModal({
+            schema,
+            schemaCode: code,
+            rawText: subject,
+            fieldValues: { ...(this.node.attrs.fieldValues || {}) },
+            mode: 'edit',
+            focusField: 'subject',
+            onSave: ({ rawText, fieldValues }) => {
+                this._applyEdit(rawText, fieldValues)
+            },
+        })
     }
 
-    _isCalendarMode() {
-        if ((this.node.attrs.schemaCode || 'freetext') !== 'task') return false
-        const fv = this.node.attrs.fieldValues || {}
-        return !!(fv.planned_start && fv.planned_start.trim())
+    _applyEdit(rawText, fieldValues) {
+        const pos = this.getPos()
+        if (pos === undefined) return
+        const view = this.editor.view
+        const state = view.state
+        const code = this.node.attrs.schemaCode || ''
+        const fv = { ...(fieldValues || {}) }
+        // idcard 主旨從 line1 進來
+        if (code === 'idcard') {
+            fv.line1 = rawText || fv.line1 || ''
+        }
+        // idcard is_primary 單選邏輯:其他 idcard 全部 false
+        let primaryClearTr = null
+        if (code === 'idcard' && (fv.is_primary === 'true' || fv.is_primary === true)) {
+            primaryClearTr = state.tr
+            state.doc.descendants((n, p) => {
+                if (n.type.name !== 'structuredEntry') return
+                if ((n.attrs.schemaCode || '') !== 'idcard') return
+                if (p === pos) return
+                const ofv = n.attrs.fieldValues || {}
+                if (ofv.is_primary === 'true' || ofv.is_primary === true) {
+                    primaryClearTr.setNodeMarkup(p, undefined, {
+                        ...n.attrs,
+                        fieldValues: { ...ofv, is_primary: 'false' },
+                    })
+                }
+            })
+        }
+        const tr = primaryClearTr || state.tr
+        tr.setNodeMarkup(pos, undefined, {
+            ...this.node.attrs,
+            fieldValues: fv,
+        })
+        // 替換 inline content
+        const mappedPos = primaryClearTr ? tr.mapping.map(pos) : pos
+        const node = state.doc.nodeAt(mappedPos) || this.node
+        const inlineFrom = mappedPos + 1
+        const inlineTo = mappedPos + 1 + node.content.size
+        const subjectForInline = code === 'idcard' ? '' : (rawText || '')
+        if (subjectForInline) {
+            tr.replaceWith(inlineFrom, inlineTo, state.schema.text(subjectForInline))
+        } else {
+            tr.delete(inlineFrom, inlineTo)
+        }
+        view.dispatch(tr)
     }
 
     _updateBadge() {
         const schema = this._getSchema()
-        const code = this.node.attrs.schemaCode || 'freetext'
+        const code = this.node.attrs.schemaCode || ''
         const isCal = this._isCalendarMode()
         if (schema) {
             this.badge.textContent = isCal ? '行事曆' : schema.name
@@ -643,16 +656,27 @@ class StructuredEntryView {
             this.badge.textContent = code
             this.badge.style.backgroundColor = '#6b7280'
         }
-        this.badge.title = '點擊選取此物件（供擷取/謄寫）'
+        this.badge.title = '點擊選取此物件 (供擷取/謄寫)'
     }
 
     _updateVisualMode() {
         const isCal = this._isCalendarMode()
-        const code = this.node.attrs.schemaCode || 'freetext'
+        const code = this.node.attrs.schemaCode || ''
         if (code === 'task') {
             this.dom.classList.toggle('se-task--calendar', isCal)
         }
         this._updateBadge()
+    }
+
+    _isCalendarMode() {
+        if ((this.node.attrs.schemaCode || 'freetext') !== 'task') return false
+        const fv = this.node.attrs.fieldValues || {}
+        return !!(fv.planned_start && fv.planned_start.trim())
+    }
+
+    _getSchema() {
+        const code = this.node.attrs.schemaCode || 'freetext'
+        return this._schemas.find(s => s.code === code)
     }
 
     _selectNode() {
@@ -679,630 +703,33 @@ class StructuredEntryView {
     _deleteEntry() {
         const pos = this.getPos()
         if (pos === undefined) return
-        // 存入全域回收站供復原
         if (!window._deletedEntries) window._deletedEntries = []
         window._deletedEntries.push({
             node: this.node.toJSON(),
             text: this.node.textContent,
             time: Date.now(),
         })
-        // 軟刪除：直接從文件移除此 node
         const tr = this.editor.view.state.tr
         tr.delete(pos, pos + this.node.nodeSize)
         this.editor.view.dispatch(tr)
-    }
-
-    _renderFields() {
-        this.fieldsPanel.innerHTML = ''
-        const schema = this._getSchema()
-        if (!schema || !schema.fields || schema.fields.length === 0) return
-
-        const fv = this.node.attrs.fieldValues || {}
-        const code = this.node.attrs.schemaCode || 'freetext'
-
-        // task / 行事曆使用固定排版（4 欄 grid + 備註佔整列且 textarea）
-        if (code === 'task') {
-            this._renderTaskGrid(schema, fv)
-            return
-        }
-
-        const table = document.createElement('div')
-        table.className = 'se-fields-grid'
-
-        // 長文字欄位（備註 / 內容）自成整列 + textarea 三列高
-        const LONG_FIELDS = ['note', 'body']
-        const sorted = schema.fields.slice().sort((a, b) => a.sort_order - b.sort_order)
-
-        for (const field of sorted) {
-            if (LONG_FIELDS.includes(field.name)) continue
-            table.appendChild(this._buildFieldCell(field, fv[field.name] || ''))
-        }
-        for (const field of sorted) {
-            if (!LONG_FIELDS.includes(field.name)) continue
-            const cell = this._buildFieldCell(field, fv[field.name] || '', { multiline: true })
-            cell.classList.add('se-multiline-row')
-            table.appendChild(cell)
-        }
-        this.fieldsPanel.appendChild(table)
-    }
-
-    _buildFieldCell(field, currentValue, opts = {}) {
-        const row = document.createElement('div')
-        row.className = 'se-field-row'
-
-        const label = document.createElement('span')
-        label.className = 'se-field-label'
-        label.textContent = field.label
-        if (field.dimension) {
-            const dim = document.createElement('span')
-            dim.className = 'se-field-dim'
-            dim.textContent = field.dimension
-            label.appendChild(dim)
-        }
-        row.appendChild(label)
-
-        const input = this._createFieldInput(field, currentValue, opts)
-        row.appendChild(input)
-        return row
-    }
-
-    _renderTaskGrid(schema, fv) {
-        const table = document.createElement('div')
-        table.className = 'se-fields-grid se-task-grid'
-
-        const fmap = {}
-        for (const f of schema.fields) fmap[f.name] = f
-
-        // 用戶指定的 5 列佈局（每列 4 欄；缺項留空格）
-        const layout = [
-            ['category', 'urgency', 'location', 'attendees'],
-            ['note'],
-            ['baseline_start', 'baseline_end'],
-            ['planned_start', 'planned_end', 'planned_duration'],
-            ['actual_start', 'actual_end', 'progress', 'status'],
-        ]
-
-        for (const row of layout) {
-            for (const name of row) {
-                const field = fmap[name]
-                if (!field) continue
-                const isNote = name === 'note'
-                const cell = this._buildFieldCell(
-                    field,
-                    fv[field.name] || '',
-                    { multiline: isNote }
-                )
-                if (isNote) cell.classList.add('se-task-note')
-                table.appendChild(cell)
-            }
-            // 補空格 cell 對齊 grid 欄數（避免下一列從上一列留下的空隙開始）
-            const remain = 4 - row.length
-            if (remain > 0 && row[0] !== 'note') {
-                for (let i = 0; i < remain; i++) {
-                    const filler = document.createElement('div')
-                    filler.className = 'se-field-row se-task-filler'
-                    table.appendChild(filler)
-                }
-            }
-        }
-        this.fieldsPanel.appendChild(table)
-    }
-
-    _renderIdCard() {
-        this.fieldsPanel.innerHTML = ''
-        this._idcardInputs = []
-        this._idcardImgBox = null
-        this._idcardRenderImage = null
-        this._idcardToggle = null
-        const fv = this.node.attrs.fieldValues || {}
-
-        const body = document.createElement('div')
-        body.className = 'se-idcard-body'
-
-        // 左：圖框（contentEditable=false 讓 ProseMirror 不接管 caret，可正常觸發 click）
-        const imgBox = document.createElement('div')
-        imgBox.className = 'se-idcard-image'
-        imgBox.title = '點擊選圖 (Tab 訪問,Enter 開啟)'
-        imgBox.contentEditable = 'false'
-        imgBox.tabIndex = 0
-        // 阻擋 keydown 冒泡到 PM,並提供 Tab/Enter/Arrow 處理
-        imgBox.addEventListener('keydown', (e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                imgBox.click()
-            } else if (e.key === 'Tab') {
-                e.preventDefault()
-                this._focusNextField(imgBox, e.shiftKey)
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault()
-                this._focusBeforeEntry()
-            } else if (e.key === 'ArrowDown') {
-                e.preventDefault()
-                this._focusAfterEntry()
-            } else if (e.key === 'Escape') {
-                e.preventDefault()
-                imgBox.blur()
-            }
-        })
-
-        const renderImage = () => {
-            imgBox.innerHTML = ''
-            const currentFv = this.node.attrs.fieldValues || {}
-            const token = (currentFv.image_token || '').trim()
-            if (token) {
-                const img = document.createElement('img')
-                img.src = '/beakcortex/files/' + encodeURIComponent(token)
-                img.alt = ''
-                img.draggable = false
-                imgBox.appendChild(img)
-            } else {
-                const empty = document.createElement('div')
-                empty.className = 'se-idcard-image-empty'
-                empty.textContent = '點擊選圖'
-                imgBox.appendChild(empty)
-            }
-
-            const actions = document.createElement('div')
-            actions.className = 'se-idcard-image-actions'
-            const replaceBtn = document.createElement('button')
-            replaceBtn.type = 'button'
-            replaceBtn.className = 'se-idcard-image-action'
-            replaceBtn.textContent = token ? '換圖' : '選圖'
-            replaceBtn.addEventListener('click', (e) => {
-                e.stopPropagation()
-                pickImage()
-            })
-            actions.appendChild(replaceBtn)
-            if (token) {
-                const clearBtn = document.createElement('button')
-                clearBtn.type = 'button'
-                clearBtn.className = 'se-idcard-image-action'
-                clearBtn.textContent = '清除'
-                clearBtn.addEventListener('click', (e) => {
-                    e.stopPropagation()
-                    this._setIdCardField('image_token', '')
-                    renderImage()
-                })
-                actions.appendChild(clearBtn)
-            }
-            imgBox.appendChild(actions)
-        }
-
-        const pickImage = () => {
-            const currentFv = this.node.attrs.fieldValues || {}
-            openImageAlbumPicker({
-                currentToken: currentFv.image_token || null,
-                onSelect: (token) => {
-                    this._setIdCardField('image_token', token)
-                    renderImage()
-                },
-            })
-        }
-        imgBox.addEventListener('click', pickImage)
-        renderImage()
-        this._idcardImgBox = imgBox
-        this._idcardRenderImage = renderImage
-        body.appendChild(imgBox)
-
-        // 右：四列文字
-        const fields = document.createElement('div')
-        fields.className = 'se-idcard-fields'
-        const placeholders = ['主標（如姓名/設備名）', '副標（職稱/型號）', '第三列', '第四列']
-        // 阻擋鍵盤/輸入/貼上事件冒泡到 ProseMirror，否則：
-        //   - IME 中文 composition 會被 PM 攔截（無法輸入中文）
-        //   - paste / Ctrl+V 會被 PM 接管
-        //   - Backspace 會觸發 PM 對整個 NodeSelection 的刪除
-        const STOP_EVENTS = [
-            'keydown', 'keyup', 'keypress',
-            'beforeinput', 'input',
-            'paste', 'cut', 'copy',
-            'compositionstart', 'compositionupdate', 'compositionend',
-            'mousedown', 'mouseup', 'click', 'dblclick',
-            'drop', 'dragstart',
-        ]
-        for (let i = 1; i <= 4; i++) {
-            const key = 'line' + i
-            const inp = document.createElement('input')
-            inp.type = 'text'
-            inp.className = 'se-idcard-line se-idcard-line-' + i
-            inp.placeholder = placeholders[i - 1]
-            inp.value = fv[key] || ''
-            // 先註冊 stopPropagation -- 必須在自訂 keydown handler 之前
-            for (const evName of STOP_EVENTS) {
-                inp.addEventListener(evName, (e) => e.stopPropagation())
-            }
-            inp.addEventListener('blur', () => {
-                this._setIdCardField(key, inp.value)
-            })
-            const lineIdx = i  // 1..4 closure 鎖定
-            inp.addEventListener('keydown', (e) => {
-                // ArrowUp/Down: 跳脫 entry 至前/後 textblock（不在 line 之間移動）
-                if (e.key === 'ArrowUp') {
-                    e.preventDefault()
-                    this._setIdCardField(key, inp.value)
-                    this._focusBeforeEntry()
-                } else if (e.key === 'ArrowDown') {
-                    e.preventDefault()
-                    this._setIdCardField(key, inp.value)
-                    this._focusAfterEntry()
-                } else if (e.key === 'Enter') {
-                    // Enter 跳脫 entry 到後方 textblock（line1~4 短文不需換行）
-                    e.preventDefault()
-                    this._setIdCardField(key, inp.value)
-                    this._focusAfterEntry()
-                } else if (e.key === 'Tab') {
-                    // 主動接管 Tab:在 entry 內所有 focusable input 間順序移動;邊界跳脫 entry。
-                    e.preventDefault()
-                    this._setIdCardField(key, inp.value)
-                    this._focusNextField(inp, e.shiftKey)
-                } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    inp.value = (this.node.attrs.fieldValues || {})[key] || ''
-                    inp.blur()
-                }
-            })
-            this._idcardInputs.push(inp)
-            fields.appendChild(inp)
-        }
-        body.appendChild(fields)
-        this.fieldsPanel.appendChild(body)
-
-        // 工具列：主帳卡 toggle
-        const toolbar = document.createElement('div')
-        toolbar.className = 'se-idcard-toolbar'
-        toolbar.contentEditable = 'false'
-        toolbar.addEventListener('mousedown', (e) => e.stopPropagation())
-
-        const isPrimary = this._idCardIsPrimary()
-        const toggle = document.createElement('span')
-        toggle.className = 'se-idcard-primary-toggle' + (isPrimary ? ' is-active' : '')
-        toggle.textContent = (isPrimary ? '★' : '☆') + ' 設為白板主帳卡'
-        toggle.title = '勾選後，此帳卡將取代卡片在白板上的縮圖預覽'
-        toggle.addEventListener('click', () => this._toggleIdCardPrimary())
-        this._idcardToggle = toggle
-        toolbar.appendChild(toggle)
-        this.fieldsPanel.appendChild(toolbar)
-    }
-
-    _refreshIdCard() {
-        // 增量更新：不替換 input 元素，避免 ProseMirror dispatch 觸發的 NodeView.update 把焦點打掉
-        const fv = this.node.attrs.fieldValues || {}
-        if (this._idcardRenderImage) {
-            try { this._idcardRenderImage() } catch (_) {}
-        }
-        if (this._idcardInputs) {
-            for (let i = 0; i < this._idcardInputs.length; i++) {
-                const inp = this._idcardInputs[i]
-                if (!inp) continue
-                const newVal = fv['line' + (i + 1)] || ''
-                // 不覆蓋正在被使用者編輯的 input（避免 IME composition 中被中斷）
-                if (document.activeElement !== inp && inp.value !== newVal) {
-                    inp.value = newVal
-                }
-            }
-        }
-        if (this._idcardToggle) {
-            const isPrimary = this._idCardIsPrimary()
-            this._idcardToggle.classList.toggle('is-active', isPrimary)
-            this._idcardToggle.textContent = (isPrimary ? '★' : '☆') + ' 設為白板主帳卡'
-        }
-    }
-
-    _focusAfterEntry() {
-        // 從此 entry 的下一個位置找最近的 textblock(包括其他 entry,讓並列 entry 可以鄰接導航)。
-        // 對 idcard 等 hidden contentDOM 的 entry,_moveCaretTo 會 redirect 到 line1 input。
-        if (!this.editor || !this.editor.state) return
-        const pos = this.getPos()
-        if (pos === undefined) {
-            this.editor.commands.focus()
-            return
-        }
-        const after = pos + this.node.nodeSize
-        const doc = this.editor.state.doc
-        let target = null
-        let targetNode = null
-        try {
-            doc.nodesBetween(after, doc.content.size, (n, p) => {
-                if (target !== null) return false
-                if (n.isTextblock) {
-                    target = p
-                    targetNode = n
-                    return false
-                }
-                return true
-            })
-        } catch (_) { /* ignore */ }
-        if (target !== null) {
-            _moveCaretTo(this.editor, target, targetNode, false)
-            return
-        }
-        // 沒有後續 textblock:在 doc 末插一個 paragraph 並進入
-        try {
-            const tr = this.editor.state.tr
-            const para = this.editor.state.schema.nodes.paragraph.create()
-            tr.insert(after, para)
-            tr.setSelection(TextSelection.create(tr.doc, after + 1))
-            this.editor.view.dispatch(tr)
-            this.editor.view.focus()
-        } catch (_) {
-            this.editor.commands.focus()
-        }
-    }
-
-    _focusBeforeEntry() {
-        // 從 entry 之前的位置往前找最後一個 textblock,進入其尾端(包括其他 entry)。
-        if (!this.editor || !this.editor.state) return
-        const pos = this.getPos()
-        if (pos === undefined || pos <= 0) {
-            this.editor.commands.focus()
-            return
-        }
-        const doc = this.editor.state.doc
-        let target = null
-        let targetNode = null
-        try {
-            doc.nodesBetween(0, pos, (n, p) => {
-                if (n.isTextblock) {
-                    target = p
-                    targetNode = n
-                    return false
-                }
-                return true
-            })
-        } catch (_) { /* ignore */ }
-        if (target !== null) {
-            _moveCaretTo(this.editor, target, targetNode, true)
-            return
-        }
-        // 沒有前置 textblock:在 doc 開頭插 paragraph
-        try {
-            const tr = this.editor.state.tr
-            const para = this.editor.state.schema.nodes.paragraph.create()
-            tr.insert(0, para)
-            tr.setSelection(TextSelection.create(tr.doc, 1))
-            this.editor.view.dispatch(tr)
-            this.editor.view.focus()
-        } catch (_) {
-            this.editor.commands.focus()
-        }
-    }
-
-    _idCardIsPrimary() {
-        const v = (this.node.attrs.fieldValues || {}).is_primary
-        return v === 'true' || v === true
-    }
-
-    _setIdCardField(key, value) {
-        const pos = this.getPos()
-        if (pos === undefined) return
-        const fv = { ...(this.node.attrs.fieldValues || {}) }
-        fv[key] = value
-        this.editor.view.dispatch(
-            this.editor.view.state.tr.setNodeMarkup(pos, undefined, {
-                ...this.node.attrs,
-                fieldValues: fv,
-            })
-        )
-    }
-
-    _toggleIdCardPrimary() {
-        const pos = this.getPos()
-        if (pos === undefined) return
-        const next = !this._idCardIsPrimary()
-        const tr = this.editor.view.state.tr
-
-        if (next) {
-            // 單選邏輯：把同 doc 內所有其他 idcard 的 is_primary 設為 false
-            this.editor.view.state.doc.descendants((node, p) => {
-                if (node.type.name !== 'structuredEntry') return
-                if ((node.attrs.schemaCode || '') !== 'idcard') return
-                if (p === pos) return
-                const ofv = node.attrs.fieldValues || {}
-                if (ofv.is_primary === 'true' || ofv.is_primary === true) {
-                    tr.setNodeMarkup(p, undefined, {
-                        ...node.attrs,
-                        fieldValues: { ...ofv, is_primary: 'false' },
-                    })
-                }
-            })
-        }
-
-        const fv = { ...(this.node.attrs.fieldValues || {}) }
-        fv.is_primary = next ? 'true' : 'false'
-        tr.setNodeMarkup(pos, undefined, { ...this.node.attrs, fieldValues: fv })
-        this.editor.view.dispatch(tr)
-    }
-
-    _createFieldInput(field, currentValue, opts = {}) {
-        let el
-        if (opts.multiline) {
-            el = document.createElement('textarea')
-            el.className = 'se-field-input se-field-textarea'
-            el.rows = 3
-            el.value = currentValue
-            el.placeholder = 'Enter 跳脫物件 / Shift+Enter 換行'
-        } else if (field.field_type === 'select' || field.field_type === 'multiselect') {
-            el = document.createElement('select')
-            el.className = 'se-field-input'
-            // Add empty option
-            const emptyOpt = document.createElement('option')
-            emptyOpt.value = ''
-            emptyOpt.textContent = '-'
-            el.appendChild(emptyOpt)
-            try {
-                const options = JSON.parse(field.options || '[]')
-                for (const opt of options) {
-                    const o = document.createElement('option')
-                    o.value = opt
-                    o.textContent = opt
-                    if (opt === currentValue) o.selected = true
-                    el.appendChild(o)
-                }
-            } catch (e) { /* invalid options JSON */ }
-        } else if (field.field_type === 'checkbox') {
-            el = document.createElement('input')
-            el.type = 'checkbox'
-            el.className = 'se-field-input'
-            el.checked = currentValue === 'true' || currentValue === true
-        } else if (field.field_type === 'date') {
-            el = document.createElement('input')
-            el.type = 'date'
-            el.className = 'se-field-input'
-            el.value = currentValue
-        } else if (field.field_type === 'datetime') {
-            el = document.createElement('input')
-            el.type = 'datetime-local'
-            el.className = 'se-field-input'
-            el.value = currentValue
-        } else if (field.field_type === 'number' || field.field_type === 'decimal') {
-            el = document.createElement('input')
-            el.type = 'number'
-            el.className = 'se-field-input'
-            el.value = currentValue
-            if (field.field_type === 'decimal') el.step = '0.01'
-        } else {
-            el = document.createElement('input')
-            el.type = 'text'
-            el.className = 'se-field-input'
-            el.value = currentValue
-        }
-
-        // On change, update the node attribute
-        const handler = () => {
-            const pos = this.getPos()
-            if (pos === undefined) return
-            const newValue = el.type === 'checkbox' ? String(el.checked) : el.value
-            const fv = { ...(this.node.attrs.fieldValues || {}) }
-            fv[field.name] = newValue
-            this.editor.view.dispatch(
-                this.editor.view.state.tr.setNodeMarkup(pos, undefined, {
-                    ...this.node.attrs,
-                    fieldValues: fv,
-                })
-            )
-        }
-        el.addEventListener('change', handler)
-        if (el.tagName === 'INPUT' && el.type !== 'checkbox') {
-            el.addEventListener('blur', handler)
-        }
-
-        // 阻擋所有鍵盤/輸入相關事件冒到 ProseMirror,避免 PM 攔截 Tab/Enter/Shift-Enter
-        // (PM 的 ListHotkeys.Tab 會 preventDefault 吃掉 Tab、Shift-Enter 會在主旨欄插 hardBreak)
-        const STOP_FIELD_EVENTS = [
-            'keyup', 'keypress',
-            'beforeinput', 'input',
-            'paste', 'cut', 'copy',
-            'compositionstart', 'compositionupdate', 'compositionend',
-        ]
-        for (const evName of STOP_FIELD_EVENTS) {
-            el.addEventListener(evName, (e) => e.stopPropagation())
-        }
-
-        // 鍵盤導航:Enter 跳脫 entry、Shift+Enter 在 textarea 自然換行、ArrowUp/Down 跳脫
-        // 不攔 Tab(讓瀏覽器自然在 fieldsPanel 內 input 之間移動,但要 stopPropagation 阻擋 PM)
-        // checkbox/select 預設行為較特殊,避開 ArrowUp/Down 攔截
-        const isCheckbox = el.tagName === 'INPUT' && el.type === 'checkbox'
-        const isSelect = el.tagName === 'SELECT'
-        const isTextarea = el.tagName === 'TEXTAREA'
-        el.addEventListener('keydown', (e) => {
-            // 一律 stopPropagation,確保 PM 收不到任何 input 內的 keydown
-            e.stopPropagation()
-
-            if (e.key === 'Enter' && !e.shiftKey) {
-                // Enter 跳脫 entry (textarea 也適用,換行請用 Shift+Enter)
-                e.preventDefault()
-                handler()
-                this._focusAfterEntry()
-            } else if (e.key === 'Enter' && e.shiftKey) {
-                // textarea: 不 preventDefault,瀏覽器自然在 textarea 內換行
-                // 非 textarea 的 input: Shift+Enter 也跳脫,行為等同 Enter
-                if (!isTextarea) {
-                    e.preventDefault()
-                    handler()
-                    this._focusAfterEntry()
-                }
-            } else if (e.key === 'Escape') {
-                e.preventDefault()
-                el.blur()
-            } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !isSelect && !isCheckbox) {
-                if (isTextarea) {
-                    // textarea 內若是多行,讓 Arrow 在文字內正常移動;只在邊界行跳脫
-                    const isAtTopLine = el.selectionStart === 0 || el.value.lastIndexOf('\n', el.selectionStart - 1) === -1
-                    const isAtBottomLine = el.value.indexOf('\n', el.selectionStart) === -1
-                    if (e.key === 'ArrowUp' && isAtTopLine) {
-                        e.preventDefault()
-                        handler()
-                        this._focusBeforeEntry()
-                    } else if (e.key === 'ArrowDown' && isAtBottomLine) {
-                        e.preventDefault()
-                        handler()
-                        this._focusAfterEntry()
-                    }
-                } else {
-                    e.preventDefault()
-                    handler()
-                    if (e.key === 'ArrowUp') this._focusBeforeEntry()
-                    else this._focusAfterEntry()
-                }
-            } else if (e.key === 'Tab') {
-                // 主動接管 Tab:在 entry 內所有 focusable input 間順序移動;邊界跳脫 entry。
-                // 瀏覽器預設 Tab 在 contenteditable nodeView 內表現不一致,改全部主動處理。
-                e.preventDefault()
-                handler()
-                this._focusNextField(el, e.shiftKey)
-            }
-        })
-
-        return el
     }
 
     update(node) {
         if (node.type.name !== 'structuredEntry') return false
         this.node = node
         const code = node.attrs.schemaCode || 'freetext'
-        const isFile = code === 'file'
-        const isIdCard = code === 'idcard'
-        this.dom.className = 'se-block se-' + code
-        if (isIdCard) this.dom.classList.add('se-idcard')
+        this.dom.className = 'se-block se-readonly se-' + code
         this._updateVisualMode()
-        if (isFile) {
-            this._renderFileHeader()
-            this.fieldsPanel.style.display = 'none'
-        } else if (isIdCard) {
-            this.contentDOM.style.display = 'none'
-            this.fieldsPanel.style.display = 'block'
-            // 用增量更新而非整個 re-render，避免 input 元素被 detach 導致焦點丟失
-            if (this._idcardRenderedOnce) {
-                this._refreshIdCard()
-            } else {
-                this._renderIdCard()
-                this._idcardRenderedOnce = true
-            }
-            // 清除 idcard 殘留的 inline content (主旨欄是 line1 input,不該有 inline 文字)
-            this._scheduleIdcardInlineCleanup()
-        } else {
-            this.fieldsPanel.style.display = node.attrs.collapsed ? 'none' : 'block'
-            if (this.toggleBtn) {
-                this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
-                this.toggleBtn.title = node.attrs.collapsed ? '展開欄位' : '收合欄位'
-            }
-            if (!node.attrs.collapsed) {
-                this._renderFields()
-            }
+        if (this.toggleBtn) {
+            this.toggleBtn.textContent = node.attrs.collapsed ? '+' : '-'
+            this.toggleBtn.title = node.attrs.collapsed ? '展開全部欄位 (唯讀)' : '收合'
         }
+        this._renderBody()
         return true
     }
 
     selectNode() {
         this.dom.classList.add('se-selected')
-        // idcard 被 PM NodeSelection 時(從上下方 caret 進入 hidden contentDOM 的常見路徑),
-        // 重定向 caret 到 line1(主旨欄),避免 caret 卡在隱形 contentDOM 內視覺上消失
-        if ((this.node.attrs.schemaCode || '') === 'idcard' && this._idcardInputs && this._idcardInputs[0]) {
-            queueMicrotask(() => {
-                try { this._idcardInputs[0].focus() } catch (_) {}
-            })
-        }
     }
 
     deselectNode() {
@@ -1310,10 +737,16 @@ class StructuredEntryView {
     }
 
     destroy() {
-        if (this._onSelUpdate && this.editor) {
-            try { this.editor.off('selectionUpdate', this._onSelUpdate) } catch (_) {}
-            this._onSelUpdate = null
-        }
+        if (this.dom) this.dom._beakOpenEdit = null
+    }
+
+    // PM 對 NodeView 內 DOM 變動的判斷:hidden contentDOM 內若有外部 mutation,
+    // 我們不在乎(從 attrs 顯示主旨)。允許 PM 自然處理。
+    ignoreMutation(m) {
+        // 標籤列 / body 內的 DOM 變動是我們自己的渲染,PM 不要當成內容變動
+        if (this.tagRow && this.tagRow.contains(m.target)) return true
+        if (this.body && this.body.contains(m.target)) return true
+        return false
     }
 }
 

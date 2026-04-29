@@ -1856,3 +1856,311 @@ input[type="checkbox"].se-field-input {
 .wb-card-idcard-line-2 { font-size: 16px; font-weight: 600; color: #334155; }
 .wb-card-idcard-line-3 { font-size: 12px; color: #475569; }
 .wb-card-idcard-line-4 { font-size: 12px; color: #475569; }
+
+/* ============================================================
+   Entry Modal -- schema-driven 編輯對話框
+   ============================================================ */
+.beak-entry-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    z-index: 12000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.beak-entry-modal {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    width: min(720px, 100%);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: beakEntryModalIn 0.12s ease-out;
+}
+@keyframes beakEntryModalIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.beak-entry-modal--idcard { width: min(640px, 100%); }
+.beak-entry-modal--task   { width: min(820px, 100%); }
+
+.beak-entry-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+.beak-entry-modal__title {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 14px;
+}
+.beak-entry-modal__close {
+    border: none;
+    background: transparent;
+    font-size: 22px;
+    line-height: 1;
+    color: #64748b;
+    cursor: pointer;
+    padding: 0 6px;
+    border-radius: 4px;
+}
+.beak-entry-modal__close:hover { background: #e2e8f0; color: #0f172a; }
+
+.beak-entry-modal__body {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.beak-entry-modal__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.beak-entry-modal__field > label {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 500;
+}
+.beak-entry-modal__field-dim {
+    margin-left: 4px;
+    color: #94a3b8;
+    font-weight: 400;
+}
+.beak-entry-modal__field input.form-control,
+.beak-entry-modal__field textarea.form-control,
+.beak-entry-modal__field select.form-select {
+    font-size: 13px;
+}
+
+.beak-entry-modal__subject input.form-control {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.beak-entry-modal__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+.beak-entry-modal__grid--task {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+}
+.beak-entry-modal__field--full {
+    grid-column: 1 / -1;
+}
+.beak-entry-modal__filler { visibility: hidden; }
+
+.beak-entry-modal__idcard {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+.beak-entry-modal__idcard-image {
+    flex: 0 0 180px;
+    height: 220px;
+    background: #f1f5f9;
+    border: 1px dashed #94a3b8;
+    border-radius: 6px;
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.beak-entry-modal__idcard-image:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+.beak-entry-modal__idcard-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.beak-entry-modal__idcard-empty {
+    color: #94a3b8;
+    font-size: 13px;
+}
+.beak-entry-modal__idcard-actions {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    right: 6px;
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.beak-entry-modal__idcard-image:hover .beak-entry-modal__idcard-actions,
+.beak-entry-modal__idcard-image:focus .beak-entry-modal__idcard-actions {
+    opacity: 1;
+}
+.beak-entry-modal__idcard-lines {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+.beak-entry-modal__idcard-toggle {
+    margin-top: 4px;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+.beak-entry-modal__idcard-toggle label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #334155;
+}
+
+.beak-entry-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+.beak-entry-modal__hint {
+    margin-right: auto;
+    font-size: 11px;
+    color: #94a3b8;
+}
+
+/* ============================================================
+   Entry NodeView -- 展示模式 (Z 階段)
+   收合: 顯示主旨;唯一刪除入口是 [x],編輯入口是雙擊或 [編輯]。
+   ============================================================ */
+.se-block.se-readonly { user-select: none; }
+.se-display-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    flex-wrap: wrap;
+}
+.se-display-subject {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: #0f172a;
+    font-size: 13px;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.se-display-subject--empty { color: #94a3b8; font-style: italic; }
+.se-display-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.se-edit-btn {
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 12px;
+    padding: 2px 6px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+.se-edit-btn:hover { background: #e2e8f0; color: #0f172a; }
+
+/* ============================================================
+   Entry NodeView -- 唯讀欄位顯示 (全展模式)
+   ============================================================ */
+.se-fields-readonly {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 12px;
+    padding: 4px 8px 8px 8px;
+    font-size: 12px;
+}
+.se-fields-readonly__row {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+}
+.se-fields-readonly__label {
+    color: #64748b;
+    flex: 0 0 auto;
+}
+.se-fields-readonly__value {
+    color: #0f172a;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* idcard 全展唯讀 */
+.se-idcard-readonly {
+    display: flex;
+    gap: 10px;
+    padding: 6px 8px 8px 8px;
+    align-items: stretch;
+}
+.se-idcard-readonly .se-idcard-image {
+    flex: 0 0 100px;
+    height: 130px;
+    background: #f1f5f9;
+    border: 1px dashed #94a3b8;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.se-idcard-readonly .se-idcard-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.se-idcard-readonly .se-idcard-image-empty {
+    color: #94a3b8;
+    font-size: 11px;
+}
+.se-idcard-readonly .se-idcard-fields {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+    min-width: 0;
+}
+.se-idcard-readonly .se-idcard-line {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.se-idcard-readonly .se-idcard-line-1 { font-size: 18px; font-weight: 700; color: #0f172a; }
+.se-idcard-readonly .se-idcard-line-2 { font-size: 14px; font-weight: 600; color: #334155; }
+.se-idcard-readonly .se-idcard-line-3 { font-size: 12px; color: #475569; }
+.se-idcard-readonly .se-idcard-line-4 { font-size: 12px; color: #475569; }
+
+/* tagRow 編輯按鈕 */
+.se-tag-row .se-edit-btn {
+    margin-left: auto;
+    margin-right: 4px;
+}

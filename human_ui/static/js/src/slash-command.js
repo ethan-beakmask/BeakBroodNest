@@ -9,6 +9,7 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { openEntryModal } from './entry-modal.js'
 
 const slashKey = new PluginKey('slashCommand')
 
@@ -194,48 +195,115 @@ class SlashMenuView {
         if (!paragraph) { this._hide(); return }
         const end = from + paragraph.nodeSize
 
-        const entryAttrs = {
-            schemaCode: schema.code,
-            schemaId: schema.id,
-            fieldValues: {},
-            collapsed: false,
-        }
-
-        const entryNode = view.state.schema.nodes.structuredEntry.create(entryAttrs)
-
         this._hide()
 
-        // 路徑 1：直接 replaceWith 替換 ;;XXX 所在 paragraph
-        // ProseMirror 對 table cell（content: 'block+'）也允許 structuredEntry（group: 'block'），
-        // 所以 paragraph -> structuredEntry 的替換在 cell 內理論上合法。
+        // Z 階段:選 schema 後不立刻插 entry,先開 modal,confirm 才寫進文件;cancel 清掉 ;;XXX。
+        openEntryModal({
+            schema,
+            schemaCode: schema.code,
+            rawText: '',
+            fieldValues: {},
+            mode: 'create',
+            focusField: 'subject',
+            onSave: ({ rawText, fieldValues }) => {
+                this._commitNew(schema, from, end, rawText, fieldValues)
+            },
+            onCancel: () => {
+                this._discardSlashText(from, end)
+            },
+        })
+    }
+
+    // 把當前 ;;XXX 所在 paragraph 替換成填好內容的 structuredEntry。
+    // 若 replaceWith 被 schema 拒絕(table cell 等容器型態),fallback 走 deleteRange + insertContentAt。
+    _commitNew(schema, from, end, rawText, fieldValues) {
+        const view = this.editorView
+        const code = schema.code
+        const fv = { ...(fieldValues || {}) }
+        // idcard 主旨從 modal 的 rawText 進 fieldValues.line1
+        if (code === 'idcard') {
+            fv.line1 = rawText || fv.line1 || ''
+        }
+        // idcard 設為 primary 時,清除其他 idcard 的 primary
+        let primaryNeedsClear = false
+        if (code === 'idcard' && (fv.is_primary === 'true' || fv.is_primary === true)) {
+            primaryNeedsClear = true
+        }
+        const inlineText = code === 'idcard' ? '' : (rawText || '')
+        const entryAttrs = {
+            schemaCode: code,
+            schemaId: schema.id,
+            fieldValues: fv,
+            collapsed: true,
+        }
+        // 重新檢查 from/end 仍合法(modal 期間 doc 未變;如果變了走 fallback)
+        let curEnd = end
+        try {
+            const para = view.state.doc.nodeAt(from)
+            if (para && para.type.name === 'paragraph') {
+                curEnd = from + para.nodeSize
+            }
+        } catch (_) { /* ignore */ }
+
+        const entryNode = view.state.schema.nodes.structuredEntry.create(
+            entryAttrs,
+            inlineText ? [view.state.schema.text(inlineText)] : []
+        )
+
         let dispatched = false
         try {
-            const tr = view.state.tr.replaceWith(from, end, entryNode)
+            const tr = view.state.tr
+            if (primaryNeedsClear) {
+                view.state.doc.descendants((n, p) => {
+                    if (n.type.name !== 'structuredEntry') return
+                    if ((n.attrs.schemaCode || '') !== 'idcard') return
+                    const ofv = n.attrs.fieldValues || {}
+                    if (ofv.is_primary === 'true' || ofv.is_primary === true) {
+                        tr.setNodeMarkup(p, undefined, {
+                            ...n.attrs,
+                            fieldValues: { ...ofv, is_primary: 'false' },
+                        })
+                    }
+                })
+            }
+            const mappedFrom = tr.mapping.map(from)
+            const mappedEnd = tr.mapping.map(curEnd)
+            tr.replaceWith(mappedFrom, mappedEnd, entryNode)
             if (tr.docChanged) {
                 view.dispatch(tr)
                 dispatched = true
             }
         } catch (e) {
-            // schema constraint 失敗（例如 cell content 不允許），落到 fallback
-            console.warn('[slashCommand] replaceWith failed, fallback to insertContentAt:', e)
+            console.warn('[slashCommand] replaceWith failed, fallback', e)
         }
 
-        // 路徑 2 fallback：清掉 ;;XXX 文字並 insertContent。
-        // 適用 replaceWith 被 schema 拒絕時（少見的容器型態）。
         if (!dispatched) {
             this.editor.chain()
                 .focus()
-                .deleteRange({ from, to: end })
-                .insertContentAt(from, { type: 'structuredEntry', attrs: entryAttrs })
+                .deleteRange({ from, to: curEnd })
+                .insertContentAt(from, {
+                    type: 'structuredEntry',
+                    attrs: entryAttrs,
+                    content: inlineText ? [{ type: 'text', text: inlineText }] : [],
+                })
                 .run()
         }
 
-        // ;;idcard 建立後，請 NodeView constructor 自動把焦點切到第一欄
-        if (schema.code === 'idcard') {
-            window._pendingIdCardFocusEntry = true
-        }
+        setTimeout(() => this.editor.commands.focus(), 30)
+    }
 
-        setTimeout(() => this.editor.commands.focus(), 50)
+    // 取消:清掉 ;;XXX 文字,留下空 paragraph;caret 留在原位,可繼續打字。
+    _discardSlashText(from, end) {
+        const view = this.editorView
+        try {
+            const para = view.state.doc.nodeAt(from)
+            if (para && para.type.name === 'paragraph' && para.textContent.startsWith(';;')) {
+                const tr = view.state.tr
+                tr.delete(from + 1, from + 1 + para.content.size)
+                view.dispatch(tr)
+            }
+            this.editor.commands.focus()
+        } catch (_) { /* ignore */ }
     }
 
     destroy() {
