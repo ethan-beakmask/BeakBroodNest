@@ -30,6 +30,33 @@ function _entryDepth(state) {
     return -1
 }
 
+// 共用:caret 異常進入 entry inline 時,把 selection 改為該 entry 的 NodeSelection 並停留。
+// 用於 ArrowUp/Down 從 PM 預設行為跨入 entry 時 -- 停在 entry 上而非跳過。
+function _stayOnEntry(editor) {
+    const state = editor.state
+    const d = _entryDepth(state)
+    if (d < 0) return false
+    const entryStart = state.selection.$from.before(d)
+    const tr = state.tr.setSelection(NodeSelection.create(state.doc, entryStart))
+    editor.view.dispatch(tr)
+    editor.view.focus()
+    return true
+}
+
+// 共用:當 caret 在 entry inline 內時,取該 entry 的起點 pos。
+function _$entryStart(state) {
+    const d = _entryDepth(state)
+    if (d < 0) return -1
+    return state.selection.$from.before(d)
+}
+
+// 共用:當 caret 在 entry inline 內時,取該 entry 的終點 pos (entry 之後第一個位置)。
+function _$entryEnd(state) {
+    const d = _entryDepth(state)
+    if (d < 0) return -1
+    return state.selection.$from.after(d)
+}
+
 // 共用:判斷 selection 是否為 NodeSelection 且選中 structuredEntry。
 function _isEntryNodeSelection(sel) {
     return sel instanceof NodeSelection
@@ -159,90 +186,6 @@ function _isSelectionInEntry(state) {
     return false
 }
 
-// 共用:把 caret 移到指定 textblock 的開頭/末尾。
-// 若該 textblock 是 structuredEntry(其 contentDOM 永遠 hidden),跳過,讓 caller 繼續找下一個。
-function _moveCaretTo(editor, textblockPos, textblockNode, atEnd) {
-    if (textblockNode.type.name === 'structuredEntry') {
-        // entry 不可放 caret -- 由 caller 跳過繼續找
-        return false
-    }
-    const inlinePos = atEnd
-        ? textblockPos + 1 + textblockNode.content.size
-        : textblockPos + 1
-    editor.chain().focus().setTextSelection(inlinePos).run()
-    return true
-}
-
-// 共用:從給定的 entry pos 往後找「非 entry」的 textblock,跳到開頭。
-// 找不到則在 doc 末插一個 paragraph 並進入。
-function _focusAfterCurrentEntry(editor) {
-    const d = _entryDepth(editor.state)
-    if (d < 0) return false
-    const { $from } = editor.state.selection
-    const entryAfter = $from.after(d)
-    return _focusForwardFromPos(editor, entryAfter)
-}
-
-function _focusForwardFromPos(editor, fromPos) {
-    const doc = editor.state.doc
-    let target = null
-    let targetNode = null
-    doc.nodesBetween(fromPos, doc.content.size, (n, p) => {
-        if (target !== null) return false
-        if (n.isTextblock && n.type.name !== 'structuredEntry') {
-            target = p
-            targetNode = n
-            return false
-        }
-        return true
-    })
-    if (target !== null) {
-        return _moveCaretTo(editor, target, targetNode, false)
-    }
-    // 沒有後續可用 textblock -- 在 doc 末插一個 paragraph
-    const tr = editor.state.tr
-    const insertPos = Math.min(fromPos, editor.state.doc.content.size)
-    const para = editor.state.schema.nodes.paragraph.create()
-    tr.insert(insertPos, para)
-    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1))
-    editor.view.dispatch(tr)
-    editor.view.focus()
-    return true
-}
-
-// 共用:跳到 entry 之前「最近的非 entry textblock」尾端;無則在 doc 開頭插 paragraph。
-function _focusBeforeCurrentEntry(editor) {
-    const d = _entryDepth(editor.state)
-    if (d < 0) return false
-    const { $from } = editor.state.selection
-    const entryBefore = $from.before(d)
-    return _focusBackwardFromPos(editor, entryBefore)
-}
-
-function _focusBackwardFromPos(editor, toPos) {
-    const doc = editor.state.doc
-    let target = null
-    let targetNode = null
-    doc.nodesBetween(0, toPos, (n, p) => {
-        if (n.isTextblock && n.type.name !== 'structuredEntry') {
-            target = p
-            targetNode = n
-            return false
-        }
-        return true
-    })
-    if (target !== null) {
-        return _moveCaretTo(editor, target, targetNode, true)
-    }
-    const tr = editor.state.tr
-    const para = editor.state.schema.nodes.paragraph.create()
-    tr.insert(0, para)
-    tr.setSelection(TextSelection.create(tr.doc, 1))
-    editor.view.dispatch(tr)
-    editor.view.focus()
-    return true
-}
-
 export const StructuredEntry = Node.create({
     name: 'structuredEntry',
     group: 'block',
@@ -308,13 +251,14 @@ export const StructuredEntry = Node.create({
             ArrowUp: ({ editor }) => {
                 const state = editor.state
                 const sel = state.selection
-                // 已 NodeSelection 在 entry 上 -> 跳出到上一個位置
+                // 已 NodeSelection 在 entry 上 -> 跳到上一個目標(textblock 或另一個 entry)
                 if (_isEntryNodeSelection(sel)) {
-                    return _focusBackwardFromPos(editor, sel.from)
+                    return jumpOutOfBlock(editor, sel.from, false)
                 }
-                // 萬一 caret 跑進 entry inline -> redirect 出去
+                // PM 預設把 caret 跨入 entry inline -> 改為「停在這個 entry NodeSelection」
+                // (用戶才不會感覺 entry 被跳過)
                 if (_entryDepth(state) >= 0) {
-                    return _focusBeforeCurrentEntry(editor)
+                    return _stayOnEntry(editor)
                 }
                 // 在 textblock 開頭 + 前一個 sibling 是 entry -> 設 NodeSelection
                 return _enterEntryBeforeIfAdjacent(editor)
@@ -325,10 +269,11 @@ export const StructuredEntry = Node.create({
                 if (_isEntryNodeSelection(sel)) {
                     const node = state.doc.nodeAt(sel.from)
                     if (!node) return false
-                    return _focusForwardFromPos(editor, sel.from + node.nodeSize)
+                    return jumpOutOfBlock(editor, sel.from + node.nodeSize, true)
                 }
+                // PM 預設把 caret 跨入 entry inline -> 停在這個 entry
                 if (_entryDepth(state) >= 0) {
-                    return _focusAfterCurrentEntry(editor)
+                    return _stayOnEntry(editor)
                 }
                 return _enterEntryAfterIfAdjacent(editor)
             },
@@ -339,14 +284,14 @@ export const StructuredEntry = Node.create({
                     return _openEditOnSelectedEntry(editor)
                 }
                 if (_entryDepth(editor.state) < 0) return false
-                return _focusAfterCurrentEntry(editor)
+                return jumpOutOfBlock(editor, _$entryEnd(editor.state), true)
             },
             'Shift-Enter': ({ editor }) => {
                 if (_isEntryNodeSelection(editor.state.selection)) {
                     return _openEditOnSelectedEntry(editor)
                 }
                 if (_entryDepth(editor.state) < 0) return false
-                return _focusAfterCurrentEntry(editor)
+                return jumpOutOfBlock(editor, _$entryEnd(editor.state), true)
             },
             // Mod-Enter 統一由 ListHotkeys 接管 (在當前 block 後插空段),
             // structuredEntry 不在此攔截。
@@ -356,18 +301,19 @@ export const StructuredEntry = Node.create({
                 if (_isEntryNodeSelection(sel)) {
                     const node = state.doc.nodeAt(sel.from)
                     if (!node) return false
-                    return _focusForwardFromPos(editor, sel.from + node.nodeSize)
+                    return jumpOutOfBlock(editor, sel.from + node.nodeSize, true)
                 }
                 if (_entryDepth(state) < 0) return false
-                return _focusAfterCurrentEntry(editor)
+                return jumpOutOfBlock(editor, _$entryEnd(state), true)
             },
             'Shift-Tab': ({ editor }) => {
-                const sel = editor.state.selection
+                const state = editor.state
+                const sel = state.selection
                 if (_isEntryNodeSelection(sel)) {
-                    return _focusBackwardFromPos(editor, sel.from)
+                    return jumpOutOfBlock(editor, sel.from, false)
                 }
-                if (_entryDepth(editor.state) < 0) return false
-                return _focusBeforeCurrentEntry(editor)
+                if (_entryDepth(state) < 0) return false
+                return jumpOutOfBlock(editor, _$entryStart(state), false)
             },
             Backspace: ({ editor }) => {
                 const state = editor.state
@@ -377,7 +323,7 @@ export const StructuredEntry = Node.create({
                 const { $from, empty } = sel
                 if (!empty) return false
                 if (_entryDepth(state) >= 0) {
-                    return _focusBeforeCurrentEntry(editor)
+                    return jumpOutOfBlock(editor, _$entryStart(state), false)
                 }
                 if ($from.parentOffset !== 0) return false
                 try {
@@ -396,7 +342,7 @@ export const StructuredEntry = Node.create({
                 const { $from, empty } = sel
                 if (!empty) return false
                 if (_entryDepth(state) >= 0) {
-                    return _focusAfterCurrentEntry(editor)
+                    return jumpOutOfBlock(editor, _$entryEnd(state), true)
                 }
                 const parent = $from.parent
                 if ($from.parentOffset !== parent.content.size) return false

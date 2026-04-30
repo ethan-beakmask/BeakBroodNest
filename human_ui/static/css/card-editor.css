@@ -1150,9 +1150,14 @@
 .se-block:hover {
     background: rgba(107, 114, 128, 0.08);
 }
-.se-block.se-selected {
-    outline: 2px solid var(--accent, #3b82f6);
-    outline-offset: 1px;
+/* NodeSelection 在 entry 上 -- PM 自動加 .ProseMirror-selectednode 到同一元素;
+   .se-selected 是 NodeView selectNode/deselectNode 自己加的(雙保險)。
+   外觀要顯著,讓鍵盤上下移動「停在 entry」一眼看出。 */
+.se-block.se-selected,
+.se-block.ProseMirror-selectednode {
+    outline: 3px solid #2563eb;
+    outline-offset: 2px;
+    background: rgba(37, 99, 235, 0.08);
 }
 
 /* Per-type border colors */
@@ -1272,12 +1277,9 @@
     cursor: grabbing;
 }
 
-/* 拖拉中的視覺回饋 */
-.ProseMirror-selectednode .se-block {
-    outline: 2px dashed #3b82f6;
-    outline-offset: 1px;
-    opacity: 0.7;
-}
+/* (舊規則 .ProseMirror-selectednode .se-block 是 descendant selector,
+    NodeSelection 時 .ProseMirror-selectednode 與 .se-block 是同一元素,
+    descendant 不會命中。改寫進上方 .se-block.ProseMirror-selectednode。) */
 
 /* freetext 隱藏拖拉把手 */
 .se-freetext .se-drag-handle {
@@ -2223,4 +2225,30 @@ input[type="checkbox"].se-field-input {
     color: #cbd5e1;
     cursor: not-allowed;
     opacity: 0.5;
+}
+
+/* ============================================================
+   ProseMirror Gapcursor -- 兩個 atom block (table、entry、image 等)
+   緊鄰時 PM 會用 GapCursor 表達 caret 位置;沒有 CSS 時 caret 隱藏。
+   原檔 prosemirror-gapcursor/style/gapcursor.css 內嵌。
+   ============================================================ */
+.ProseMirror-gapcursor {
+    display: none;
+    pointer-events: none;
+    position: absolute;
+}
+.ProseMirror-gapcursor:after {
+    content: "";
+    display: block;
+    position: absolute;
+    top: -2px;
+    width: 20px;
+    border-top: 2px solid #2563eb;
+    animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
+}
+@keyframes ProseMirror-cursor-blink {
+    to { visibility: hidden; }
+}
+.ProseMirror-focused .ProseMirror-gapcursor {
+    display: block;
 }
