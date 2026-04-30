@@ -149,33 +149,34 @@ export function jumpOutOfBlock(editor, fromPos, forward) {
             return true
         })
     }
-    if (target !== null) {
-        if (targetIsEntry) {
-            const tr = state.tr
-                .setSelection(NodeSelection.create(state.doc, target))
-                .scrollIntoView()
-            editor.view.dispatch(tr)
-            editor.view.focus()
-        } else {
-            // 用 TextSelection.near 取最近合法 inline pos,確保是 empty caret。
-            // 走 editor.chain().focus(pos) 讓 Tiptap 處理 view focus + caret 同步,
-            // 避免直接 dispatch + view.focus 在 keydown 同步 tick 內留下「DOM selection
-            // 已設但 native caret 沒重繪」的時序問題(常見於進入 table cell 內)。
-            const rawPos = forward ? target + 1 : target + 1 + targetNode.content.size
-            const $pos = state.doc.resolve(rawPos)
-            const sel = TextSelection.near($pos, forward ? 1 : -1)
-            editor.chain().focus(sel.from, { scrollIntoView: true }).run()
-        }
+    if (target === null) {
+        // 邊界無目標(table 在 doc 最頂/最底): 不再 auto-insert paragraph,
+        // 交給 PM 預設處理(會落到 GapCursor 或停在邊界)。新規格:加空段一律 Mod+Enter。
+        return false
+    }
+    if (targetIsEntry) {
+        const tr = state.tr
+            .setSelection(NodeSelection.create(state.doc, target))
+            .scrollIntoView()
+        editor.view.dispatch(tr)
+        editor.view.focus()
         return true
     }
-    // 邊界沒目標 -> 插 paragraph
-    const insertPos = forward ? Math.min(fromPos, doc.content.size) : 0
-    const tr = state.tr
-    const para = state.schema.nodes.paragraph.create()
-    tr.insert(insertPos, para)
-    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1)).scrollIntoView()
-    editor.view.dispatch(tr)
-    editor.view.focus()
+    // textblock target(可能落在 table cell 內 paragraph)。
+    // 延後到下一個 paint frame 再 setSelection -- keydown 同步 tick 內
+    // programmatic setSelection 對於巢狀容器 (table cell) 的 inline pos,
+    // 瀏覽器不重繪 native caret;rAF 等 keydown 結束 + DOM flush 後才做,
+    // selectionToDOM 才能順利觸發 caret render。
+    // 用 TextSelection.create 取代 .near 避免 fuzzy 位移。
+    const rawPos = forward ? target + 1 : target + 1 + targetNode.content.size
+    requestAnimationFrame(() => {
+        try {
+            const s = editor.view.state
+            if (rawPos < 0 || rawPos > s.doc.content.size) return
+            const sel = TextSelection.create(s.doc, rawPos)
+            editor.view.dispatch(s.tr.setSelection(sel).scrollIntoView())
+        } catch (_) { /* doc changed between keydown and rAF, give up */ }
+    })
     return true
 }
 

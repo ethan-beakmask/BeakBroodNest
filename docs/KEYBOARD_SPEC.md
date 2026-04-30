@@ -38,8 +38,8 @@
 | Cell 內任意位置 | `Shift+Tab` | 跨上一格 (`goToNextCell('previous')`) | `ListHotkeys` |
 | Cell 內 (段中) | `Enter` | cell 內新一段 | PM 預設 |
 | Cell 內 | `Mod+Enter` | **跳出 table 並在 table 之後插空段** | `ListHotkeys` (統一規則) |
-| 最末 row 最末 cell 末位 | `ArrowDown` | 跳出到下方 textblock / entry;**若無內容自動加 paragraph** | `ListHotkeys` |
-| 最首 row 最首 cell 首位 | `ArrowUp` | 對稱跳出到上方 | `ListHotkeys` |
+| 最末 row 最末 cell 末位 | `ArrowDown` | 跳出到下方 textblock / entry;邊界無目標時交給 PM 預設(GapCursor) | `ListHotkeys` |
+| 最首 row 最首 cell 首位 | `ArrowUp` | 對稱跳出到上方;邊界無目標時交給 PM 預設 | `ListHotkeys` |
 | 任意位置 | toolbar 上排 (粉紅) `[-列][-欄][-表]` | 刪除類,非表格時 disabled | `wb_modals.html` |
 | 任意位置 | toolbar 下排 (淺綠) `[Tb][+列上][+列下][+欄左][+欄右]` | 新增類,Tb 永遠 enabled,其餘非表格時 disabled | `wb_modals.html` |
 
