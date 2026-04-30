@@ -81,9 +81,10 @@ const ListHotkeys = Extension.create({
                 const tr = state.tr;
                 const para = state.schema.nodes.paragraph.create();
                 tr.insert(afterPos, para);
-                tr.setSelection(TextSelection.create(tr.doc, afterPos + 1)).scrollIntoView();
                 editor.view.dispatch(tr);
-                editor.view.focus();
+                // 用 Tiptap commands.focus 確保 caret 視覺同步 (table cell 等 nested
+                // 容器內 dispatch + view.focus 有 caret 不顯示的時序問題)
+                editor.commands.focus(afterPos + 1, { scrollIntoView: true });
                 return true;
             },
             ArrowDown: ({ editor }) => {

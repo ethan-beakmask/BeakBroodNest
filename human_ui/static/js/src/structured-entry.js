@@ -157,14 +157,14 @@ export function jumpOutOfBlock(editor, fromPos, forward) {
             editor.view.dispatch(tr)
             editor.view.focus()
         } else {
-            // 用 TextSelection.near 取最近合法 inline pos,確保是 empty caret
-            // (避免 chain().setTextSelection 內部 transient 把 selection 變 range)
+            // 用 TextSelection.near 取最近合法 inline pos,確保是 empty caret。
+            // 走 editor.chain().focus(pos) 讓 Tiptap 處理 view focus + caret 同步,
+            // 避免直接 dispatch + view.focus 在 keydown 同步 tick 內留下「DOM selection
+            // 已設但 native caret 沒重繪」的時序問題(常見於進入 table cell 內)。
             const rawPos = forward ? target + 1 : target + 1 + targetNode.content.size
             const $pos = state.doc.resolve(rawPos)
             const sel = TextSelection.near($pos, forward ? 1 : -1)
-            const tr = state.tr.setSelection(sel).scrollIntoView()
-            editor.view.dispatch(tr)
-            editor.view.focus()
+            editor.chain().focus(sel.from, { scrollIntoView: true }).run()
         }
         return true
     }
