@@ -901,19 +901,14 @@
                             <button @click="ceCmd('redo', ed.id)" title="重做">&#8631;</button>
                             <span style="flex:1;"></span>
                             <span class="tb-sep-strong"></span>
-                            <span class="tb-table-zone">
-                                <button @click="ceCmd('table', ed.id)" title="插入表格 3x3">Tb</button>
-                                <template x-if="ceTableActive[ed.id]">
-                                    <span style="display:inline-flex;gap:2px;">
-                                        <button @click="ceCmd('addRowBefore', ed.id)" title="表格：上方插入列">+列&uarr;</button>
-                                        <button @click="ceCmd('addRowAfter', ed.id)" title="表格：下方插入列">+列&darr;</button>
-                                        <button @click="ceCmd('addColBefore', ed.id)" title="表格：左方插入欄">+欄&larr;</button>
-                                        <button @click="ceCmd('addColAfter', ed.id)" title="表格：右方插入欄">+欄&rarr;</button>
-                                        <button @click="ceCmd('deleteRow', ed.id)" title="表格：刪除目前列">-列</button>
-                                        <button @click="ceCmd('deleteCol', ed.id)" title="表格：刪除目前欄">-欄</button>
-                                        <button @click="ceCmd('deleteTable', ed.id)" title="表格：刪除整張表">-表</button>
-                                    </span>
-                                </template>
+                            <!-- 表格刪除類(粉紅) -- 永遠顯示,非表格時 disabled -->
+                            <span class="tb-table-del-zone">
+                                <button class="tb-table-del" :disabled="!ceTableActive[ed.id]"
+                                        @click="ceCmd('deleteRow', ed.id)" title="表格：刪除目前列">-列</button>
+                                <button class="tb-table-del" :disabled="!ceTableActive[ed.id]"
+                                        @click="ceCmd('deleteCol', ed.id)" title="表格：刪除目前欄">-欄</button>
+                                <button class="tb-table-del" :disabled="!ceTableActive[ed.id]"
+                                        @click="ceCmd('deleteTable', ed.id)" title="表格：刪除整張表">-表</button>
                             </span>
                             <span class="tb-sep-strong"></span>
                             <button @click="ceToggleAllEntries(ed.id)"
@@ -947,8 +942,22 @@
                                     :class="{ active: ceColorHl[ed.id] === 'erase' }"
                                     @click="ceToggleColorHl(ed.id, 'erase')"
                                     title="清除底色（有圈選=直接清除；無圈選=切換連續清除模式）">&nbsp;&times;</button>
-                            <span style="flex:1;"></span>
                             <span class="ce-continuous-hint" x-show="ceColorPen[ed.id] || ceColorHl[ed.id]">連續模式啟用中（ESC 取消）</span>
+                            <span style="flex:1;"></span>
+                            <span class="tb-sep-strong"></span>
+                            <!-- 表格新增類(淺綠) -- 永遠顯示,Tb 永遠 enabled,+列/+欄非表格時 disabled -->
+                            <span class="tb-table-add-zone">
+                                <button class="tb-table-add"
+                                        @click="ceCmd('table', ed.id)" title="插入表格 3x3">Tb</button>
+                                <button class="tb-table-add" :disabled="!ceTableActive[ed.id]"
+                                        @click="ceCmd('addRowBefore', ed.id)" title="表格：上方插入列">+列&uarr;</button>
+                                <button class="tb-table-add" :disabled="!ceTableActive[ed.id]"
+                                        @click="ceCmd('addRowAfter', ed.id)" title="表格：下方插入列">+列&darr;</button>
+                                <button class="tb-table-add" :disabled="!ceTableActive[ed.id]"
+                                        @click="ceCmd('addColBefore', ed.id)" title="表格：左方插入欄">+欄&larr;</button>
+                                <button class="tb-table-add" :disabled="!ceTableActive[ed.id]"
+                                        @click="ceCmd('addColAfter', ed.id)" title="表格：右方插入欄">+欄&rarr;</button>
+                            </span>
                         </div>
                         <!-- 保留條：避免 SelectionToolbar 浮窗覆蓋 toolbar，並提示此區不可編輯 -->
                         <div class="ce-pane-reserved" @mousedown.stop @click.stop></div>

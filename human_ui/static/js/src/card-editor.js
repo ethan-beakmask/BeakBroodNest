@@ -59,6 +59,47 @@ const ListHotkeys = Extension.create({
                 }
                 return false;
             },
+            // 表格邊界自動脫出:
+            //   ArrowDown 在最末 row 最末 cell 末尾 -> 跳到 table 後的 textblock/entry,無則新增 paragraph
+            //   ArrowUp   在最首 row 最首 cell 開頭 -> 對稱
+            ArrowDown: ({ editor }) => {
+                if (!editor.isActive('table')) return false;
+                const state = editor.state;
+                const { $from, empty } = state.selection;
+                if (!empty) return false;
+                let tableDepth = -1, cellDepth = -1;
+                for (let d = $from.depth; d > 0; d--) {
+                    const t = $from.node(d).type.name;
+                    if (t === 'table' && tableDepth < 0) tableDepth = d;
+                    if ((t === 'tableCell' || t === 'tableHeader') && cellDepth < 0) cellDepth = d;
+                }
+                if (tableDepth < 0 || cellDepth < 0) return false;
+                const tableNode = $from.node(tableDepth);
+                if ($from.index(tableDepth) !== tableNode.childCount - 1) return false;
+                const cellNode = $from.node(cellDepth);
+                if ($from.index(cellDepth) !== cellNode.childCount - 1) return false;
+                if ($from.parentOffset !== $from.parent.content.size) return false;
+                const tableEnd = $from.after(tableDepth);
+                return jumpOutOfBlock(editor, tableEnd, true);
+            },
+            ArrowUp: ({ editor }) => {
+                if (!editor.isActive('table')) return false;
+                const state = editor.state;
+                const { $from, empty } = state.selection;
+                if (!empty) return false;
+                let tableDepth = -1, cellDepth = -1;
+                for (let d = $from.depth; d > 0; d--) {
+                    const t = $from.node(d).type.name;
+                    if (t === 'table' && tableDepth < 0) tableDepth = d;
+                    if ((t === 'tableCell' || t === 'tableHeader') && cellDepth < 0) cellDepth = d;
+                }
+                if (tableDepth < 0 || cellDepth < 0) return false;
+                if ($from.index(tableDepth) !== 0) return false;
+                if ($from.index(cellDepth) !== 0) return false;
+                if ($from.parentOffset !== 0) return false;
+                const tableStart = $from.before(tableDepth);
+                return jumpOutOfBlock(editor, tableStart, false);
+            },
         }
     },
 })
@@ -74,7 +115,7 @@ import { Highlight } from '@tiptap/extension-highlight'
 import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
 import { Markdown } from 'tiptap-markdown'
-import { StructuredEntry } from './structured-entry.js'
+import { StructuredEntry, jumpOutOfBlock } from './structured-entry.js'
 import { SlashCommand } from './slash-command.js'
 import { SelectionToolbar } from './selection-toolbar.js'
 

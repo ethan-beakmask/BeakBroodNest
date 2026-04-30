@@ -2165,3 +2165,62 @@ input[type="checkbox"].se-field-input {
     margin-left: auto;
     margin-right: 4px;
 }
+
+/* ============================================================
+   Toolbar 表格按鈕分區色彩 (粉紅刪除 / 淺綠新增)
+   ============================================================ */
+/* 上排 -- 表格刪除類(粉紅) */
+.ce-pane-toolbar .tb-table-del-zone {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    background: #fdf2f8;
+    padding: 2px 4px;
+    border-radius: 3px;
+    border: 1px solid #f9a8d4;
+}
+.ce-pane-toolbar .tb-table-del {
+    background: transparent;
+    color: #be185d;
+    font-weight: 600;
+}
+.ce-pane-toolbar .tb-table-del:hover:not(:disabled) {
+    background: #fbcfe8;
+}
+.ce-pane-toolbar .tb-table-del:disabled {
+    color: #cbd5e1;
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* 下排 -- 表格新增類(淺綠) */
+.ce-pane-toolbar-2 .tb-table-add-zone {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    background: #ecfdf5;
+    padding: 2px 4px;
+    border-radius: 3px;
+    border: 1px solid #6ee7b7;
+}
+.ce-pane-toolbar-2 .tb-table-add {
+    background: transparent;
+    color: #047857;
+    font-weight: 600;
+    padding: 2px 6px;
+    border: none;
+    cursor: pointer;
+    border-radius: 2px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    min-width: 22px;
+    text-align: center;
+}
+.ce-pane-toolbar-2 .tb-table-add:hover:not(:disabled) {
+    background: #a7f3d0;
+}
+.ce-pane-toolbar-2 .tb-table-add:disabled {
+    color: #cbd5e1;
+    cursor: not-allowed;
+    opacity: 0.5;
+}

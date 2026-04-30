@@ -79,6 +79,65 @@ function _enterEntryBeforeIfAdjacent(editor) {
     return false
 }
 
+// 跳到指定 pos 後/前的下一個 textblock 或 entry。
+// - 命中 entry -> 設 NodeSelection (用戶要求 entry 也是「目標」之一)
+// - 命中一般 textblock -> setTextSelection 進去 (forward=開頭, backward=末尾)
+// - 都沒命中 -> 在 fromPos 插一個 paragraph
+// 用於「從 table cell 邊界 ArrowDown/ArrowUp 脫出表格」等場景。
+export function jumpOutOfBlock(editor, fromPos, forward) {
+    const state = editor.state
+    const doc = state.doc
+    let target = null
+    let targetIsEntry = false
+    let targetNode = null
+    if (forward) {
+        doc.nodesBetween(fromPos, doc.content.size, (n, p) => {
+            if (target !== null) return false
+            if (n.type.name === 'structuredEntry') {
+                target = p; targetIsEntry = true; targetNode = n
+                return false
+            }
+            if (n.isTextblock) {
+                target = p; targetNode = n
+                return false
+            }
+            return true
+        })
+    } else {
+        doc.nodesBetween(0, fromPos, (n, p) => {
+            if (n.type.name === 'structuredEntry') {
+                target = p; targetIsEntry = true; targetNode = n
+                return false
+            }
+            if (n.isTextblock) {
+                target = p; targetNode = n
+                return false
+            }
+            return true
+        })
+    }
+    if (target !== null) {
+        if (targetIsEntry) {
+            const tr = state.tr.setSelection(NodeSelection.create(state.doc, target))
+            editor.view.dispatch(tr)
+            editor.view.focus()
+        } else {
+            const pos = forward ? target + 1 : target + 1 + targetNode.content.size
+            editor.chain().focus().setTextSelection(pos).run()
+        }
+        return true
+    }
+    // 邊界沒目標 -> 插 paragraph
+    const insertPos = forward ? Math.min(fromPos, doc.content.size) : 0
+    const tr = state.tr
+    const para = state.schema.nodes.paragraph.create()
+    tr.insert(insertPos, para)
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1))
+    editor.view.dispatch(tr)
+    editor.view.focus()
+    return true
+}
+
 // 共用:當前 NodeSelection 對 entry 時開 modal 編輯。
 function _openEditOnSelectedEntry(editor) {
     const sel = editor.state.selection
