@@ -36,6 +36,11 @@ class SelectionToolbarView {
         this.editor = editor
         this._delayTimer = null
         this._showDelayMs = 500
+        // 只在「滑鼠拖選結束後 N 秒內」允許顯示。鍵盤導航(ArrowUp/Down 跨 table/entry)
+        // 過程中 PM 可能短暫產生跨 block 的 transient selection,不該觸發 toolbar。
+        this._lastMouseupAt = 0
+        this._mouseUpHandler = () => { this._lastMouseupAt = Date.now() }
+        editorView.dom.addEventListener('mouseup', this._mouseUpHandler)
 
         // Toolbar container
         this.toolbar = document.createElement('div')
@@ -85,6 +90,12 @@ class SelectionToolbarView {
         }
 
         if (empty || to - from < 2) {
+            this._hideAndCancel()
+            return
+        }
+
+        // 必須是滑鼠拖選結束後才顯示;鍵盤導航的 transient selection 不算
+        if (Date.now() - this._lastMouseupAt > 3000) {
             this._hideAndCancel()
             return
         }
@@ -239,6 +250,9 @@ class SelectionToolbarView {
     destroy() {
         if (this._delayTimer) { clearTimeout(this._delayTimer); this._delayTimer = null }
         document.removeEventListener('mousedown', this._outsideHandler)
+        if (this._mouseUpHandler && this.editorView && this.editorView.dom) {
+            this.editorView.dom.removeEventListener('mouseup', this._mouseUpHandler)
+        }
         if (this.toolbar.parentNode) {
             this.toolbar.parentNode.removeChild(this.toolbar)
         }

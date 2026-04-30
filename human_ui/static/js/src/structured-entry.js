@@ -37,7 +37,9 @@ function _stayOnEntry(editor) {
     const d = _entryDepth(state)
     if (d < 0) return false
     const entryStart = state.selection.$from.before(d)
-    const tr = state.tr.setSelection(NodeSelection.create(state.doc, entryStart))
+    const tr = state.tr
+        .setSelection(NodeSelection.create(state.doc, entryStart))
+        .scrollIntoView()
     editor.view.dispatch(tr)
     editor.view.focus()
     return true
@@ -75,7 +77,9 @@ function _enterEntryAfterIfAdjacent(editor) {
         const after = $from.after($from.depth)
         const next = state.doc.nodeAt(after)
         if (next && next.type.name === 'structuredEntry') {
-            const tr = state.tr.setSelection(NodeSelection.create(state.doc, after))
+            const tr = state.tr
+                .setSelection(NodeSelection.create(state.doc, after))
+                .scrollIntoView()
             editor.view.dispatch(tr)
             editor.view.focus()
             return true
@@ -97,7 +101,9 @@ function _enterEntryBeforeIfAdjacent(editor) {
         const prev = $before.nodeBefore
         if (prev && prev.type.name === 'structuredEntry') {
             const prevPos = before - prev.nodeSize
-            const tr = state.tr.setSelection(NodeSelection.create(state.doc, prevPos))
+            const tr = state.tr
+                .setSelection(NodeSelection.create(state.doc, prevPos))
+                .scrollIntoView()
             editor.view.dispatch(tr)
             editor.view.focus()
             return true
@@ -145,12 +151,20 @@ export function jumpOutOfBlock(editor, fromPos, forward) {
     }
     if (target !== null) {
         if (targetIsEntry) {
-            const tr = state.tr.setSelection(NodeSelection.create(state.doc, target))
+            const tr = state.tr
+                .setSelection(NodeSelection.create(state.doc, target))
+                .scrollIntoView()
             editor.view.dispatch(tr)
             editor.view.focus()
         } else {
-            const pos = forward ? target + 1 : target + 1 + targetNode.content.size
-            editor.chain().focus().setTextSelection(pos).run()
+            // 用 TextSelection.near 取最近合法 inline pos,確保是 empty caret
+            // (避免 chain().setTextSelection 內部 transient 把 selection 變 range)
+            const rawPos = forward ? target + 1 : target + 1 + targetNode.content.size
+            const $pos = state.doc.resolve(rawPos)
+            const sel = TextSelection.near($pos, forward ? 1 : -1)
+            const tr = state.tr.setSelection(sel).scrollIntoView()
+            editor.view.dispatch(tr)
+            editor.view.focus()
         }
         return true
     }
@@ -159,7 +173,7 @@ export function jumpOutOfBlock(editor, fromPos, forward) {
     const tr = state.tr
     const para = state.schema.nodes.paragraph.create()
     tr.insert(insertPos, para)
-    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1))
+    tr.setSelection(TextSelection.create(tr.doc, insertPos + 1)).scrollIntoView()
     editor.view.dispatch(tr)
     editor.view.focus()
     return true

@@ -81,7 +81,7 @@ const ListHotkeys = Extension.create({
                 const tr = state.tr;
                 const para = state.schema.nodes.paragraph.create();
                 tr.insert(afterPos, para);
-                tr.setSelection(TextSelection.create(tr.doc, afterPos + 1));
+                tr.setSelection(TextSelection.create(tr.doc, afterPos + 1)).scrollIntoView();
                 editor.view.dispatch(tr);
                 editor.view.focus();
                 return true;
