@@ -348,13 +348,8 @@ export const StructuredEntry = Node.create({
                 if (_entryDepth(editor.state) < 0) return false
                 return _focusAfterCurrentEntry(editor)
             },
-            'Mod-Enter': ({ editor }) => {
-                if (_isEntryNodeSelection(editor.state.selection)) {
-                    return _openEditOnSelectedEntry(editor)
-                }
-                if (_entryDepth(editor.state) < 0) return false
-                return _focusAfterCurrentEntry(editor)
-            },
+            // Mod-Enter 統一由 ListHotkeys 接管 (在當前 block 後插空段),
+            // structuredEntry 不在此攔截。
             Tab: ({ editor }) => {
                 const state = editor.state
                 const sel = state.selection

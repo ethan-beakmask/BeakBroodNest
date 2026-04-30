@@ -4,6 +4,7 @@
  */
 import { Editor, Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
+import { TextSelection, NodeSelection } from '@tiptap/pm/state'
 
 // 額外 list 熱鍵 (與文字框對齊) + Tab 守門 + Enter 守門
 //   Ctrl+Shift+6 = 清單 (BulletList)
@@ -62,6 +63,29 @@ const ListHotkeys = Extension.create({
             // 表格邊界自動脫出:
             //   ArrowDown 在最末 row 最末 cell 末尾 -> 跳到 table 後的 textblock/entry,無則新增 paragraph
             //   ArrowUp   在最首 row 最首 cell 開頭 -> 對稱
+            // Mod-Enter (Ctrl+Enter): 統一「在當前最外層 block 之後 force 插入空 paragraph 並進入」。
+            // 不論一般段落 / list / table cell / entry NodeSelection 都生效。
+            // entry 開 modal 仍可走 Enter / F2 / 雙擊。
+            'Mod-Enter': ({ editor }) => {
+                const state = editor.state;
+                const sel = state.selection;
+                let afterPos;
+                if (sel instanceof NodeSelection) {
+                    afterPos = sel.from + sel.node.nodeSize;
+                } else {
+                    const $from = sel.$from;
+                    if ($from.depth === 0) return false;
+                    // 找到 doc 直接子 block (depth=1)
+                    afterPos = $from.after(1);
+                }
+                const tr = state.tr;
+                const para = state.schema.nodes.paragraph.create();
+                tr.insert(afterPos, para);
+                tr.setSelection(TextSelection.create(tr.doc, afterPos + 1));
+                editor.view.dispatch(tr);
+                editor.view.focus();
+                return true;
+            },
             ArrowDown: ({ editor }) => {
                 if (!editor.isActive('table')) return false;
                 const state = editor.state;

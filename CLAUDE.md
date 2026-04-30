@@ -53,6 +53,13 @@
 - `config.ini` 不入版控（已在 .gitignore 排除）
 - 程式碼變更後若影響 gunicorn 行為，須 `sudo systemctl restart beakcortex.service`
 
+## 文件編輯鍵盤規格（強制遵循）
+- 規格文件：`docs/KEYBOARD_SPEC.md`
+- 動到任何鍵盤行為（Tiptap extension、entry NodeView、modal、toolbar）前，**先讀規格**確認與既有規則不衝突；改完規格與實作一起 commit
+- 設計原則：白板 = 滑鼠主場；文件 = 鍵盤主場。所有常用編輯操作都要有鍵盤路徑
+- `Mod+Enter` 唯一語意 = 強制在當前最外層 block 後插空段並進入（不論一般段落 / list / table cell / entry NodeSelection 都一致）
+- `;;物件` 是 atomic block，刪除只能透過 `[x]`，鍵盤的 Backspace/Delete 在邊界要吃掉
+
 ## 每次對話必做
 1. 呼叫 `note_inbox` 檢查未讀訊息，有未讀則摘要告知用戶，並標記已讀
 2. 呼叫 `note_overview` 取得知識庫概覽（原子數、標籤、最近更新、阻塞項目）
