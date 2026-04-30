@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     last_timestamp  TIMESTAMPTZ,
     is_sidechain    BOOLEAN DEFAULT FALSE,
     parent_uuid     UUID,
+    parent_conversation_id UUID,
     git_branch      TEXT DEFAULT '',
     imported_at     TIMESTAMPTZ DEFAULT NOW(),
 
@@ -27,9 +28,13 @@ CREATE TABLE IF NOT EXISTS conversations (
     p2_completed_at TIMESTAMPTZ
 );
 
+COMMENT ON COLUMN conversations.parent_conversation_id IS
+    'sub-agent jsonl 對應的呼叫者主對話 conversation id (path-based 推導)。與 turn-level parent_uuid 不同概念。';
+
 CREATE INDEX IF NOT EXISTS idx_conv_project ON conversations (project_path);
 CREATE INDEX IF NOT EXISTS idx_conv_session ON conversations (session_id);
 CREATE INDEX IF NOT EXISTS idx_conv_imported ON conversations (imported_at);
+CREATE INDEX IF NOT EXISTS idx_conv_parent_conv ON conversations (parent_conversation_id);
 
 
 CREATE TABLE IF NOT EXISTS conversation_turns (

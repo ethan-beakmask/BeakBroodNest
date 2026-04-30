@@ -54,6 +54,13 @@ RE_UUID = re.compile(
     re.IGNORECASE,
 )
 
+# sub-agent jsonl 路徑 → 主對話 conversation_id
+# 形如 .../<MAIN_UUID>/subagents/agent-*.jsonl，<MAIN_UUID> 即主對話 conv_id
+RE_AGENT_PARENT_FROM_PATH = re.compile(
+    r'/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/subagents/[^/]+\.jsonl$',
+    re.IGNORECASE,
+)
+
 # 從 Bash command 中提取檔案路徑的正則（簡單匹配）
 RE_FILE_PATH = re.compile(r'(?:^|\s)(/(?:opt|home|tmp|var|etc|usr|mnt)/[\w./_-]+)')
 
@@ -120,6 +127,16 @@ def _conversation_id_from_filename(jsonl_path: str) -> str:
     # 非 UUID：用完整路徑的 hash 產生 deterministic UUID
     # 使用 uuid5 with DNS namespace + 完整路徑確保唯一且可重複
     return str(uuid_mod.uuid5(uuid_mod.NAMESPACE_URL, jsonl_path))
+
+
+def _extract_parent_conv_id_from_path(jsonl_path: str) -> Optional[str]:
+    """若是 sub-agent jsonl，從路徑反推主對話 conversation_id；否則回 None。
+
+    Claude Code 把 sub-agent 紀錄寫到 .../<MAIN_UUID>/subagents/agent-*.jsonl，
+    主對話呼叫 sub-agent 不會在主 JSONL 留 tool_use 痕跡，唯一線索就是檔案路徑。
+    """
+    m = RE_AGENT_PARENT_FROM_PATH.search(jsonl_path)
+    return m.group(1).lower() if m else None
 
 
 def _extract_files_touched_from_tool(tool_name: str, tool_input: dict) -> List[str]:
@@ -508,19 +525,22 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
     if parent_uuid and RE_UUID.match(parent_uuid):
         parent_uuid_val = parent_uuid
 
+    # path-based 主對話 FK（僅 sub-agent jsonl 會有值）
+    parent_conv_id = _extract_parent_conv_id_from_path(jsonl_path)
+
     with conn.cursor() as cur:
         # 寫入 conversations
         cur.execute("""
             INSERT INTO conversations
                 (id, project_path, session_id, jsonl_path, jsonl_size,
                  total_turns, first_timestamp, last_timestamp,
-                 is_sidechain, parent_uuid, git_branch)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 is_sidechain, parent_uuid, parent_conversation_id, git_branch)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
         """, (
             conv_id, project_path, session_id, jsonl_path, jsonl_size,
             len(turns), first_ts, last_ts,
-            is_sidechain, parent_uuid_val, git_branch,
+            is_sidechain, parent_uuid_val, parent_conv_id, git_branch,
         ))
 
         # 批次寫入 conversation_turns
