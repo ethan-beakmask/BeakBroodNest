@@ -27,8 +27,9 @@
         },
         {
             "name": "nightly_review",
+            "_temporary_note": "2026-05-01 暫加 --skip p2：P2 已知 timeout (3225 topics 超載 161 倍)。P2-1 三參數實作完成後請拿掉 --skip p2。詳見知識庫原子 4008。",
             "description": "每日復盤 Pipeline P0~P3（每日 08:25，通勤時段，避開夜間風扇噪音）",
-            "command": ["{venv_python}", "{scripts_dir}/nightly_pipeline.py"],
+            "command": ["{venv_python}", "{scripts_dir}/nightly_pipeline.py", "--skip", "p2"],
             "cron": "25 8 * * *",
             "enabled": true,
             "timeout_seconds": 3600
