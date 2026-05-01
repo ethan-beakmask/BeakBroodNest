@@ -346,6 +346,9 @@ class Canvas(Base):
         String(100), default='ethan'
     )  # ethan, claude, agent:<task_id>, claude@<host>
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_project: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )  # True=專案管理取用,False=思考用途的自由白板
     snapshot: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )  # 歸檔時凍結的完整白板快照（原子內容、連線、群組）
@@ -385,6 +388,7 @@ class Canvas(Base):
             'canvas_type': self.canvas_type,
             'owner': self.owner,
             'is_archived': self.is_archived,
+            'is_project': self.is_project,
             'viewport_x': self.viewport_x,
             'viewport_y': self.viewport_y,
             'viewport_zoom': self.viewport_zoom,
@@ -1572,3 +1576,27 @@ class EntryFieldChangeLog(Base):
         Index('idx_efcl_entry', 'entry_id'),
         Index('idx_efcl_changed_at', 'changed_at'),
     )
+
+
+class UserPreference(Base):
+    """使用者偏好設定 KV 儲存。
+
+    供記住跨頁面的使用者狀態,如 last_active_canvas_slug。
+    """
+    __tablename__ = 'user_preferences'
+
+    username: Mapped[str] = mapped_column(String(100), primary_key=True)
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False, default='')
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now,
+        onupdate=datetime.datetime.now, nullable=False
+    )
+
+    def to_dict(self):
+        return {
+            'username': self.username,
+            'key': self.key,
+            'value': self.value,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }

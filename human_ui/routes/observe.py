@@ -267,12 +267,11 @@ WITH unified AS (
         ka.owner AS owner,
         ka.updated_at AS updated_at,
         ka.created_at AS created_at,
-        (
-            SELECT t.name FROM atom_tags at_
-            JOIN tags t ON t.id = at_.tag_id
-            WHERE at_.atom_id = ka.id AND t.tag_type = 'domain'
-            ORDER BY t.id LIMIT 1
-        ) AS project_tag,
+        ARRAY(
+            SELECT ca.canvas_id FROM canvas_atoms ca
+            JOIN canvases c ON c.id = ca.canvas_id
+            WHERE ca.atom_id = ka.id AND c.is_archived = false AND c.is_project = true
+        ) AS canvas_ids,
         (
             SELECT COUNT(*) FROM atom_relations ar
             WHERE ar.to_atom_id = ka.id
@@ -303,12 +302,11 @@ WITH unified AS (
         ka.owner AS owner,
         ae.updated_at AS updated_at,
         ae.created_at AS created_at,
-        (
-            SELECT t.name FROM atom_tags at_
-            JOIN tags t ON t.id = at_.tag_id
-            WHERE at_.atom_id = ka.id AND t.tag_type = 'domain'
-            ORDER BY t.id LIMIT 1
-        ) AS project_tag,
+        ARRAY(
+            SELECT ca.canvas_id FROM canvas_atoms ca
+            JOIN canvases c ON c.id = ca.canvas_id
+            WHERE ca.atom_id = ae.atom_id AND c.is_archived = false AND c.is_project = true
+        ) AS canvas_ids,
         (
             SELECT COUNT(*) FROM unified_relations ur
             WHERE ur.to_entry_id = ae.id
@@ -332,7 +330,7 @@ WITH unified AS (
 SELECT
     source, row_id, title, atom_type, lifecycle, entry_status,
     vitality_score, owner, updated_at, created_at,
-    project_tag, blocker_count, atom_id, entry_id, schema_id,
+    canvas_ids, blocker_count, atom_id, entry_id, schema_id,
     CASE
         WHEN source = 'atom' AND lifecycle = 'archived' THEN 'archived'
         WHEN source = 'entry' AND entry_status = 'done' THEN 'archived'
@@ -352,7 +350,7 @@ def backlog():
         tab     -- 'active' | 'blocked' | 'archived'(預設 active)
         source  -- 'atom' | 'entry' | ''(全部)
         owner   -- 'claude' | 'ethan' | ''(全部)
-        project -- domain tag name | ''(全部)
+        project -- canvas_id(int) | 'unassigned'(無專案) | ''(全部)
         atom_type -- 多選 csv,如 'A,B,F';只對 source=atom 有效
     """
     tab = request.args.get('tab', 'active')
@@ -378,9 +376,15 @@ def backlog():
         sql += " AND bk.owner = :owner"
         params['owner'] = owner_f
 
-    if project_f:
-        sql += " AND bk.project_tag = :project"
-        params['project'] = project_f
+    if project_f == 'unassigned':
+        sql += " AND cardinality(bk.canvas_ids) = 0"
+    elif project_f:
+        try:
+            cid = int(project_f)
+            sql += " AND :canvas_id = ANY(bk.canvas_ids)"
+            params['canvas_id'] = cid
+        except ValueError:
+            pass  # 非合法 canvas_id 視為不過濾
 
     if type_f:
         type_list = [t.strip() for t in type_f.split(',') if t.strip()]
@@ -400,7 +404,7 @@ def backlog_counts():
 
     回傳:
         counts: {active, blocked, archived}
-        projects: ['BeakCortex', ...]
+        projects: [{id, name, slug}, ...]  -- is_project=true 的白板清單
     """
     counts_sql = f"SELECT bk.unified_state, COUNT(*) AS cnt FROM ({_BACKLOG_SQL}) bk GROUP BY bk.unified_state"
     rows = _raw_query(counts_sql)
@@ -410,8 +414,10 @@ def backlog_counts():
             counts[r['unified_state']] = r['cnt']
 
     proj_rows = _raw_query("""
-        SELECT DISTINCT t.name FROM tags t WHERE t.tag_type = 'domain' ORDER BY t.name
+        SELECT id, name, slug FROM canvases
+        WHERE is_archived = false AND is_project = true
+        ORDER BY name
     """)
-    projects = [r['name'] for r in proj_rows]
+    projects = [{'id': r['id'], 'name': r['name'], 'slug': r['slug']} for r in proj_rows]
 
     return jsonify({'counts': counts, 'projects': projects})

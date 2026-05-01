@@ -496,8 +496,9 @@
                             <select class="form-select form-select-sm" x-model="backlogFilters.project"
                                     @change="loadBacklog()">
                                 <option value="">全部</option>
-                                <template x-for="p in backlogProjects" :key="p">
-                                    <option :value="p" x-text="p"></option>
+                                <option value="unassigned">未指定專案</option>
+                                <template x-for="p in backlogProjects" :key="p.id">
+                                    <option :value="String(p.id)" x-text="p.name"></option>
                                 </template>
                             </select>
                         </div>

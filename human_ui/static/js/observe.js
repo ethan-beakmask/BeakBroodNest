@@ -144,10 +144,31 @@ function observeApp() {
         switchTab(t) {
             this.tab = t;
             if (t === 'backlog') {
-                this.loadBacklogCounts();
-                this.loadBacklog();
-                this.loadTaskSchema();
+                this.openBacklog();
             }
+        },
+
+        async openBacklog() {
+            await this.loadBacklogCounts();
+            // 第一次進 Backlog 時用 last_active_canvas_slug 預設選中對應 canvas
+            if (!this._backlogDefaultApplied) {
+                this._backlogDefaultApplied = true;
+                try {
+                    const resp = await fetch('/beakcortex/api/preferences/last_active_canvas_slug');
+                    const data = await resp.json();
+                    const slug = data && data.value;
+                    if (slug) {
+                        const proj = this.backlogProjects.find(p => p.slug === slug);
+                        if (proj) {
+                            this.backlogFilters.project = String(proj.id);
+                        }
+                    }
+                } catch (e) {
+                    console.error('讀 last_active_canvas_slug 失敗:', e);
+                }
+            }
+            await this.loadBacklog();
+            this.loadTaskSchema();
         },
 
         togglePolling() {

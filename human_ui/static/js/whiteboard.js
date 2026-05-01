@@ -320,6 +320,12 @@ function whiteboardApp(canvasId) {
 
             this.initMarked();
             await this.loadData();
+            // 記錄最後活躍的白板 slug,讓其他頁面(如 Backlog)能預設聚焦此專案
+            try {
+                if (this.canvasId) {
+                    API.setPreference('last_active_canvas_slug', this.canvasId).catch(function() {});
+                }
+            } catch (e) {}
             this.$nextTick(() => {
                 // 重算所有群組邊框（含巢狀偏移）
                 var self0 = this;
@@ -1446,6 +1452,13 @@ function whiteboardApp(canvasId) {
             this.canvas.name = name;
             await this.loadCanvases();
             this.showToast('白板名稱已更新', 'success');
+        },
+
+        async setCanvasIsProject(flag) {
+            if (!this.canvas) return;
+            await API.updateCanvas(this.canvasId, { is_project: !!flag });
+            this.canvas.is_project = !!flag;
+            this.showToast(flag ? '已設為專案白板' : '已設為自由白板', 'success');
         },
 
         async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/beakcortex/canvas/' + c.slug; },

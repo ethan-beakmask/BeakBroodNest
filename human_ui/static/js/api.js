@@ -45,6 +45,9 @@ const API = {
 
     // Canvases
     getCanvases(includeArchived) { return this.get('/beakcortex/api/canvases' + (includeArchived ? '?include_archived=1' : '')); },
+    getProjectCanvases() { return this.get('/beakcortex/api/canvases?only_projects=1'); },
+    getPreference(key) { return this.get('/beakcortex/api/preferences/' + encodeURIComponent(key)); },
+    setPreference(key, value) { return this.put('/beakcortex/api/preferences/' + encodeURIComponent(key), { value: value }); },
     getCanvas(id)           { return this.get('/beakcortex/api/canvases/' + id); },
     createCanvas(data)      { return this.post('/beakcortex/api/canvases', data); },
     updateCanvas(id, data)  { return this.put('/beakcortex/api/canvases/' + id, data); },

@@ -191,10 +191,13 @@ def _build_canvas_snapshot(s, canvas_id):
 @bp.route('/api/canvases', methods=['GET'])
 def list_canvases():
     include_archived = request.args.get('include_archived', '0') == '1'
+    only_projects = request.args.get('only_projects', '0') == '1'
     with session_scope() as s:
         q = s.query(Canvas)
         if not include_archived:
             q = q.filter(Canvas.is_archived == False)
+        if only_projects:
+            q = q.filter(Canvas.is_project == True)
         canvases = q.order_by(Canvas.updated_at.desc()).all()
         return jsonify([c.to_dict() for c in canvases])
 
@@ -621,6 +624,7 @@ def update_canvas(slug):
             canvas.snapshot = _build_canvas_snapshot(s, canvas.id)
 
         for field in ('name', 'description', 'canvas_type', 'owner', 'is_archived',
+                       'is_project',
                        'viewport_x', 'viewport_y', 'viewport_zoom', 'settings'):
             if field in data:
                 setattr(canvas, field, data[field])

@@ -20,6 +20,7 @@ from .beak_gantt import bp as beak_gantt_bp
 from .files import bp as files_bp
 from .exchange import bp as exchange_bp
 from .admin import bp as admin_bp
+from .preferences import bp as preferences_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -41,4 +42,5 @@ ALL_BLUEPRINTS = [
     files_bp,
     exchange_bp,
     admin_bp,
+    preferences_bp,
 ]

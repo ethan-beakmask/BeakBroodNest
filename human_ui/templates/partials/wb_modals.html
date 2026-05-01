@@ -1203,6 +1203,24 @@
                                 </div>
                             </div>
 
+                            <div class="form-group" style="margin-top:16px;">
+                                <label style="font-size:12px;font-weight:600;">白板用途</label>
+                                <div style="display:flex;gap:16px;margin-top:6px;">
+                                    <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                        <input type="radio" name="canvasRole"
+                                               :checked="canvas && canvas.is_project"
+                                               @change="setCanvasIsProject(true)">
+                                        <span>專案<span style="color:var(--text-muted);font-size:11px;">（列入專案管理 / Backlog）</span></span>
+                                    </label>
+                                    <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                        <input type="radio" name="canvasRole"
+                                               :checked="canvas && !canvas.is_project"
+                                               @change="setCanvasIsProject(false)">
+                                        <span>自由<span style="color:var(--text-muted);font-size:11px;">（思考 / 筆記用途）</span></span>
+                                    </label>
+                                </div>
+                            </div>
+
                             <!-- 刪除白板 -->
                             <div class="settings-danger-zone">
                                 <label style="font-size:12px;font-weight:600;color:var(--danger);">危險操作</label>
