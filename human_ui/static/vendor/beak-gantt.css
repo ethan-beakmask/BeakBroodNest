@@ -484,9 +484,10 @@
 .bk-dep-hit {
     cursor: pointer;
 }
-.bk-dep-hit:hover + .bk-dep-line,
-.bk-dep-hit:hover ~ .bk-dep-arrow {
+.bk-dep-line.bk-dep-hl {
     stroke: #dc2626;
+}
+.bk-dep-arrow.bk-dep-hl {
     fill: #dc2626;
 }
 
