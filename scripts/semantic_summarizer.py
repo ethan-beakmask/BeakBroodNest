@@ -817,6 +817,7 @@ def run_p2_pipeline(
     gap_threshold: int = TOPIC_GAP_THRESHOLD,
     skip_subagents: bool = False,
     since_days: int = 0,
+    batch_size: int = 0,
 ) -> List[Dict[str, Any]]:
     """
     執行 P2 語意摘要 pipeline。
@@ -829,6 +830,7 @@ def run_p2_pipeline(
         gap_threshold: 主題分群的 turn_seq 間距閾值
         skip_subagents: 排除 sub-agent 對話 (jsonl_path 含 /subagents/)
         since_days: 只處理 last_timestamp 在近 N 天內的對話 (0=不限)
+        batch_size: 單次最多處理 N 個 topics (0=不限)，給 systemd timer 接力用
 
     Returns:
         每個 topic 的處理結果 list
@@ -853,7 +855,15 @@ def run_p2_pipeline(
 
         # 2. 主題分群
         topics = group_signals_into_topics(signal_turns, gap_threshold)
-        print(f'[P2] 分群為 {len(topics)} 個 topics', file=sys.stderr)
+        total_topics = len(topics)
+        print(f'[P2] 分群為 {total_topics} 個 topics', file=sys.stderr)
+
+        # batch_size 限制：取前 N 個（後續 timer 觸發時會跑下一批，因為已處理者
+        # p2_summarized_at 已寫入而被 only_unsummarized 排除）
+        if batch_size and batch_size > 0 and len(topics) > batch_size:
+            topics = topics[:batch_size]
+            print(f'[P2] batch_size={batch_size}，本次處理前 {len(topics)} 個 '
+                  f'(剩 {total_topics - len(topics)} 個待後續批次)', file=sys.stderr)
 
         if verbose:
             for t in topics:
@@ -988,6 +998,8 @@ def create_argument_parser():
     parser.add_argument('--since-days', type=int, default=DEFAULT_SINCE_DAYS,
                         metavar='N',
                         help='只處理 last_timestamp 在近 N 天內的對話 (預設 0=不限)')
+    parser.add_argument('--batch-size', type=int, default=0, metavar='N',
+                        help='單次最多處理 N 個 topics (0=不限)，給 systemd timer 接力用')
 
     return parser
 
@@ -1011,6 +1023,7 @@ def main():
         gap_threshold=args.gap,
         skip_subagents=args.skip_subagents,
         since_days=args.since_days,
+        batch_size=args.batch_size,
     )
 
     # JSON 輸出
