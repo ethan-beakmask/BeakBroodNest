@@ -31,5 +31,5 @@ exec /usr/bin/flock -E 0 -n /tmp/beak-p2.lock \
     --skip-subagents \
     --since-days 14 \
     --gap 50 \
-    --batch-size 20 \
+    --batch-size 15 \
     --verbose
