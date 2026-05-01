@@ -25,24 +25,29 @@ export HOME="/home/ethan"
 
 cd /opt/BeakCortex || exit 2
 
-# 不用 exec 接管，這樣 flock 結束後仍能印 end log
-/usr/bin/flock -E 0 -n /tmp/beak-p2.lock \
-    /opt/BeakCortex/venv/bin/python \
-    /opt/BeakCortex/scripts/semantic_summarizer.py \
-    --all \
-    --skip-subagents \
-    --since-days 14 \
-    --gap 50 \
-    --batch-size 15 \
-    --verbose
+# 用 sentinel 檔案明確區分「flock 取得鎖（內部命令有跑）」與「flock 沒取到鎖（直接 skip）」
+# 避免單看 elapsed 時間誤判，例如 Topics: 0 也會在 1 秒內結束。
+SENTINEL_DIR=$(mktemp -d /tmp/beak-p2-run.XXXXXX)
+trap 'rm -rf "$SENTINEL_DIR"' EXIT
+
+/usr/bin/flock -E 0 -n /tmp/beak-p2.lock bash -c "
+    touch '$SENTINEL_DIR/acquired'
+    exec /opt/BeakCortex/venv/bin/python \
+        /opt/BeakCortex/scripts/semantic_summarizer.py \
+        --all \
+        --skip-subagents \
+        --since-days 14 \
+        --gap 50 \
+        --batch-size 15 \
+        --verbose
+"
 RC=$?
 ELAPSED=$(( $(date +%s) - START_EPOCH ))
 
-# 取不到鎖時 elapsed 接近 0；正常跑完則含完整時間
-if [ "$ELAPSED" -lt 5 ]; then
-    NOTE="(skipped: lock held by another batch)"
+if [ -e "$SENTINEL_DIR/acquired" ]; then
+    NOTE=""   # 拿到鎖、命令實際跑了（不論 Topics: 0 或正常處理 N 個）
 else
-    NOTE=""
+    NOTE="(skipped: lock held by another batch)"
 fi
 
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakcortex-p2 wrapper end rc=$RC elapsed=${ELAPSED}s $NOTE ====="
