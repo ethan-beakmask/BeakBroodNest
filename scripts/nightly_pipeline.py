@@ -154,7 +154,10 @@ def main():
     if args.p0_limit > 0:
         p0_cmd += ['--limit', str(args.p0_limit)]
 
+    # 與 P2-3 daemon (beakcortex-p2.service) 共用 /tmp/beak-p2.lock，
+    # 取不到鎖時 flock -E 0 回 exit 0，nightly 把這次 P2 stage 視為 OK 跳過。
     p2_cmd = [
+        '/usr/bin/flock', '-E', '0', '-n', '/tmp/beak-p2.lock',
         VENV_PY, str(SCRIPTS_DIR / 'semantic_summarizer.py'),
         '--all',
         '--skip-subagents',
