@@ -247,3 +247,171 @@ def observe_stats():
     stats['daily_conversations'] = _serialize(rows)
 
     return jsonify(stats)
+
+
+# ============================================================
+# Backlog -- 待辦清單(AI atom + 人類 entry 兩源整合)
+# ============================================================
+
+_BACKLOG_SQL = """
+WITH unified AS (
+    -- AI atom 來源:tag='待辦' 的 knowledge_atoms
+    SELECT
+        'atom'::text AS source,
+        ka.id AS row_id,
+        ka.title AS title,
+        ka.atom_type AS atom_type,
+        ka.lifecycle AS lifecycle,
+        NULL::text AS entry_status,
+        ka.vitality_score AS vitality_score,
+        ka.owner AS owner,
+        ka.updated_at AS updated_at,
+        ka.created_at AS created_at,
+        (
+            SELECT t.name FROM atom_tags at_
+            JOIN tags t ON t.id = at_.tag_id
+            WHERE at_.atom_id = ka.id AND t.tag_type = 'domain'
+            ORDER BY t.id LIMIT 1
+        ) AS project_tag,
+        (
+            SELECT COUNT(*) FROM atom_relations ar
+            WHERE ar.to_atom_id = ka.id
+              AND ar.relation_type = 'blocks'
+        ) AS blocker_count,
+        ka.id AS atom_id,
+        NULL::int AS entry_id,
+        NULL::int AS schema_id
+    FROM knowledge_atoms ka
+    WHERE ka.is_deleted = false
+      AND ka.id IN (
+          SELECT at_.atom_id FROM atom_tags at_
+          JOIN tags t ON t.id = at_.tag_id
+          WHERE t.name = '待辦'
+      )
+
+    UNION ALL
+
+    -- 人類 entry 來源:schema=task 的 atom_entries
+    SELECT
+        'entry'::text AS source,
+        ae.id AS row_id,
+        COALESCE(NULLIF(ae.summary, ''), LEFT(ae.raw_text, 80)) AS title,
+        'task'::text AS atom_type,
+        NULL::text AS lifecycle,
+        efv_status.value AS entry_status,
+        ka.vitality_score AS vitality_score,
+        ka.owner AS owner,
+        ae.updated_at AS updated_at,
+        ae.created_at AS created_at,
+        (
+            SELECT t.name FROM atom_tags at_
+            JOIN tags t ON t.id = at_.tag_id
+            WHERE at_.atom_id = ka.id AND t.tag_type = 'domain'
+            ORDER BY t.id LIMIT 1
+        ) AS project_tag,
+        (
+            SELECT COUNT(*) FROM unified_relations ur
+            WHERE ur.to_entry_id = ae.id
+              AND ur.relation_type = 'blocks'
+              AND ur.is_deleted = false
+        ) AS blocker_count,
+        ka.id AS atom_id,
+        ae.id AS entry_id,
+        ae.schema_id AS schema_id
+    FROM atom_entries ae
+    JOIN knowledge_atoms ka ON ka.id = ae.atom_id
+    LEFT JOIN entry_field_values efv_status
+      ON efv_status.entry_id = ae.id
+     AND efv_status.field_id = (
+         SELECT id FROM entry_schema_fields
+         WHERE schema_id = 2 AND name = 'status' LIMIT 1
+     )
+    WHERE ae.schema_id = 2
+      AND ka.is_deleted = false
+)
+SELECT
+    source, row_id, title, atom_type, lifecycle, entry_status,
+    vitality_score, owner, updated_at, created_at,
+    project_tag, blocker_count, atom_id, entry_id, schema_id,
+    CASE
+        WHEN source = 'atom' AND lifecycle = 'archived' THEN 'archived'
+        WHEN source = 'entry' AND entry_status = 'done' THEN 'archived'
+        WHEN blocker_count > 0 THEN 'blocked'
+        ELSE 'active'
+    END AS unified_state
+FROM unified
+WHERE 1=1
+"""
+
+
+@bp.route('/api/observe/backlog', methods=['GET'])
+def backlog():
+    """待辦清單:AI atom(tag=待辦) + 人類 entry(schema=task) 兩源整合。
+
+    Query params:
+        tab     -- 'active' | 'blocked' | 'archived'(預設 active)
+        source  -- 'atom' | 'entry' | ''(全部)
+        owner   -- 'claude' | 'ethan' | ''(全部)
+        project -- domain tag name | ''(全部)
+        atom_type -- 多選 csv,如 'A,B,F';只對 source=atom 有效
+    """
+    tab = request.args.get('tab', 'active')
+    if tab not in ('active', 'blocked', 'archived'):
+        tab = 'active'
+    source_f = request.args.get('source', '').strip()
+    owner_f = request.args.get('owner', '').strip()
+    project_f = request.args.get('project', '').strip()
+    type_f = request.args.get('atom_type', '').strip()
+
+    sql = _BACKLOG_SQL
+    params = {}
+
+    # 外層套篩選
+    sql = f"SELECT * FROM ({sql}) bk WHERE bk.unified_state = :tab"
+    params['tab'] = tab
+
+    if source_f in ('atom', 'entry'):
+        sql += " AND bk.source = :source"
+        params['source'] = source_f
+
+    if owner_f:
+        sql += " AND bk.owner = :owner"
+        params['owner'] = owner_f
+
+    if project_f:
+        sql += " AND bk.project_tag = :project"
+        params['project'] = project_f
+
+    if type_f:
+        type_list = [t.strip() for t in type_f.split(',') if t.strip()]
+        if type_list:
+            sql += " AND (bk.source = 'entry' OR bk.atom_type = ANY(:types))"
+            params['types'] = type_list
+
+    sql += " ORDER BY bk.blocker_count DESC, bk.vitality_score DESC NULLS LAST, bk.updated_at DESC"
+
+    rows = _raw_query(sql, params)
+    return jsonify(_serialize(rows))
+
+
+@bp.route('/api/observe/backlog/counts', methods=['GET'])
+def backlog_counts():
+    """三個 tab 的計數 + 篩選器選項(供前端建立)。
+
+    回傳:
+        counts: {active, blocked, archived}
+        projects: ['BeakCortex', ...]
+    """
+    counts_sql = f"SELECT bk.unified_state, COUNT(*) AS cnt FROM ({_BACKLOG_SQL}) bk GROUP BY bk.unified_state"
+    rows = _raw_query(counts_sql)
+    counts = {'active': 0, 'blocked': 0, 'archived': 0}
+    for r in rows:
+        if r['unified_state'] in counts:
+            counts[r['unified_state']] = r['cnt']
+
+    proj_rows = _raw_query("""
+        SELECT DISTINCT t.name FROM tags t WHERE t.tag_type = 'domain' ORDER BY t.name
+    """)
+    projects = [r['name'] for r in proj_rows]
+
+    return jsonify({'counts': counts, 'projects': projects})

@@ -5,6 +5,7 @@
 import { Editor, Extension } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { TextSelection, NodeSelection } from '@tiptap/pm/state'
+import { openEntryModal } from './entry-modal.js'
 
 // 額外 list 熱鍵 (與文字框對齊) + Tab 守門 + Enter 守門
 //   Ctrl+Shift+6 = 清單 (BulletList)
@@ -651,3 +652,4 @@ class CardEditor {
 
 // 掛載到 window 供 Alpine.js 使用
 window.CardEditor = CardEditor
+window.openEntryModal = openEntryModal

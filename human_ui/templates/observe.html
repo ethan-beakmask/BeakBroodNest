@@ -6,7 +6,9 @@
     <title>Observe - BeakCortex</title>
     <link rel="icon" href="/beakcortex/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/beakcortex/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/beakcortex/static/css/card-editor.css?v={{ cache_ver }}">
     <link rel="stylesheet" href="/beakcortex/static/css/observe.css?v={{ cache_ver }}">
+    <script src="/beakcortex/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
     <script defer src="/beakcortex/static/vendor/alpine.min.js"></script>
 </head>
 <body>
@@ -105,6 +107,10 @@
             <li class="nav-item">
                 <a class="nav-link" :class="tab === 'reviews' ? 'active' : ''"
                    href="#" @click.prevent="switchTab('reviews')">Reviews</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="tab === 'backlog' ? 'active' : ''"
+                   href="#" @click.prevent="switchTab('backlog')">Backlog</a>
             </li>
         </ul>
 
@@ -436,6 +442,157 @@
 
         </div>
 
+        <!-- ============================================================ -->
+        <!-- Tab: Backlog (待辦清單 - AI atom + 人類 entry 兩源整合) -->
+        <!-- ============================================================ -->
+        <div x-show="tab === 'backlog'">
+
+            <!-- Sub-tabs (進行中 / 被阻塞 / 已歸檔) -->
+            <ul class="nav nav-pills nav-fill mb-3">
+                <li class="nav-item">
+                    <a class="nav-link" :class="backlogSubTab === 'active' ? 'active' : ''"
+                       href="#" @click.prevent="switchBacklogSubTab('active')">
+                        進行中 <span class="badge bg-light text-dark ms-1" x-text="backlogCounts.active"></span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="backlogSubTab === 'blocked' ? 'active' : ''"
+                       href="#" @click.prevent="switchBacklogSubTab('blocked')">
+                        被阻塞 <span class="badge bg-danger ms-1" x-text="backlogCounts.blocked"></span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" :class="backlogSubTab === 'archived' ? 'active' : ''"
+                       href="#" @click.prevent="switchBacklogSubTab('archived')">
+                        已歸檔 <span class="badge bg-secondary ms-1" x-text="backlogCounts.archived"></span>
+                    </a>
+                </li>
+            </ul>
+
+            <!-- 篩選列 -->
+            <div class="card mb-3">
+                <div class="card-body py-2">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-auto"><label class="small text-secondary">來源</label></div>
+                        <div class="col-auto">
+                            <select class="form-select form-select-sm" x-model="backlogFilters.source"
+                                    @change="loadBacklog()">
+                                <option value="">全部</option>
+                                <option value="atom">AI atom</option>
+                                <option value="entry">人類 entry</option>
+                            </select>
+                        </div>
+                        <div class="col-auto"><label class="small text-secondary">擁有</label></div>
+                        <div class="col-auto">
+                            <select class="form-select form-select-sm" x-model="backlogFilters.owner"
+                                    @change="loadBacklog()">
+                                <option value="">全部</option>
+                                <option value="claude">claude</option>
+                                <option value="ethan">ethan</option>
+                            </select>
+                        </div>
+                        <div class="col-auto"><label class="small text-secondary">專案</label></div>
+                        <div class="col-auto">
+                            <select class="form-select form-select-sm" x-model="backlogFilters.project"
+                                    @change="loadBacklog()">
+                                <option value="">全部</option>
+                                <template x-for="p in backlogProjects" :key="p">
+                                    <option :value="p" x-text="p"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div class="col-auto"><label class="small text-secondary">類型</label></div>
+                        <div class="col-auto">
+                            <template x-for="t in ['A','B','C','D','F']" :key="t">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" :id="'bk-type-' + t"
+                                           :value="t" x-model="backlogFilters.atomTypes"
+                                           @change="loadBacklog()">
+                                    <label class="form-check-label small" :for="'bk-type-' + t" x-text="t"></label>
+                                </div>
+                            </template>
+                        </div>
+                        <div class="col text-end">
+                            <span class="small text-secondary"
+                                  x-text="backlogRows.length + ' 筆'"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 表格 -->
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th @click="sortBacklog('title')" role="button" class="sortable-th">
+                                標題
+                                <span x-show="backlogSort.field === 'title'"
+                                      x-text="backlogSort.asc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
+                            <th>專案</th>
+                            <th>類型</th>
+                            <th>來源</th>
+                            <th>狀態</th>
+                            <th @click="sortBacklog('blocker_count')" role="button" class="sortable-th">
+                                阻塞
+                                <span x-show="backlogSort.field === 'blocker_count'"
+                                      x-text="backlogSort.asc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
+                            <th>擁有</th>
+                            <th @click="sortBacklog('vitality_score')" role="button" class="sortable-th">
+                                活力
+                                <span x-show="backlogSort.field === 'vitality_score'"
+                                      x-text="backlogSort.asc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
+                            <th @click="sortBacklog('updated_at')" role="button" class="sortable-th">
+                                最後更新
+                                <span x-show="backlogSort.field === 'updated_at'"
+                                      x-text="backlogSort.asc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="r in sortedBacklogRows()" :key="r.source + '-' + r.row_id">
+                            <tr>
+                                <td>
+                                    <a href="#" @click.prevent="openBacklogItem(r)"
+                                       class="text-decoration-none" x-text="r.title || '(無標題)'"></a>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info" x-text="r.project_tag || '-'"></span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary" x-text="r.atom_type"></span>
+                                </td>
+                                <td>
+                                    <span class="badge"
+                                          :class="r.source === 'atom' ? 'bg-primary' : 'bg-success'"
+                                          x-text="r.source === 'atom' ? 'AI' : '人類'"></span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark"
+                                          x-text="formatBacklogState(r)"></span>
+                                </td>
+                                <td>
+                                    <span x-show="r.blocker_count > 0"
+                                          class="badge bg-danger" x-text="r.blocker_count"></span>
+                                    <span x-show="!r.blocker_count" class="text-secondary small">-</span>
+                                </td>
+                                <td class="small" x-text="r.owner"></td>
+                                <td class="small" x-text="r.vitality_score != null ? r.vitality_score.toFixed(2) : '-'"></td>
+                                <td class="small text-nowrap" x-text="formatTime(r.updated_at)"></td>
+                            </tr>
+                        </template>
+                        <tr x-show="backlogRows.length === 0">
+                            <td colspan="9" class="text-center text-secondary py-4">沒有符合條件的待辦項目</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+        </div><!-- backlog tab -->
+
     </div><!-- container -->
 
     <!-- ============================================================ -->
@@ -482,6 +639,53 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Atom Edit Modal (CardEditor 容器) -->
+    <!-- ============================================================ -->
+    <div class="modal fade" id="atomEditModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <span class="badge bg-primary me-2">AI atom</span>
+                        <input type="text" class="form-control form-control-sm d-inline-block"
+                               style="width: 500px;" x-model="atomEdit.title">
+                    </h5>
+                    <button type="button" class="btn-close" @click="closeAtomEdit()"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2 mb-2 small">
+                        <div class="col-auto">
+                            <label class="text-secondary">狀態</label>
+                            <select class="form-select form-select-sm" x-model="atomEdit.lifecycle">
+                                <option value="active">active</option>
+                                <option value="aging">aging</option>
+                                <option value="archived">archived</option>
+                                <option value="terminal">terminal</option>
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <span class="text-secondary">擁有</span>:
+                            <span x-text="atomEdit.owner"></span>
+                            <span x-show="atomEdit.owner && atomEdit.owner !== 'ethan'"
+                                  class="badge bg-warning text-dark ms-1">force-override</span>
+                        </div>
+                        <div class="col-auto">
+                            <span class="text-secondary">活力</span>:
+                            <span x-text="atomEdit.vitality_score != null ? atomEdit.vitality_score.toFixed(2) : '-'"></span>
+                        </div>
+                    </div>
+                    <div id="atomEditEditor" style="min-height: 400px; border: 1px solid #dee2e6; border-radius: 4px;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @click="closeAtomEdit()">取消</button>
+                    <button type="button" class="btn btn-primary" @click="saveAtomEdit()"
+                            :disabled="atomEdit.saving" x-text="atomEdit.saving ? '儲存中...' : '儲存'"></button>
                 </div>
             </div>
         </div>

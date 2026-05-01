@@ -25,6 +25,28 @@ function observeApp() {
         sortField: 'last_timestamp',
         sortAsc: false,
 
+        // Backlog state
+        backlogSubTab: 'active',
+        backlogFilters: { source: '', owner: '', project: '', atomTypes: [] },
+        backlogRows: [],
+        backlogCounts: { active: 0, blocked: 0, archived: 0 },
+        backlogProjects: [],
+        backlogSort: { field: 'updated_at', asc: false },
+        backlogTaskSchema: null,
+        atomEdit: {
+            visible: false,
+            saving: false,
+            atom_id: null,
+            title: '',
+            lifecycle: '',
+            owner: '',
+            vitality_score: null,
+            content: '',
+            content_json: null,
+            editor: null,
+            modal: null,
+        },
+
         async init() {
             await this.fetchAll();
         },
@@ -121,6 +143,11 @@ function observeApp() {
 
         switchTab(t) {
             this.tab = t;
+            if (t === 'backlog') {
+                this.loadBacklogCounts();
+                this.loadBacklog();
+                this.loadTaskSchema();
+            }
         },
 
         togglePolling() {
@@ -253,6 +280,249 @@ function observeApp() {
             const vals = Object.values(this.globalReviewStats.by_error_pattern || {1: 1});
             const max = Math.max(...vals);
             return Math.round((count / max) * 100);
+        },
+
+        // ==========================================================
+        // Backlog 待辦清單
+        // ==========================================================
+
+        async loadBacklogCounts() {
+            try {
+                const resp = await fetch('/beakcortex/api/observe/backlog/counts');
+                const data = await resp.json();
+                this.backlogCounts = data.counts || { active: 0, blocked: 0, archived: 0 };
+                this.backlogProjects = data.projects || [];
+            } catch (e) {
+                console.error('loadBacklogCounts error:', e);
+            }
+        },
+
+        async loadBacklog() {
+            const params = new URLSearchParams();
+            params.set('tab', this.backlogSubTab);
+            if (this.backlogFilters.source) params.set('source', this.backlogFilters.source);
+            if (this.backlogFilters.owner) params.set('owner', this.backlogFilters.owner);
+            if (this.backlogFilters.project) params.set('project', this.backlogFilters.project);
+            if (this.backlogFilters.atomTypes.length > 0) {
+                params.set('atom_type', this.backlogFilters.atomTypes.join(','));
+            }
+            try {
+                const resp = await fetch('/beakcortex/api/observe/backlog?' + params.toString());
+                this.backlogRows = await resp.json();
+            } catch (e) {
+                console.error('loadBacklog error:', e);
+                this.backlogRows = [];
+            }
+        },
+
+        async loadTaskSchema() {
+            if (this.backlogTaskSchema) return;
+            try {
+                const resp = await fetch('/beakcortex/api/entry-schemas');
+                if (resp.ok) {
+                    const schemas = await resp.json();
+                    this.backlogTaskSchema = schemas.find(s => s.code === 'task') || null;
+                }
+            } catch (e) {
+                console.error('loadTaskSchema error:', e);
+            }
+        },
+
+        switchBacklogSubTab(t) {
+            this.backlogSubTab = t;
+            this.loadBacklog();
+        },
+
+        sortBacklog(field) {
+            if (this.backlogSort.field === field) {
+                this.backlogSort.asc = !this.backlogSort.asc;
+            } else {
+                this.backlogSort.field = field;
+                this.backlogSort.asc = false;
+            }
+        },
+
+        sortedBacklogRows() {
+            const f = this.backlogSort.field;
+            const asc = this.backlogSort.asc;
+            return [...this.backlogRows].sort((a, b) => {
+                let va = a[f], vb = b[f];
+                if (va == null) va = '';
+                if (vb == null) vb = '';
+                if (typeof va === 'number' && typeof vb === 'number') {
+                    return asc ? va - vb : vb - va;
+                }
+                return asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+            });
+        },
+
+        formatBacklogState(r) {
+            if (r.source === 'atom') {
+                return r.lifecycle || '-';
+            }
+            return r.entry_status || '未開始';
+        },
+
+        async openBacklogItem(r) {
+            if (r.source === 'entry') {
+                await this.openEntryEdit(r);
+            } else {
+                await this.openAtomEdit(r);
+            }
+        },
+
+        async openEntryEdit(r) {
+            if (!this.backlogTaskSchema) {
+                await this.loadTaskSchema();
+            }
+            if (!this.backlogTaskSchema) {
+                alert('無法載入 task schema');
+                return;
+            }
+            // 取得完整 entry 資料(含 field_values)
+            let entry;
+            try {
+                const resp = await fetch('/beakcortex/api/entries/' + r.entry_id);
+                if (!resp.ok) throw new Error('GET entry failed');
+                entry = await resp.json();
+            } catch (e) {
+                console.error('GET entry error:', e);
+                alert('讀取 entry 失敗');
+                return;
+            }
+            if (typeof window.openEntryModal !== 'function') {
+                alert('openEntryModal 未載入');
+                return;
+            }
+            const self = this;
+            window.openEntryModal({
+                schema: this.backlogTaskSchema,
+                schemaCode: 'task',
+                rawText: entry.raw_text || '',
+                fieldValues: entry.field_values || {},
+                mode: 'edit',
+                onSave: async ({ rawText, fieldValues }) => {
+                    try {
+                        const resp = await fetch('/beakcortex/api/entries/' + r.entry_id, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                raw_text: rawText,
+                                field_values: fieldValues,
+                            }),
+                        });
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            alert('儲存失敗: ' + (err.error || resp.status));
+                            return;
+                        }
+                        await self.loadBacklog();
+                        await self.loadBacklogCounts();
+                    } catch (e) {
+                        console.error('save entry error:', e);
+                        alert('儲存失敗: ' + e.message);
+                    }
+                },
+            });
+        },
+
+        async openAtomEdit(r) {
+            // 取得完整 atom 資料
+            let atom;
+            try {
+                const resp = await fetch('/beakcortex/api/atoms/' + r.atom_id);
+                if (!resp.ok) throw new Error('GET atom failed');
+                atom = await resp.json();
+            } catch (e) {
+                console.error('GET atom error:', e);
+                alert('讀取 atom 失敗');
+                return;
+            }
+            this.atomEdit.atom_id = atom.id;
+            this.atomEdit.title = atom.title || '';
+            this.atomEdit.lifecycle = atom.lifecycle || 'active';
+            this.atomEdit.owner = atom.owner || '';
+            this.atomEdit.vitality_score = atom.vitality_score;
+            this.atomEdit.content = atom.content || '';
+            this.atomEdit.content_json = atom.content_json || null;
+            this.atomEdit.saving = false;
+
+            // 顯示 modal
+            const modalEl = document.getElementById('atomEditModal');
+            if (!this.atomEdit.modal) {
+                this.atomEdit.modal = new bootstrap.Modal(modalEl);
+            }
+            this.atomEdit.modal.show();
+
+            // 等 modal 顯示後 mount CardEditor
+            const self = this;
+            modalEl.addEventListener('shown.bs.modal', function onceShown() {
+                modalEl.removeEventListener('shown.bs.modal', onceShown);
+                if (typeof window.CardEditor !== 'function') {
+                    alert('CardEditor 未載入');
+                    return;
+                }
+                if (self.atomEdit.editor) {
+                    self.atomEdit.editor.destroy();
+                }
+                self.atomEdit.editor = new window.CardEditor();
+                const editorEl = document.getElementById('atomEditEditor');
+                editorEl.innerHTML = '';
+                self.atomEdit.editor.create(editorEl, {
+                    content: self.atomEdit.content,
+                    contentJson: self.atomEdit.content_json,
+                });
+            }, { once: true });
+        },
+
+        closeAtomEdit() {
+            if (this.atomEdit.editor) {
+                this.atomEdit.editor.destroy();
+                this.atomEdit.editor = null;
+            }
+            if (this.atomEdit.modal) {
+                this.atomEdit.modal.hide();
+            }
+        },
+
+        async saveAtomEdit() {
+            if (!this.atomEdit.editor) {
+                alert('編輯器未初始化');
+                return;
+            }
+            this.atomEdit.saving = true;
+            try {
+                const editor = this.atomEdit.editor.editor;
+                const markdown = editor.storage.markdown
+                    ? editor.storage.markdown.getMarkdown()
+                    : '';
+                const json = editor.getJSON();
+                const payload = {
+                    title: this.atomEdit.title,
+                    lifecycle: this.atomEdit.lifecycle,
+                    content: markdown,
+                    content_json: json,
+                    force_owner_override: this.atomEdit.owner !== 'ethan',
+                };
+                const resp = await fetch('/beakcortex/api/atoms/' + this.atomEdit.atom_id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    alert('儲存失敗: ' + (err.error || resp.status));
+                    return;
+                }
+                this.closeAtomEdit();
+                await this.loadBacklog();
+                await this.loadBacklogCounts();
+            } catch (e) {
+                console.error('save atom error:', e);
+                alert('儲存失敗: ' + e.message);
+            } finally {
+                this.atomEdit.saving = false;
+            }
         },
     };
 }
