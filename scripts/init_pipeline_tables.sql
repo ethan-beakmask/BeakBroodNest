@@ -83,6 +83,31 @@ CREATE INDEX IF NOT EXISTS idx_ct_timestamp ON conversation_turns (timestamp);
 
 
 -- ============================================================
+-- P2 失敗紀錄表 (取消 retry 後保留 raw_output 供人工檢視)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS p2_failures (
+    id              BIGSERIAL PRIMARY KEY,
+    topic_id        TEXT NOT NULL,
+    conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    seq_min         INTEGER,
+    seq_max         INTEGER,
+    signal_count    INTEGER DEFAULT 0,
+    max_severity    TEXT DEFAULT '',
+    failure_kind    TEXT NOT NULL DEFAULT '',
+    -- failure_kind: claude_error | claude_timeout | validation_failed | json_missing
+    error_message   TEXT DEFAULT '',
+    raw_output      TEXT DEFAULT '',
+    model           TEXT DEFAULT '',
+    failed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_p2fail_conv      ON p2_failures (conversation_id);
+CREATE INDEX IF NOT EXISTS idx_p2fail_failed_at ON p2_failures (failed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_p2fail_kind      ON p2_failures (failure_kind);
+
+
+-- ============================================================
 -- 執行追蹤表：pipeline_runs
 -- 每次 pipeline 執行的完整記錄
 -- ============================================================

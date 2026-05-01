@@ -154,10 +154,18 @@ def main():
     if args.p0_limit > 0:
         p0_cmd += ['--limit', str(args.p0_limit)]
 
+    p2_cmd = [
+        VENV_PY, str(SCRIPTS_DIR / 'semantic_summarizer.py'),
+        '--all',
+        '--skip-subagents',
+        '--since-days', '7',
+        '--gap', '50',
+    ]
+
     stages_def = [
         ('p0_import',   p0_cmd, 1800),
         ('p1_scan',     [VENV_PY, str(SCRIPTS_DIR / 'signal_scanner.py'), '--db'],          600),
-        ('p2_summary',  [VENV_PY, str(SCRIPTS_DIR / 'semantic_summarizer.py'), '--all'],   1800),
+        ('p2_summary',  p2_cmd, 7200),
         ('p3_review',   [VENV_PY, str(SCRIPTS_DIR / 'review_analyzer.py'), '--all', '--skip-claude'], 600),
     ]
 

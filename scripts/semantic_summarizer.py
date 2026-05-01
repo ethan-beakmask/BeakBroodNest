@@ -21,6 +21,8 @@ BeakCortex 復盤系統 - P2 語意摘要器
 import argparse
 import json
 import os
+import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -52,8 +54,11 @@ MODEL_FALLBACK = 'haiku'
 # claude -p 超時（秒）
 CLAUDE_TIMEOUT = 180
 
-# JSON 重試次數
-MAX_RETRIES = 1
+# JSON 重試次數（0 = 不重試，失敗只記入 p2_failures）
+MAX_RETRIES = 0
+
+# 預設 since_days（0 = 不限，>0 = 僅處理 last_timestamp 在 N 天內的對話）
+DEFAULT_SINCE_DAYS = 0
 
 
 # ============================================================
@@ -124,8 +129,14 @@ topic_id: {topic_id}
 # ============================================================
 
 def get_signal_turns(conn, conversation_id: str = None,
-                     only_unsummarized: bool = True) -> List[Dict[str, Any]]:
-    """取得含 P1 訊號的 turns"""
+                     only_unsummarized: bool = True,
+                     skip_subagents: bool = False,
+                     since_days: int = 0) -> List[Dict[str, Any]]:
+    """取得含 P1 訊號的 turns。
+
+    skip_subagents=True 時排除 jsonl_path 在 /subagents/ 子目錄下的對話。
+    since_days>0 時只取 conversations.last_timestamp 在近 N 天內的。
+    """
     conditions = ["ct.p1_signals IS NOT NULL"]
     params: list = []
 
@@ -135,6 +146,23 @@ def get_signal_turns(conn, conversation_id: str = None,
 
     if only_unsummarized:
         conditions.append("ct.p2_summarized_at IS NULL")
+
+    if skip_subagents:
+        conditions.append(
+            "ct.conversation_id NOT IN ("
+            "SELECT id FROM conversations WHERE jsonl_path LIKE %s"
+            ")"
+        )
+        params.append('%/subagents/%')
+
+    if since_days and since_days > 0:
+        conditions.append(
+            "ct.conversation_id IN ("
+            "SELECT id FROM conversations "
+            "WHERE last_timestamp >= NOW() - make_interval(days => %s)"
+            ")"
+        )
+        params.append(since_days)
 
     where = " AND ".join(conditions)
 
@@ -446,6 +474,10 @@ def run_claude_summarize(
     """
     呼叫 claude -p 產生摘要。
 
+    用 Popen + start_new_session=True 把 claude CLI 開到獨立 process group，
+    timeout 後對整個 group 發 SIGKILL，避免 grandchild 殘留 (claude CLI
+    會 fork 出 node child，subprocess.run 的 timeout 只會殺直接子行程)。
+
     Returns:
         (output_text, error_message)
     """
@@ -457,19 +489,33 @@ def run_claude_summarize(
     ]
 
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
-            capture_output=True, text=True,
-            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             stdin=subprocess.DEVNULL,
+            text=True,
+            start_new_session=True,
         )
-        if result.returncode != 0:
-            return None, f'claude -p exit code {result.returncode}: {result.stderr[:500]}'
-        return result.stdout, None
-    except subprocess.TimeoutExpired:
-        return None, f'claude -p timeout ({timeout}s)'
     except FileNotFoundError:
         return None, 'claude CLI not found in PATH'
+
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        return None, f'claude -p timeout ({timeout}s)'
+
+    if proc.returncode != 0:
+        return None, f'claude -p exit code {proc.returncode}: {(stderr or "")[:500]}'
+    return stdout, None
 
 
 def _extract_json_object(text: str) -> Optional[str]:
@@ -479,7 +525,6 @@ def _extract_json_object(text: str) -> Optional[str]:
     需要找到第一個 { 到對應的 } 之間的完整 JSON。
     """
     # 先嘗試 markdown 區塊提取
-    import re
     md_match = re.search(r'```(?:json)?\s*\n(\{.*?\})\s*\n```', text, re.DOTALL)
     if md_match:
         return md_match.group(1)
@@ -608,47 +653,53 @@ def summarize_topic(
     raw_output, error = run_claude_summarize(main_prompt, ctx_file, model)
 
     if error:
-        # 清理暫存檔
         _safe_unlink(ctx_file)
+        kind = 'claude_timeout' if 'timeout' in error else 'claude_error'
         return {
             'topic_id': topic_id,
             'status': 'error',
+            'failure_kind': kind,
             'error': error,
+            'model': model,
+            'raw_output': '',
         }
 
     # 4. 驗證 JSON
     summary, validation_error = validate_summary(raw_output)
 
-    if validation_error:
+    if validation_error and MAX_RETRIES > 0:
         if verbose:
-            print(f'[P2] {topic_id}: validation failed: {validation_error}',
+            print(f'[P2] {topic_id}: validation failed: {validation_error}, retrying',
                   file=sys.stderr)
-
-        # 重試一次（升級 model）
         retry_model = MODEL_DEFAULT  # 強制升 sonnet
-        if verbose:
-            print(f'[P2] {topic_id}: retrying with {retry_model}', file=sys.stderr)
-
         raw_output2, error2 = run_claude_summarize(main_prompt, ctx_file, retry_model)
         if error2:
             _safe_unlink(ctx_file)
+            kind = 'claude_timeout' if 'timeout' in error2 else 'claude_error'
             return {
                 'topic_id': topic_id,
                 'status': 'error',
+                'failure_kind': kind,
                 'error': f'retry failed: {error2}',
                 'first_error': validation_error,
+                'model': retry_model,
+                'raw_output': raw_output or '',
             }
+        summary, validation_error = validate_summary(raw_output2)
+        raw_output = raw_output2
+        model = retry_model
 
-        summary, validation_error2 = validate_summary(raw_output2)
-        if validation_error2:
-            _safe_unlink(ctx_file)
-            return {
-                'topic_id': topic_id,
-                'status': 'validation_failed',
-                'error': validation_error2,
-                'first_error': validation_error,
-                'raw_output': raw_output2[:2000],
-            }
+    if validation_error:
+        _safe_unlink(ctx_file)
+        kind = 'json_missing' if '找不到 JSON' in validation_error else 'validation_failed'
+        return {
+            'topic_id': topic_id,
+            'status': 'validation_failed',
+            'failure_kind': kind,
+            'error': validation_error,
+            'raw_output': raw_output or '',
+            'model': model,
+        }
 
     # 清理暫存檔
     _safe_unlink(ctx_file)
@@ -697,6 +748,39 @@ def update_topic_results(
     conn.commit()
 
 
+def record_p2_failure(
+    conn,
+    topic: Dict[str, Any],
+    result: Dict[str, Any],
+) -> None:
+    """寫入 p2_failures 表，供事後人工檢視/重跑。
+
+    raw_output 截到 64KB，避免單筆過大。
+    """
+    raw = (result.get('raw_output') or '')[:65536]
+    err_msg = (result.get('error') or '')[:4000]
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO p2_failures
+                (topic_id, conversation_id, seq_min, seq_max,
+                 signal_count, max_severity, failure_kind,
+                 error_message, raw_output, model, failed_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """, (
+            topic['topic_id'],
+            topic['conversation_id'],
+            topic['seq_min'],
+            topic['seq_max'],
+            topic['signal_count'],
+            topic['max_severity'],
+            result.get('failure_kind', ''),
+            err_msg,
+            raw,
+            result.get('model', ''),
+        ))
+    conn.commit()
+
+
 def check_conversation_p2_complete(conn, conversation_id: str) -> bool:
     """檢查對話的所有訊號 turns 是否都已 P2 處理完成"""
     with conn.cursor() as cur:
@@ -731,6 +815,8 @@ def run_p2_pipeline(
     dry_run: bool = False,
     verbose: bool = False,
     gap_threshold: int = TOPIC_GAP_THRESHOLD,
+    skip_subagents: bool = False,
+    since_days: int = 0,
 ) -> List[Dict[str, Any]]:
     """
     執行 P2 語意摘要 pipeline。
@@ -741,6 +827,8 @@ def run_p2_pipeline(
         dry_run: True 只組裝 prompt 不呼叫 claude
         verbose: 詳細輸出
         gap_threshold: 主題分群的 turn_seq 間距閾值
+        skip_subagents: 排除 sub-agent 對話 (jsonl_path 含 /subagents/)
+        since_days: 只處理 last_timestamp 在近 N 天內的對話 (0=不限)
 
     Returns:
         每個 topic 的處理結果 list
@@ -753,6 +841,8 @@ def run_p2_pipeline(
         signal_turns = get_signal_turns(
             conn, conversation_id,
             only_unsummarized=not rescan,
+            skip_subagents=skip_subagents,
+            since_days=since_days,
         )
 
         if not signal_turns:
@@ -779,7 +869,7 @@ def run_p2_pipeline(
             result = summarize_topic(conn, topic, dry_run=dry_run, verbose=verbose)
             results.append(result)
 
-            # 4. 成功則回寫 DB
+            # 4. 依結果回寫 DB
             if result['status'] == 'ok' and not dry_run:
                 update_topic_results(conn, topic, result)
                 if verbose:
@@ -788,13 +878,25 @@ def run_p2_pipeline(
                     print(f'[P2] {topic["topic_id"]}: {title} '
                           f'(confidence={conf})', file=sys.stderr)
 
-            elif result['status'] == 'error':
+            elif result['status'] == 'error' and not dry_run:
                 print(f'[P2] {topic["topic_id"]}: ERROR - {result.get("error", "?")}',
                       file=sys.stderr)
+                try:
+                    record_p2_failure(conn, topic, result)
+                except Exception as e:
+                    print(f'[P2] {topic["topic_id"]}: 記錄 p2_failures 失敗: {e}',
+                          file=sys.stderr)
+                    conn.rollback()
 
-            elif result['status'] == 'validation_failed':
+            elif result['status'] == 'validation_failed' and not dry_run:
                 print(f'[P2] {topic["topic_id"]}: VALIDATION FAILED - '
                       f'{result.get("error", "?")}', file=sys.stderr)
+                try:
+                    record_p2_failure(conn, topic, result)
+                except Exception as e:
+                    print(f'[P2] {topic["topic_id"]}: 記錄 p2_failures 失敗: {e}',
+                          file=sys.stderr)
+                    conn.rollback()
 
         # 5. 檢查對話是否全部完成
         if not dry_run:
@@ -853,12 +955,14 @@ def create_argument_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
-  python semantic_summarizer.py --all                  處理所有未摘要的訊號
-  python semantic_summarizer.py -c <uuid>              處理指定對話
-  python semantic_summarizer.py --all --dry-run        乾跑，只組裝 prompt 不呼叫 claude
-  python semantic_summarizer.py --all --rescan         忽略已摘要的，強制重新處理
-  python semantic_summarizer.py --all --json           輸出 JSON 結果到 stdout
-  python semantic_summarizer.py --all --gap 15         調整主題分群間距
+  python semantic_summarizer.py --all                          處理所有未摘要的訊號
+  python semantic_summarizer.py -c <uuid>                      處理指定對話
+  python semantic_summarizer.py --all --dry-run                乾跑，只組裝 prompt 不呼叫 claude
+  python semantic_summarizer.py --all --rescan                 忽略已摘要的，強制重新處理
+  python semantic_summarizer.py --all --json                   輸出 JSON 結果到 stdout
+  python semantic_summarizer.py --all --gap 50                 調整主題分群間距
+  python semantic_summarizer.py --all --skip-subagents         排除 sub-agent 對話
+  python semantic_summarizer.py --all --since-days 7           只處理近 7 天的對話
         """
     )
 
@@ -879,6 +983,11 @@ def create_argument_parser():
     parser.add_argument('--gap', type=int, default=TOPIC_GAP_THRESHOLD,
                         metavar='N',
                         help=f'主題分群 turn_seq 間距閾值 (預設: {TOPIC_GAP_THRESHOLD})')
+    parser.add_argument('--skip-subagents', action='store_true',
+                        help='排除 sub-agent 對話 (jsonl_path 含 /subagents/)')
+    parser.add_argument('--since-days', type=int, default=DEFAULT_SINCE_DAYS,
+                        metavar='N',
+                        help='只處理 last_timestamp 在近 N 天內的對話 (預設 0=不限)')
 
     return parser
 
@@ -900,6 +1009,8 @@ def main():
         dry_run=args.dry_run,
         verbose=args.verbose,
         gap_threshold=args.gap,
+        skip_subagents=args.skip_subagents,
+        since_days=args.since_days,
     )
 
     # JSON 輸出
