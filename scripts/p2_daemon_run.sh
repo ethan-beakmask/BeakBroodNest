@@ -12,6 +12,13 @@
 
 set -u
 
+# 自行 redirect stdout/stderr 到 log 檔，繞過 systemd StandardOutput=append:
+# 在 Ubuntu 24.04 + User=ethan 組合上會回傳 status=209/STDOUT 的問題
+LOG=/opt/tmp/p2_daemon.log
+exec >> "$LOG" 2>&1
+
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakcortex-p2 wrapper start ====="
+
 export PATH="/home/ethan/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HOME="/home/ethan"
 
