@@ -18,13 +18,15 @@ LOG=/opt/tmp/p2_daemon.log
 exec >> "$LOG" 2>&1
 
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakcortex-p2 wrapper start ====="
+START_EPOCH=$(date +%s)
 
 export PATH="/home/ethan/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HOME="/home/ethan"
 
 cd /opt/BeakCortex || exit 2
 
-exec /usr/bin/flock -E 0 -n /tmp/beak-p2.lock \
+# 不用 exec 接管，這樣 flock 結束後仍能印 end log
+/usr/bin/flock -E 0 -n /tmp/beak-p2.lock \
     /opt/BeakCortex/venv/bin/python \
     /opt/BeakCortex/scripts/semantic_summarizer.py \
     --all \
@@ -33,3 +35,15 @@ exec /usr/bin/flock -E 0 -n /tmp/beak-p2.lock \
     --gap 50 \
     --batch-size 15 \
     --verbose
+RC=$?
+ELAPSED=$(( $(date +%s) - START_EPOCH ))
+
+# 取不到鎖時 elapsed 接近 0；正常跑完則含完整時間
+if [ "$ELAPSED" -lt 5 ]; then
+    NOTE="(skipped: lock held by another batch)"
+else
+    NOTE=""
+fi
+
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakcortex-p2 wrapper end rc=$RC elapsed=${ELAPSED}s $NOTE ====="
+exit "$RC"
