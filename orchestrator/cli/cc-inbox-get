@@ -1,0 +1,80 @@
+#!/opt/BeakCortex/venv/bin/python
+"""
+cc-inbox-get -- 主 cc 讀取支線訊息
+
+用法:
+  cc-inbox-get [--session <名稱>] [--unread-only] [--mark-read] [--json]
+  cc-inbox-get -h
+
+範例:
+  cc-inbox-get --unread-only --mark-read
+  cc-inbox-get --session dev1
+"""
+import argparse
+import datetime
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path('/opt/BeakCortex')
+sys.path.insert(0, str(ROOT))
+
+from sqlalchemy import func  # noqa: E402
+
+from core.db import session_scope  # noqa: E402
+from orchestrator import notify  # noqa: E402
+from orchestrator.models import WorkerInbox  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description='主 cc 讀取支線訊息')
+    ap.add_argument('--session', help='只列指定 session')
+    ap.add_argument('--unread-only', action='store_true', help='只列未讀')
+    ap.add_argument('--mark-read', action='store_true', help='讀取後標記為已讀')
+    ap.add_argument('--json', action='store_true', help='輸出 JSON')
+    args = ap.parse_args()
+
+    with session_scope() as s:
+        q = s.query(WorkerInbox)
+        if args.session:
+            q = q.filter(WorkerInbox.session_name == args.session)
+        if args.unread_only:
+            q = q.filter(WorkerInbox.read_at.is_(None))
+        rows = [r.to_dict() for r in q.order_by(WorkerInbox.id.asc()).all()]
+
+        if args.mark_read and rows:
+            ids = [r['id'] for r in rows if r['read_at'] is None]
+            if ids:
+                s.query(WorkerInbox).filter(WorkerInbox.id.in_(ids)).update(
+                    {WorkerInbox.read_at: datetime.datetime.now()},
+                    synchronize_session=False,
+                )
+
+        remaining = s.query(func.count(WorkerInbox.id)).filter(
+            WorkerInbox.read_at.is_(None)
+        ).scalar()
+
+    if args.mark_read and remaining == 0:
+        notify.clear_flag()
+
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+
+    if not rows:
+        print('(沒有訊息)')
+        return 0
+
+    for r in rows:
+        status = '已讀' if r['read_at'] else '未讀'
+        print(
+            f'[#{r["id"]}] {r["created_at"]} session={r["session_name"]} '
+            f'kind={r["kind"]} ({status})'
+        )
+        print(f'  {r["content"]}')
+        print()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

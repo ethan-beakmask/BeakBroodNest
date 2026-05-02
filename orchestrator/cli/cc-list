@@ -1,0 +1,70 @@
+#!/opt/BeakCortex/venv/bin/python
+"""
+cc-list -- 列出所有支線 sessions
+
+用法:
+  cc-list [--json] [--purpose <purpose>]
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path('/opt/BeakCortex')
+sys.path.insert(0, str(ROOT))
+
+from sqlalchemy import func, select  # noqa: E402
+
+from core.db import session_scope  # noqa: E402
+from orchestrator.models import WorkerSession, WorkerInbox  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description='列出所有支線 sessions')
+    ap.add_argument('--json', action='store_true', help='輸出 JSON')
+    ap.add_argument('--purpose', default='', help='只列指定 purpose')
+    args = ap.parse_args()
+
+    with session_scope() as s:
+        q = s.query(WorkerSession)
+        if args.purpose:
+            q = q.filter(WorkerSession.purpose == args.purpose)
+        sessions = q.order_by(WorkerSession.created_at.asc()).all()
+
+        unread_map = dict(
+            s.query(
+                WorkerInbox.session_name,
+                func.count(WorkerInbox.id),
+            ).filter(WorkerInbox.read_at.is_(None))
+            .group_by(WorkerInbox.session_name).all()
+        )
+
+        rows = []
+        for sess in sessions:
+            d = sess.to_dict()
+            d['unread'] = unread_map.get(sess.name, 0)
+            rows.append(d)
+
+    if args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+
+    if not rows:
+        print('(沒有 session)')
+        return 0
+
+    print(
+        f'{"name":<20} {"purpose":<14} {"role":<20} {"model":<10} '
+        f'{"status":<10} {"unread":>6} {"last_activity":<20}'
+    )
+    print('-' * 110)
+    for r in rows:
+        print(
+            f'{r["name"]:<20} {r["purpose"]:<14} {r["role"]:<20} {r["model"]:<10} '
+            f'{r["status"]:<10} {r["unread"]:>6} {(r["last_activity_at"] or "")[:19]:<20}'
+        )
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

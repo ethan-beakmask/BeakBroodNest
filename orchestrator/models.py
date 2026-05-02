@@ -1,6 +1,8 @@
 """
-Orchestrator ORM -- worker_tasks 與 worker_reports
-支線任務管理與結果收集，獨立於知識原子表（knowledge_atoms）
+Orchestrator ORM
+- WorkerTask / WorkerReport: 一次性派遣（保留）
+- WorkerSession / WorkerInbox: 長期多輪互動會話（新增，cc-to-cc MVP 整合）
+獨立於知識原子表（knowledge_atoms）
 """
 import datetime
 import uuid
@@ -152,3 +154,90 @@ class WorkerReport(Base):
         if include_raw:
             d['raw_output'] = self.raw_output
         return d
+
+
+class WorkerSession(Base):
+    """長期支線會話（多輪互動）"""
+    __tablename__ = 'worker_sessions'
+
+    PURPOSE_WORKER = 'worker'
+    PURPOSE_HOOK_ASIDE = 'hook_aside'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    purpose: Mapped[str] = mapped_column(String(40), default=PURPOSE_WORKER, nullable=False)
+    working_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(String(30), default='sonnet', nullable=False)
+    claude_session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    main_tmux_pane: Mapped[str] = mapped_column(Text, default='', nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default='active', nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, nullable=False,
+    )
+    last_activity_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    inbox_items: Mapped[list['WorkerInbox']] = relationship(
+        back_populates='session', cascade='all, delete-orphan',
+    )
+
+    VALID_STATUSES = ('active', 'failed', 'archived')
+    VALID_PURPOSES = ('worker', 'hook_aside', 'hook_summary', 'hook_translate', 'hook_lookup')
+
+    __table_args__ = (
+        Index('idx_worker_sessions_purpose', 'purpose'),
+        Index('idx_worker_sessions_status', 'status'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'name': self.name,
+            'role': self.role,
+            'purpose': self.purpose,
+            'working_dir': self.working_dir,
+            'model': self.model,
+            'claude_session_id': self.claude_session_id or '',
+            'main_tmux_pane': self.main_tmux_pane,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_activity_at': self.last_activity_at.isoformat() if self.last_activity_at else None,
+        }
+
+
+class WorkerInbox(Base):
+    """支線→主 雙向訊息佇列"""
+    __tablename__ = 'worker_inbox'
+
+    KIND_QUESTION = 'question'
+    KIND_NOTICE = 'notice'
+    KIND_RESULT = 'result'
+    VALID_KINDS = ('question', 'notice', 'result')
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_name: Mapped[str] = mapped_column(
+        Text, ForeignKey('worker_sessions.name', ondelete='CASCADE'), nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, nullable=False,
+    )
+    read_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
+    session: Mapped['WorkerSession'] = relationship(back_populates='inbox_items')
+
+    __table_args__ = (
+        Index('idx_worker_inbox_unread', 'read_at'),
+        Index('idx_worker_inbox_session', 'session_name'),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'session_name': self.session_name,
+            'kind': self.kind,
+            'content': self.content,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'read_at': self.read_at.isoformat() if self.read_at else None,
+        }

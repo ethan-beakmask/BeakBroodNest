@@ -86,12 +86,54 @@ human_ui/           人類介面 (Flask)
 ai_kb/              AI 知識庫介面
   mcp_server.py     MCP Server (10 知識工具 + 4 orchestrator 工具)
 orchestrator/       多 Agent 協作框架
-  models.py         worker_tasks + worker_reports ORM
-  dispatcher.py     任務派發 (tmux window + claude -p)
-  wrapper.sh        支線 claude process 包裝器
-  collector.py      結果收集 (output -> worker_reports)
+  models.py         worker_tasks + worker_reports + worker_sessions + worker_inbox ORM
+  dispatcher.py     任務派發 (一次性 dispatch_task / 多輪 spawn_session+talk_session)
+  wrapper.sh        一次性派遣 claude process 包裝器（dispatch_task 用）
+  cc_runner.py      多輪互動 claude -p 同步呼叫（spawn/talk 用）
+  collector.py      一次性派遣結果收集 (output -> worker_reports)
+  notify.py         主 cc 通知（tmux display-message + 旗標檔 + stderr）
   relay.py          中間層 (MVP: passthrough，未來: 審查/匯整)
+  cli/              命令列工具（cc-spawn / cc-talk / cc-inbox-{put,get} / cc-list）
+  hooks/            UserPromptSubmit hook（aside_router.py 等）
+  workspaces/       支線 cwd（每支線一個子目錄，不入版控）
 docs/               規劃文件
+```
+
+## Orchestrator: cc-to-cc 多輪互動
+
+兩條獨立路徑並存：
+
+| 場景 | 機制 | 入口 |
+|---|---|---|
+| 一次性派遣 | tmux window + wrapper.sh + collector | `dispatcher.dispatch_task()` |
+| 多輪互動會話（場景 1） | `claude -p --resume` + worker_sessions | `dispatcher.spawn_session()` / `talk_session()` 或 CLI |
+| 主線純淨 aside（場景 2） | UserPromptSubmit hook 攔 `aside:` 前綴 | `.claude/settings.json` → `orchestrator/hooks/aside_router.py` |
+
+### CLI（路徑：`/opt/BeakCortex/orchestrator/cli/`）
+```bash
+cc-spawn --name dev1 --role "後端開發" --message "請寫個 fizzbuzz.py"
+cc-talk  --session dev1 --message "改用 list comprehension"
+cc-inbox-put --session dev1 --kind question --content "要不要支援負數？"   # 支線寫
+cc-inbox-get --unread-only --mark-read                                    # 主線讀
+cc-list
+```
+
+### Schema 重點
+- `worker_sessions`：`name` UNIQUE、`purpose` 預設 `worker`；hook 自建支線 purpose 為 `hook_aside` / `hook_summary` / ...，name 用雙底線包圍（如 `__aside_default__`）
+- `worker_inbox`：`kind ∈ {question, notice, result}`，FK 到 `worker_sessions.name`
+- `cc-spawn` 拒絕雙底線開頭的 name（防撞名）；hook 內部呼叫帶 `allow_underscore=True` 旁路
+
+### 場景 2 使用方式
+在 `/opt/BeakCortex/` 內輸入 `aside: <你的臨時問題>` 即被攔截，由 hook_aside 長期支線處理，主 cc 完全不見此 prompt。
+
+### 驗收測試
+```bash
+# 場景 1 (e2e)
+cc-spawn --name e2e --role 測試 --message "1+1?" --model haiku --no-inbox-protocol
+cc-talk  --session e2e --message "上題你回答是 2，那 2+2 呢?只回數字"   # 應答 4
+cc-inbox-put --session e2e --kind notice --content "test"
+cc-inbox-get --unread-only --mark-read
+# 場景 2: 在新 cc 開 /opt/BeakCortex 並輸入 'aside: 列出檔案'，主 cc 不會看到此 prompt
 ```
 
 ## 啟動與服務管理

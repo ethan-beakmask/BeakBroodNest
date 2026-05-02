@@ -1,0 +1,85 @@
+#!/opt/BeakCortex/venv/bin/python
+"""
+cc-spawn -- 建立支線 cc，送出第一輪訊息，註冊到 worker_sessions
+
+用法:
+  cc-spawn --name <名稱> --role <角色> --message <第一訊息> [--model <model>]
+           [--purpose worker|hook_<...>] [--no-inbox-protocol] [--main-pane <pane_id>]
+  cc-spawn -h
+
+參數:
+  --name              支線名稱（唯一識別，例如 dev1、reviewer1；雙底線開頭為保留字）
+  --role              支線角色描述（會放進 system prompt）
+  --message           第一輪訊息內容
+  --model             模型名稱，預設 sonnet
+  --purpose           會話用途，預設 worker；hook 自建支線請帶 hook_aside 等
+  --no-inbox-protocol 不注入 inbox 協定（給 aside 等不需主動回報的支線用）
+  --main-pane         主 cc 所在 tmux pane id（不指定則自動偵測 $TMUX）
+
+範例:
+  cc-spawn --name dev1 --role "後端開發" --message "請寫一個 fizzbuzz.py"
+"""
+import argparse
+import sys
+from pathlib import Path
+
+ROOT = Path('/opt/BeakCortex')
+sys.path.insert(0, str(ROOT))
+
+from orchestrator import dispatcher  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description='建立支線 cc，送出第一輪訊息',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    ap.add_argument('--name', required=True, help='支線名稱（唯一）')
+    ap.add_argument('--role', required=True, help='支線角色描述')
+    ap.add_argument('--message', required=True, help='第一輪訊息內容')
+    ap.add_argument('--model', default='sonnet', help='模型名稱（預設 sonnet）')
+    ap.add_argument('--purpose', default='worker',
+                    help='會話用途（worker / hook_aside / hook_<其他>），預設 worker')
+    ap.add_argument('--main-pane', default='', help='主 cc 的 tmux pane id（預設自動偵測）')
+    ap.add_argument('--no-inbox-protocol', action='store_true',
+                    help='不注入 inbox 協定（給 aside 等不需主動回報的支線用）')
+    ap.add_argument('--allow-underscore', action='store_true',
+                    help='允許雙底線開頭的 name（僅供 hook 內部使用）')
+    ap.add_argument('--timeout', type=int, default=600, help='claude 呼叫 timeout 秒數')
+    args = ap.parse_args()
+
+    print(
+        f'[cc-spawn] 啟動支線 {args.name} (role={args.role}, model={args.model}, '
+        f'purpose={args.purpose})',
+        file=sys.stderr,
+    )
+
+    try:
+        result = dispatcher.spawn_session(
+            name=args.name,
+            role=args.role,
+            first_message=args.message,
+            model=args.model,
+            main_pane=args.main_pane,
+            purpose=args.purpose,
+            inject_inbox_protocol=not args.no_inbox_protocol,
+            allow_underscore=args.allow_underscore,
+            timeout=args.timeout,
+        )
+    except ValueError as e:
+        print(f'[cc-spawn] 錯誤：{e}', file=sys.stderr)
+        return 2
+    except Exception as e:
+        print(f'[cc-spawn] 失敗：{type(e).__name__}: {e}', file=sys.stderr)
+        return 1
+
+    print(
+        f'[cc-spawn] 支線回應 (claude_session_id={result["claude_session_id"]}):',
+        file=sys.stderr,
+    )
+    print(result['first_response'])
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

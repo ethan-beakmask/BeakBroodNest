@@ -19,7 +19,8 @@ import time
 from pathlib import Path
 
 from core.db import session_scope
-from orchestrator.models import WorkerTask
+from orchestrator import cc_runner
+from orchestrator.models import WorkerTask, WorkerSession
 
 logger = logging.getLogger('orchestrator.dispatcher')
 
@@ -223,3 +224,169 @@ def create_and_dispatch(
     )
     result = dispatch_task(task_id)
     return result
+
+
+# ============================================================
+# cc-to-cc 多輪互動會話（spawn_session / talk_session）
+# ============================================================
+
+WORKSPACES_DIR = Path(__file__).resolve().parent / 'workspaces'
+
+INBOX_PROTOCOL_TEMPLATE = """\
+[支線 CC 對話協定]
+你是支線 cc，session 名稱: {name}, 角色: {role}
+你與「主 CC」協作。當你遇到下列情況時，必須呼叫主 CC：
+1. 規格不清楚需要釐清
+2. 對任務範圍有異議
+3. 任務完成需要主 CC 驗收
+4. 與其他支線衝突需要協調
+
+呼叫主 CC 的方法（透過 Bash 工具執行此指令）：
+  /opt/BeakCortex/orchestrator/cli/cc-inbox-put --session {name} --kind <kind> --content "<內容>"
+
+kind 可選值:
+  question - 你需要主 CC 回答才能繼續（阻塞型）
+  notice   - 進度回報（非阻塞）
+  result   - 任務完成的最終結果
+
+主 CC 會在下一輪 cc-talk 對話中回覆你。送出 question 後請結束本輪，等待主 CC 回應。
+
+工作目錄: {working_dir}
+[/支線 CC 對話協定]
+"""
+
+
+def _validate_session_name(name: str, allow_underscore: bool = False) -> None:
+    if not name:
+        raise ValueError('session name 不可為空')
+    if not allow_underscore and name.startswith('__'):
+        raise ValueError(
+            f'session name "{name}" 以雙底線開頭為保留識別字（hook 自建支線專用），請改用其他名稱'
+        )
+
+
+def spawn_session(
+    name: str,
+    role: str,
+    first_message: str,
+    model: str = 'sonnet',
+    main_pane: str = '',
+    purpose: str = WorkerSession.PURPOSE_WORKER,
+    inject_inbox_protocol: bool = True,
+    allow_underscore: bool = False,
+    timeout: int = 600,
+) -> dict:
+    """建立支線 cc 並送出第一輪訊息。
+
+    回傳 dict 含 session_name / claude_session_id / first_response。
+    """
+    _validate_session_name(name, allow_underscore=allow_underscore)
+
+    workspace = WORKSPACES_DIR / name
+    workspace.mkdir(parents=True, exist_ok=True)
+
+    pane = main_pane
+    if not pane:
+        try:
+            tmux_info = get_current_tmux_info()
+            pane = tmux_info.get('pane_id', '')
+        except Exception:
+            pane = ''
+
+    with session_scope() as s:
+        existing = s.query(WorkerSession).filter(WorkerSession.name == name).first()
+        if existing:
+            raise ValueError(f'session 名稱 "{name}" 已存在')
+        sess = WorkerSession(
+            name=name,
+            role=role,
+            purpose=purpose,
+            working_dir=str(workspace),
+            model=model,
+            main_tmux_pane=pane,
+            status='active',
+        )
+        s.add(sess)
+        s.flush()
+
+    system_prompt = None
+    if inject_inbox_protocol:
+        system_prompt = INBOX_PROTOCOL_TEMPLATE.format(
+            name=name, role=role, working_dir=str(workspace),
+        )
+
+    try:
+        data = cc_runner.call_claude(
+            prompt=first_message,
+            working_dir=str(workspace),
+            model=model,
+            append_system_prompt=system_prompt,
+            timeout=timeout,
+        )
+    except Exception as e:
+        with session_scope() as s:
+            sess = s.query(WorkerSession).filter(WorkerSession.name == name).first()
+            if sess:
+                sess.status = 'failed'
+        raise
+
+    claude_sid = data.get('session_id', '')
+    result_text = data.get('result', '')
+
+    with session_scope() as s:
+        sess = s.query(WorkerSession).filter(WorkerSession.name == name).first()
+        sess.claude_session_id = claude_sid
+        sess.last_activity_at = datetime.datetime.now()
+
+    return {
+        'session_name': name,
+        'claude_session_id': claude_sid,
+        'first_response': result_text,
+    }
+
+
+def talk_session(session_name: str, message: str, timeout: int = 600) -> dict:
+    """對既有支線送訊息（接續對話）。回傳含 result 文字。"""
+    with session_scope() as s:
+        sess = s.query(WorkerSession).filter(WorkerSession.name == session_name).first()
+        if not sess:
+            raise ValueError(f'找不到 session "{session_name}"')
+        if not sess.claude_session_id:
+            raise ValueError(f'session "{session_name}" 尚未取得 claude_session_id')
+        working_dir = sess.working_dir
+        model = sess.model
+        resume_id = sess.claude_session_id
+
+    data = cc_runner.call_claude(
+        prompt=message,
+        working_dir=working_dir,
+        model=model,
+        resume_session_id=resume_id,
+        timeout=timeout,
+    )
+
+    new_sid = data.get('session_id') or resume_id
+    result_text = data.get('result', '')
+
+    with session_scope() as s:
+        sess = s.query(WorkerSession).filter(WorkerSession.name == session_name).first()
+        sess.claude_session_id = new_sid
+        sess.last_activity_at = datetime.datetime.now()
+
+    return {
+        'session_name': session_name,
+        'claude_session_id': new_sid,
+        'response': result_text,
+    }
+
+
+def find_hook_session(purpose: str) -> str | None:
+    """依 purpose 找最早的 active hook session（供 aside hook 等使用）。"""
+    with session_scope() as s:
+        sess = (
+            s.query(WorkerSession)
+            .filter(WorkerSession.purpose == purpose, WorkerSession.status == 'active')
+            .order_by(WorkerSession.created_at.asc())
+            .first()
+        )
+        return sess.name if sess else None

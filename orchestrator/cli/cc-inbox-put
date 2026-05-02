@@ -1,0 +1,72 @@
+#!/opt/BeakCortex/venv/bin/python
+"""
+cc-inbox-put -- 支線寫入訊息給主 cc（並觸發通知）
+
+用法:
+  cc-inbox-put --session <名稱> --kind <kind> --content <內容>
+  cc-inbox-put -h
+
+參數:
+  --session  支線名稱（必須已存在於 worker_sessions 表）
+  --kind     訊息類型：question / notice / result
+  --content  訊息內容
+
+範例:
+  cc-inbox-put --session dev1 --kind question --content "要不要支援負數？"
+"""
+import argparse
+import sys
+from pathlib import Path
+
+ROOT = Path('/opt/BeakCortex')
+sys.path.insert(0, str(ROOT))
+
+from sqlalchemy import func  # noqa: E402
+
+from core.db import session_scope  # noqa: E402
+from orchestrator import notify  # noqa: E402
+from orchestrator.models import WorkerSession, WorkerInbox  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description='支線寫入訊息給主 cc')
+    ap.add_argument('--session', required=True, help='支線名稱')
+    ap.add_argument('--kind', required=True, choices=WorkerInbox.VALID_KINDS,
+                    help='訊息類型')
+    ap.add_argument('--content', required=True, help='訊息內容')
+    args = ap.parse_args()
+
+    with session_scope() as s:
+        sess = s.query(WorkerSession).filter(WorkerSession.name == args.session).first()
+        if not sess:
+            print(f'錯誤：找不到 session "{args.session}"', file=sys.stderr)
+            return 2
+        main_pane = sess.main_tmux_pane
+
+        item = WorkerInbox(
+            session_name=args.session,
+            kind=args.kind,
+            content=args.content,
+        )
+        s.add(item)
+        s.flush()
+        msg_id = item.id
+
+        unread = s.query(func.count(WorkerInbox.id)).filter(
+            WorkerInbox.read_at.is_(None)
+        ).scalar()
+
+    notify.notify_main(
+        pane=main_pane,
+        session=args.session,
+        kind=args.kind,
+        unread_count=unread,
+        content_preview=args.content,
+    )
+
+    print(f'[cc-inbox-put] 訊息 #{msg_id} 已送出 (session={args.session}, kind={args.kind})')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1,0 +1,49 @@
+#!/opt/BeakCortex/venv/bin/python
+"""
+cc-talk -- 對指定支線送訊息，收回應（單輪）
+
+用法:
+  cc-talk --session <名稱> --message <訊息>
+  cc-talk -h
+
+範例:
+  cc-talk --session dev1 --message "改用 list comprehension"
+"""
+import argparse
+import sys
+from pathlib import Path
+
+ROOT = Path('/opt/BeakCortex')
+sys.path.insert(0, str(ROOT))
+
+from orchestrator import dispatcher  # noqa: E402
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description='對支線 cc 送訊息（接續對話）')
+    ap.add_argument('--session', required=True, help='支線名稱')
+    ap.add_argument('--message', required=True, help='訊息內容')
+    ap.add_argument('--timeout', type=int, default=600, help='claude 呼叫 timeout 秒數')
+    args = ap.parse_args()
+
+    print(f'[cc-talk] 送訊息給 {args.session}', file=sys.stderr)
+
+    try:
+        result = dispatcher.talk_session(
+            session_name=args.session,
+            message=args.message,
+            timeout=args.timeout,
+        )
+    except ValueError as e:
+        print(f'[cc-talk] 錯誤：{e}', file=sys.stderr)
+        return 2
+    except Exception as e:
+        print(f'[cc-talk] 失敗：{type(e).__name__}: {e}', file=sys.stderr)
+        return 1
+
+    print(result['response'])
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
