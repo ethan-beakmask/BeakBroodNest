@@ -93,10 +93,15 @@ def get_cwd() -> str:
 
 
 # ============================================================
-# 已知收件人清單（驗證用）
+# 已知收件人清單（僅供 UI 首次 autocomplete 種子，不再用於拒絕寫入）
 # ============================================================
+#
+# 寄出端 sender 由 cwd 自動推斷（任何 /opt/* 都能派生 project:{basename}），
+# 為了寄/收對稱，收件人 recipient 也允許任意 scope:identity 字串。
+# UI autocomplete 應改從 messages 表動態查歷史身份（SELECT DISTINCT
+# recipient UNION sender）；本常數僅在 messages 表尚無資料時當 bootstrap hint。
 
-KNOWN_RECIPIENTS = {
+KNOWN_RECIPIENTS_HINT = {
     # 專案
     'project:beakcortex',
     'project:beakplatform',
@@ -105,7 +110,6 @@ KNOWN_RECIPIENTS = {
     'project:beakseal',
     # 人類
     'user:ethan',
-    # 任務（可動態擴充，不在此強制驗證）
 }
 
 
@@ -173,23 +177,23 @@ def register(mcp):
                          f'允許值: {", ".join(Message.VALID_TYPES)}',
             }, ensure_ascii=False)
 
-        # 驗證 recipient 格式
+        # 驗證 recipient 格式：必須是 scope:identity，兩段都非空
+        recipient = recipient.strip()
         if ':' not in recipient:
             return json.dumps({
                 'error': f'recipient 格式錯誤: {recipient}，'
                          f'應為 scope:identity（如 project:beakplatform）',
             }, ensure_ascii=False)
-
-        # 驗證 recipient 是否為已知身份（task: 開頭除外，允許動態建立）
-        scope = recipient.split(':')[0]
-        if scope != 'task' and recipient not in KNOWN_RECIPIENTS:
+        _scope, _, _identity = recipient.partition(':')
+        if not _scope.strip() or not _identity.strip():
             return json.dumps({
-                'error': f'未知的收件人: {recipient}。'
-                         f'已知收件人: {", ".join(sorted(KNOWN_RECIPIENTS))}。'
-                         f'注意: -dev 目錄與正式目錄共用同一身份，'
-                         f'例如 project:beakplatform 同時代表 '
-                         f'/opt/BeakPlatform 和 /opt/BeakPlatform-dev。',
+                'error': f'recipient 格式錯誤: {recipient}，'
+                         f'scope 與 identity 兩段皆不可為空',
             }, ensure_ascii=False)
+        # recipient 不再走白名單檢查（與 sender 自動推斷對稱）：
+        # claude-call-claude 等臨時身份場景下，sender 已能由 cwd 派生為
+        # project:{basename}，recipient 也應允許任意字串寫入。UI 端用
+        # messages 歷史身份做 autocomplete 防 typo。
 
         with session_scope() as s:
             # 驗證 ref_atom_id
