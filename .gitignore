@@ -38,6 +38,9 @@ window_inspector.output
 # Relay receiver 本機設定（含主機 IP 與絕對路徑，僅本機保留；範本見 config.yaml.example）
 orchestrator/windows/relay/config.yaml
 
+# 改名探索候選清單（個人草稿，不入版控）
+tools/name_candidates.csv
+
 # Node.js (Tiptap build)
 node_modules/
 
