@@ -105,16 +105,22 @@ docs/               規劃文件
 
 | 場景 | 機制 | 入口 |
 |---|---|---|
-| 一次性派遣 | tmux window + wrapper.sh + collector | `dispatcher.dispatch_task()` |
+| 一次性派遣（claude -p 當 agent） | tmux window + wrapper.sh + collector | `dispatcher.dispatch_task()` |
 | 多輪互動會話（場景 1） | `claude -p --resume` + worker_sessions | `dispatcher.spawn_session()` / `talk_session()` 或 CLI |
 | 主線純淨 aside（場景 2） | UserPromptSubmit hook 攔 `aside:` 前綴 | `.claude/settings.json` → `orchestrator/hooks/aside_router.py` |
+
+### 設計原則：儲存分流，查詢統一
+- **儲存分流**：一次性派遣結果存 `worker_reports`（結案報告，看完就好），多輪會話訊息存 `worker_inbox`（對話訊息，需回應）。語意不同，**不合併儲存層**（避免破壞 FK 純度、避免硬塞 task_id 進 inbox 或為一次性任務假造 session）。
+- **查詢統一**：兩表的 `read_at IS NULL` 透過 PostgreSQL view `pending_outputs` 統一查詢（schema：source/row_id/session_name/task_id/kind/content/created_at/read_at）。主線一個入口看全部未讀。
+- **通知一致**：`worker_inbox` 寫入（cc-inbox-put）與 `worker_reports` 寫入（collector）皆走 `notify.notify_pending()`，前綴 `[CC-Orch]`、未讀數來自 view。
 
 ### CLI（路徑：`/opt/BeakCortex/orchestrator/cli/`）
 ```bash
 cc-spawn --name dev1 --role "後端開發" --message "請寫個 fizzbuzz.py"
 cc-talk  --session dev1 --message "改用 list comprehension"
 cc-inbox-put --session dev1 --kind question --content "要不要支援負數？"   # 支線寫
-cc-inbox-get --unread-only --mark-read                                    # 主線讀
+cc-inbox-get --unread-only --mark-read                                    # 主線讀（僅 session）
+cc-pending [--source task|session] [--mark-read]                          # 主線讀（task + session 統一）
 cc-list
 ```
 

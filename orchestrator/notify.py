@@ -64,7 +64,7 @@ def notify_main(
     unread_count: int,
     content_preview: str,
 ) -> None:
-    """寫旗標檔 + tmux 提示 + stderr 醒目訊息"""
+    """寫旗標檔 + tmux 提示 + stderr 醒目訊息（向下相容 worker_inbox 觸發點）"""
     write_flag(unread_count, session, kind)
 
     msg = f'[CC-Orch] {session} 送來 {kind}（共 {unread_count} 則未讀）'
@@ -75,6 +75,50 @@ def notify_main(
     bar = '=' * 60
     print(
         f'\n{bar}\n>>> {msg}\n>>> 預覽: {preview}\n'
-        f'>>> 主 cc 請執行: cc-inbox-get --unread-only --mark-read\n{bar}\n',
+        f'>>> 主 cc 請執行: cc-pending --mark-read（或 cc-inbox-get --unread-only --mark-read）\n{bar}\n',
+        file=sys.stderr,
+    )
+
+
+def _count_pending() -> int:
+    """查 pending_outputs view 的未讀總數（worker_reports + worker_inbox）"""
+    # 延遲 import 避免循環依賴與 standalone 腳本啟動成本
+    from sqlalchemy import text
+    from core.db import session_scope
+    with session_scope() as s:
+        return int(
+            s.execute(text('SELECT COUNT(*) FROM pending_outputs')).scalar() or 0
+        )
+
+
+def notify_pending(
+    pane: str | None,
+    source: str,
+    identifier: str,
+    kind: str,
+    content_preview: str,
+) -> None:
+    """統一通知（涵蓋 task 完成 + session 訊息）。
+
+    source: 'task' 或 'session'
+    identifier: source='task' 時為 task_id 字串，source='session' 時為 session_name
+    """
+    try:
+        unread_count = _count_pending()
+    except Exception:
+        unread_count = 0
+
+    write_flag(unread_count, identifier, kind)
+
+    label = f'task #{identifier}' if source == 'task' else identifier
+    msg = f'[CC-Orch] {label} 送來 {kind}（共 {unread_count} 則未讀）'
+    if pane:
+        tmux_display_message(pane, msg)
+
+    preview = content_preview if len(content_preview) <= 80 else content_preview[:77] + '...'
+    bar = '=' * 60
+    print(
+        f'\n{bar}\n>>> {msg}\n>>> 預覽: {preview}\n'
+        f'>>> 主 cc 請執行: cc-pending --mark-read\n{bar}\n',
         file=sys.stderr,
     )

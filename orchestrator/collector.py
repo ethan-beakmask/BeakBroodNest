@@ -12,7 +12,6 @@ collector.py -- 支線結果收集器
 """
 import argparse
 import datetime
-import subprocess
 import sys
 from pathlib import Path
 
@@ -20,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from core.db import init_engine, session_scope
 from core.models import KnowledgeAtom  # noqa: F401 -- 讓 SQLAlchemy 知道 knowledge_atoms 表（FK 依賴）
+from orchestrator import notify
 from orchestrator.models import WorkerTask, WorkerReport
 from orchestrator.relay import process_report
 
@@ -67,22 +67,16 @@ def collect(task_id: int, exit_code: int, output_file: str, main_pane: str = '',
     # 經由 relay 處理（MVP: passthrough）
     relay_result = process_report(report_id)
 
-    # 通知主線
-    if main_pane:
-        _notify_main(main_pane, task_id, exit_code, report_id)
-
-
-def _notify_main(main_pane: str, task_id: int, exit_code: int, report_id: int):
-    """透過 tmux display-message 通知主線"""
+    # 統一通知（與 worker_inbox 觸發點走同一條 notify_pending，涵蓋 pending_outputs 全量未讀）
     status_text = '完成' if exit_code == 0 else f'失敗(exit={exit_code})'
-    msg = f'[Worker] #{task_id} {status_text} -> report #{report_id}'
-    try:
-        subprocess.run(
-            ['tmux', 'display-message', '-t', main_pane, '-d', '5000', msg],
-            capture_output=True, timeout=5,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    preview = (report_dict.get('content') or '')[:120]
+    notify.notify_pending(
+        pane=main_pane or None,
+        source='task',
+        identifier=str(task_id),
+        kind=f'result({status_text})',
+        content_preview=preview or f'report #{report_id}',
+    )
 
 
 def main():

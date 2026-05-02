@@ -1,0 +1,136 @@
+#!/opt/BeakCortex/venv/bin/python
+"""
+cc-pending -- 主線統一未讀查詢（worker_reports + worker_inbox）
+
+用法:
+  cc-pending [--source task|session] [--mark-read] [--json]
+  cc-pending -h
+
+底層走 PostgreSQL view `pending_outputs`，--mark-read 依 source 欄位
+回頭 UPDATE 對應底層表（worker_reports.read_at 或 worker_inbox.read_at）。
+
+範例:
+  cc-pending                          # 全部未讀
+  cc-pending --source session         # 只看多輪會話訊息
+  cc-pending --source task            # 只看一次性派遣結果
+  cc-pending --mark-read              # 看完並標已讀
+"""
+import argparse
+import datetime
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path('/opt/BeakCortex')
+sys.path.insert(0, str(ROOT))
+
+from sqlalchemy import text  # noqa: E402
+
+from core.db import session_scope  # noqa: E402
+from orchestrator import notify  # noqa: E402
+
+VALID_SOURCES = ('task', 'session')
+
+
+def fetch(source_filter: str | None) -> list[dict]:
+    sql = (
+        'SELECT source, row_id, session_name, task_id, kind, content, '
+        '       created_at, read_at '
+        'FROM pending_outputs '
+    )
+    params: dict = {}
+    if source_filter:
+        sql += 'WHERE source = :source '
+        params['source'] = source_filter
+    sql += 'ORDER BY created_at ASC'
+
+    with session_scope() as s:
+        rows = s.execute(text(sql), params).mappings().all()
+        return [dict(r) for r in rows]
+
+
+def mark_read(rows: list[dict]) -> tuple[int, int]:
+    """依 source 回頭 UPDATE，回傳 (task_marked, session_marked)"""
+    task_ids = [r['row_id'] for r in rows if r['source'] == 'task']
+    session_msg_ids = [r['row_id'] for r in rows if r['source'] == 'session']
+    now = datetime.datetime.now()
+
+    with session_scope() as s:
+        if task_ids:
+            s.execute(
+                text(
+                    'UPDATE worker_reports SET read_at = :ts '
+                    'WHERE id = ANY(:ids) AND read_at IS NULL'
+                ),
+                {'ts': now, 'ids': task_ids},
+            )
+        if session_msg_ids:
+            s.execute(
+                text(
+                    'UPDATE worker_inbox SET read_at = :ts '
+                    'WHERE id = ANY(:ids) AND read_at IS NULL'
+                ),
+                {'ts': now, 'ids': session_msg_ids},
+            )
+    return len(task_ids), len(session_msg_ids)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description='主線統一未讀查詢（task + session）')
+    ap.add_argument('--source', choices=VALID_SOURCES, default=None,
+                    help='只看 task（一次性派遣）或 session（多輪會話）')
+    ap.add_argument('--mark-read', action='store_true', help='讀完標已讀')
+    ap.add_argument('--json', action='store_true', help='輸出 JSON')
+    args = ap.parse_args()
+
+    rows = fetch(args.source)
+
+    # 序列化（datetime → str）
+    out_rows = []
+    for r in rows:
+        out_rows.append({
+            'source': r['source'],
+            'row_id': r['row_id'],
+            'session_name': r['session_name'],
+            'task_id': r['task_id'],
+            'kind': r['kind'],
+            'content': r['content'],
+            'created_at': r['created_at'].isoformat() if r['created_at'] else None,
+            'read_at': r['read_at'].isoformat() if r['read_at'] else None,
+        })
+
+    if args.mark_read and out_rows:
+        t_n, s_n = mark_read(rows)
+        print(f'[cc-pending] 已標記 task={t_n} session={s_n} 為已讀', file=sys.stderr)
+        # 全清空後清旗標
+        with session_scope() as s:
+            remaining = int(
+                s.execute(text('SELECT COUNT(*) FROM pending_outputs')).scalar() or 0
+            )
+        if remaining == 0:
+            notify.clear_flag()
+
+    if args.json:
+        print(json.dumps(out_rows, ensure_ascii=False, indent=2))
+        return 0
+
+    if not out_rows:
+        print('(沒有未讀)')
+        return 0
+
+    for r in out_rows:
+        if r['source'] == 'task':
+            label = f'task #{r["task_id"]} (report #{r["row_id"]})'
+        else:
+            label = f'session={r["session_name"]} (msg #{r["row_id"]})'
+        print(f'[{r["source"]}] {r["created_at"]} {label} kind={r["kind"]}')
+        content = r['content'] or ''
+        preview = content if len(content) <= 200 else content[:197] + '...'
+        for line in preview.splitlines() or ['']:
+            print(f'  {line}')
+        print()
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

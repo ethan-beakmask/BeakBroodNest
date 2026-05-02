@@ -120,6 +120,9 @@ class WorkerReport(Base):
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     review_notes: Mapped[str] = mapped_column(Text, default='')
 
+    # 主線是否讀過（與 review_status 屬不同關注點；對應 pending_outputs view）
+    read_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now,
     )
@@ -149,6 +152,7 @@ class WorkerReport(Base):
             'reviewer_id': self.reviewer_id,
             'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
             'review_notes': self.review_notes,
+            'read_at': self.read_at.isoformat() if self.read_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
         if include_raw:

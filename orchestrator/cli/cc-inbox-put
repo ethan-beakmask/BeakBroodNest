@@ -21,8 +21,6 @@ from pathlib import Path
 ROOT = Path('/opt/BeakCortex')
 sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import func  # noqa: E402
-
 from core.db import session_scope  # noqa: E402
 from orchestrator import notify  # noqa: E402
 from orchestrator.models import WorkerSession, WorkerInbox  # noqa: E402
@@ -52,15 +50,11 @@ def main() -> int:
         s.flush()
         msg_id = item.id
 
-        unread = s.query(func.count(WorkerInbox.id)).filter(
-            WorkerInbox.read_at.is_(None)
-        ).scalar()
-
-    notify.notify_main(
-        pane=main_pane,
-        session=args.session,
+    notify.notify_pending(
+        pane=main_pane or None,
+        source='session',
+        identifier=args.session,
         kind=args.kind,
-        unread_count=unread,
         content_preview=args.content,
     )
 
