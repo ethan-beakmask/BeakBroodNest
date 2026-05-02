@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """名稱可用性檢查工具
 
-讀 CSV (word, github, gitlab, pypi, npm)，對每個 word 查詢四個來源的
-exact-match 撞名數量並回填。全 0 表示軟體圈無撞名，可進入 USPTO 商標查詢。
+讀 CSV，對每個候選詞查詢以下來源並回填撞名數量：
+
+  欄位       語意
+  -----      -----
+  github     GitHub repo name 等於該詞 (exact match, case-insensitive)
+  gh_org     GitHub user/organization login 含該詞字根 (substring)
+  gitlab     GitLab project name 等於該詞 (exact match)
+  pypi       PyPI 是否已被佔用 (0/1)
+  npm        npm 是否已被佔用 (0/1)
+
+全 0 表示軟體圈無撞名與字根撞名，可進入 USPTO 商標查詢階段。
+CSV 內任何額外欄位（如 note）會原樣保留。
 
 用法:
   name_check.py <csv_path>           # 只查空白欄位
@@ -23,7 +33,6 @@ from urllib import error, parse, request
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 USER_AGENT = "name-check/1.0"
 TIMEOUT = 15
-FIELDS = ["word", "github", "gitlab", "pypi", "npm"]
 
 
 def http_get(url, headers=None):
@@ -36,13 +45,17 @@ def http_get(url, headers=None):
         return e.code, body
 
 
-def github_exact(name):
+def _gh_headers():
     headers = {"Accept": "application/vnd.github+json"}
     if GITHUB_TOKEN:
         headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+    return headers
+
+
+def github_exact(name):
     q = parse.quote(f"{name} in:name")
     url = f"https://api.github.com/search/repositories?q={q}&per_page=100"
-    code, body = http_get(url, headers)
+    code, body = http_get(url, _gh_headers())
     if code == 403:
         raise RuntimeError("GitHub rate limit 觸發 (403)，請設 GITHUB_TOKEN")
     if code != 200:
@@ -50,6 +63,19 @@ def github_exact(name):
     data = json.loads(body)
     target = name.lower()
     return sum(1 for it in data.get("items", []) if it.get("name", "").lower() == target)
+
+
+def github_org_substr(name):
+    """GitHub user/org login 名稱含 NAME 字根的數量 (substring, case-insensitive)。"""
+    q = parse.quote(f"{name} in:login")
+    url = f"https://api.github.com/search/users?q={q}&per_page=1"
+    code, body = http_get(url, _gh_headers())
+    if code == 403:
+        raise RuntimeError("GitHub rate limit 觸發 (403)，請設 GITHUB_TOKEN")
+    if code != 200:
+        raise RuntimeError(f"GitHub HTTP {code}")
+    data = json.loads(body)
+    return data.get("total_count", 0)
 
 
 def gitlab_exact(name):
@@ -81,10 +107,12 @@ def npm_exact(name):
 
 CHECKERS = {
     "github": github_exact,
+    "gh_org": github_org_substr,
     "gitlab": gitlab_exact,
     "pypi": pypi_exact,
     "npm": npm_exact,
 }
+EXPECTED_ORDER = ["word"] + list(CHECKERS.keys())
 
 
 def init_template(path):
@@ -93,7 +121,7 @@ def init_template(path):
         return 1
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(FIELDS)
+        w.writerow(EXPECTED_ORDER)
     print(f"已建立空白範本: {path}", file=sys.stderr)
     print("請手動編輯加入候選詞於 word 欄位，其餘欄位留空後重跑本工具", file=sys.stderr)
     return 0
@@ -102,10 +130,26 @@ def init_template(path):
 def run(path, force):
     with open(path, newline="") as f:
         reader = csv.DictReader(f)
-        if reader.fieldnames != FIELDS:
-            print(f"錯誤: CSV 欄位應為 {FIELDS}，實際 {reader.fieldnames}", file=sys.stderr)
-            return 1
+        original_fields = list(reader.fieldnames or [])
         rows = list(reader)
+
+    if "word" not in original_fields:
+        print("錯誤: CSV 必須包含 word 欄位", file=sys.stderr)
+        return 1
+
+    # 補入缺少的 checker 欄位（既有 row 該欄填空字串）
+    added_cols = []
+    for col in CHECKERS:
+        if col not in original_fields:
+            added_cols.append(col)
+            for row in rows:
+                row[col] = ""
+    if added_cols:
+        print(f"已補入新欄位: {', '.join(added_cols)}（原 row 該欄保留空白待查）", file=sys.stderr)
+
+    # 寫回時的欄位順序：EXPECTED_ORDER 在前，使用者額外欄位（如 note）依原順序追加
+    extra_fields = [f for f in original_fields if f not in EXPECTED_ORDER]
+    out_fields = EXPECTED_ORDER + extra_fields
 
     if not GITHUB_TOKEN:
         print("警告: 未設 GITHUB_TOKEN，GitHub 查詢 rate limit 為 60/h", file=sys.stderr)
@@ -131,13 +175,17 @@ def run(path, force):
 
     tmp = path + ".tmp"
     with open(tmp, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w = csv.DictWriter(f, fieldnames=out_fields)
         w.writeheader()
         w.writerows(rows)
     os.replace(tmp, path)
     print(f"已更新: {path}", file=sys.stderr)
 
-    available = [r["word"] for r in rows if r["word"].strip() and all(r.get(c) == "0" for c in CHECKERS)]
+    available = [
+        r["word"]
+        for r in rows
+        if r["word"].strip() and all(r.get(c) == "0" for c in CHECKERS)
+    ]
     if available:
         print("\n=== 全 0 候選（可進入 USPTO 人工查詢）===", file=sys.stderr)
         for w in available:
@@ -147,7 +195,7 @@ def run(path, force):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="檢查候選名稱在 GitHub/GitLab/PyPI/npm 的 exact-match 撞名數量"
+        description="檢查候選名稱在 GitHub/GitLab/PyPI/npm 的撞名數量（含 GitHub org 字根）"
     )
     ap.add_argument("csv_path", help="CSV 檔路徑")
     ap.add_argument("--force", action="store_true", help="強制重查所有欄位")
