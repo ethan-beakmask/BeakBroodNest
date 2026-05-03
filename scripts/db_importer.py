@@ -48,6 +48,32 @@ DEFAULT_DB_PARAMS = {
     'password': 'postgres123',
 }
 
+# Heartbeat
+HEARTBEAT_DIR = '/opt/tmp/heartbeat'
+HEARTBEAT_BASE = 'db_importer'
+
+
+def _write_heartbeat(suffix=None):
+    """正常完成時寫入 heartbeat 檔案"""
+    from pathlib import Path
+    name = f"{HEARTBEAT_BASE}_{suffix}.ok" if suffix else f"{HEARTBEAT_BASE}.ok"
+    try:
+        Path(os.path.join(HEARTBEAT_DIR, name)).write_text(
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+    except OSError:
+        pass
+
+
+def _strip_nul(s):
+    """移除字串中的 NUL 字元（PostgreSQL text 不允許 \\x00）"""
+    if s is None:
+        return None
+    if isinstance(s, str):
+        return s.replace('\x00', '') if '\x00' in s else s
+    return s
+
+
 # UUID 格式正則
 RE_UUID = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
@@ -212,19 +238,28 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
     import psycopg2.extras
 
     conv_id = _conversation_id_from_filename(jsonl_path)
+    current_size = os.path.getsize(jsonl_path)
     stats = {
         'turns': 0,
+        'total_turns': 0,
         'roles': {},
         'files_touched': {},
         'skipped_reason': None,
+        'is_update': False,
     }
 
-    # 檢查是否已匯入
+    # size 比對：未變則跳過（JSONL 是 append-only，size 未變 = 內容未變）
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM conversations WHERE id = %s", (conv_id,))
-        if cur.fetchone():
-            stats['skipped_reason'] = '已匯入'
-            return stats
+        cur.execute("SELECT jsonl_size FROM conversations WHERE id = %s", (conv_id,))
+        row = cur.fetchone()
+        if row is not None:
+            last_size = row[0] or 0
+            if current_size == last_size:
+                stats['skipped_reason'] = '已匯入（size 未變）'
+                return stats
+            if current_size < last_size:
+                print(f"  [WARN] {os.path.basename(jsonl_path)}: size 縮小 ({last_size} -> {current_size})，重新匯入")
+            stats['is_update'] = True
 
     # 讀取並解析 JSONL
     with open(jsonl_path, 'r', encoding='utf-8') as f:
@@ -544,8 +579,6 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
         return stats
 
     # --- 寫入 DB ---
-    jsonl_size = os.path.getsize(jsonl_path)
-
     # 驗證 parent_uuid 是否為合法 UUID
     parent_uuid_val = None
     if parent_uuid and RE_UUID.match(parent_uuid):
@@ -566,9 +599,13 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
                  total_turns, first_timestamp, last_timestamp,
                  is_sidechain, parent_uuid, parent_conversation_id, git_branch)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (id) DO UPDATE SET
+                jsonl_size = EXCLUDED.jsonl_size,
+                total_turns = EXCLUDED.total_turns,
+                last_timestamp = EXCLUDED.last_timestamp,
+                jsonl_path = EXCLUDED.jsonl_path
         """, (
-            conv_id, project_path, session_id, jsonl_path, jsonl_size,
+            conv_id, project_path, session_id, jsonl_path, current_size,
             len(turns), first_ts, last_ts,
             is_sidechain, parent_uuid_val, parent_conv_id, git_branch,
         ))
@@ -581,10 +618,10 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
             if t['parent_uuid'] and RE_UUID.match(str(t['parent_uuid'])):
                 t_parent = t['parent_uuid']
 
-            # tool_params -> JSON
+            # tool_params -> JSON（移除 NUL）
             tool_params_json = None
             if t['tool_params']:
-                tool_params_json = json.dumps(t['tool_params'], ensure_ascii=False)
+                tool_params_json = _strip_nul(json.dumps(t['tool_params'], ensure_ascii=False))
 
             span_kind = _SPAN_KIND_MAP.get(t['role'])
             turn_actor_id = 'human' if t['role'] == 'user' else conv_actor_id
@@ -603,14 +640,15 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
                     ON CONFLICT (conversation_id, turn_seq) DO NOTHING
                 """, (
                     conv_id, project_path, t['turn_seq'], t['role'], t['timestamp'],
-                    t['content'], t['tool_name'], t['tool_use_id'],
+                    _strip_nul(t['content']), t['tool_name'], t['tool_use_id'],
                     tool_params_json, t['tool_is_error'],
-                    t['files_touched'], t['has_thinking'], t['thinking_text'],
+                    t['files_touched'], t['has_thinking'], _strip_nul(t['thinking_text']),
                     t['is_sidechain'], t_parent, t['model'],
                     t['usage_input'], t['usage_output'],
                     conv_trace_id, t_parent, turn_actor_id, span_kind,
                 ))
-                inserted += 1
+                # rowcount 反映實際寫入：ON CONFLICT 命中時為 0
+                inserted += cur.rowcount
             except Exception as e:
                 # 單筆失敗不中斷，記錄後繼續
                 print(f"  [WARN] turn_seq={t['turn_seq']} 寫入失敗: {e}")
@@ -625,6 +663,7 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
         conn.commit()
 
     stats['turns'] = inserted
+    stats['total_turns'] = len(turns)
     for t in turns:
         role = t['role']
         stats['roles'][role] = stats['roles'].get(role, 0) + 1
@@ -649,7 +688,10 @@ def import_single_db(jsonl_path: str) -> bool:
             print(f"[SKIP] {stats['skipped_reason']}")
             return True
 
-        print(f"[OK] 匯入完成: {stats['turns']} turns")
+        if stats['is_update']:
+            print(f"[OK] 增量匯入: 新增 {stats['turns']} turns / 共 {stats['total_turns']} turns")
+        else:
+            print(f"[OK] 匯入完成: {stats['turns']} turns")
         print(f"     角色分布: {stats['roles']}")
 
         # files_touched 前 5 名
@@ -713,6 +755,7 @@ def import_batch_db(since_days: int = 0, limit: int = 0) -> None:
     print("-" * 60)
 
     success = 0
+    updated = 0
     skipped = 0
     failed_list = []
     total_turns = 0
@@ -727,18 +770,22 @@ def import_batch_db(since_days: int = 0, limit: int = 0) -> None:
             if stats['skipped_reason']:
                 skipped += 1
                 if (i % 200 == 0) or (i == len(files)):
-                    print(f"[{i}/{len(files)}] 進度: 成功={success}, 跳過={skipped}, 失敗={len(failed_list)}")
+                    print(f"[{i}/{len(files)}] 進度: 新={success}, 更新={updated}, 跳過={skipped}, 失敗={len(failed_list)}")
                 continue
 
-            success += 1
+            if stats['is_update']:
+                updated += 1
+                print(f"  [UPDATE] {basename}: +{stats['turns']} turns (共 {stats['total_turns']})")
+            else:
+                success += 1
             total_turns += stats['turns']
             for role, count in stats['roles'].items():
                 all_roles[role] = all_roles.get(role, 0) + count
             for fp, count in stats['files_touched'].items():
                 all_files_touched[fp] = all_files_touched.get(fp, 0) + count
 
-            if success % 50 == 0:
-                print(f"[{i}/{len(files)}] 成功匯入 {success} 個, turns={total_turns}")
+            if (success + updated) % 50 == 0 and (success + updated) > 0:
+                print(f"[{i}/{len(files)}] 新={success}, 更新={updated}, turns={total_turns}")
 
         except Exception as e:
             failed_list.append((fpath, str(e)))
@@ -752,8 +799,8 @@ def import_batch_db(since_days: int = 0, limit: int = 0) -> None:
     conn.close()
 
     print("\n" + "=" * 60)
-    print(f"[DONE] 成功: {success}, 跳過(已匯入): {skipped}, 失敗: {len(failed_list)}")
-    print(f"       總 turns: {total_turns}")
+    print(f"[DONE] 新匯入: {success}, 增量更新: {updated}, 跳過(size 未變): {skipped}, 失敗: {len(failed_list)}")
+    print(f"       本次新增 turns: {total_turns}")
     if all_roles:
         print(f"       角色分布: {all_roles}")
     if all_files_touched:
@@ -769,6 +816,8 @@ def import_batch_db(since_days: int = 0, limit: int = 0) -> None:
             print(f"  {os.path.basename(fpath)}: {err}")
         if len(failed_list) > 20:
             print(f"  ... 還有 {len(failed_list) - 20} 個")
+
+    _write_heartbeat()
 
 
 # ============================================================
