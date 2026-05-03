@@ -589,6 +589,15 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
 
     # trace/span 欄位（Phase 1 migration 後填充）
     conv_actor_id = _infer_actor_id(jsonl_path)
+    # 偵測首個 user_message 的 [CC-LAUNCH-KIND=...] marker
+    # （由 cc_runner.call_claude(launch_kind=...) 注入，識別 cc-spawn 子代理）
+    if conv_actor_id == 'cc-main':
+        for _t in turns:
+            if _t.get('role') == 'user' and _t.get('content'):
+                m = re.match(r'^\[CC-LAUNCH-KIND=([^\]\s]+)\]', _t['content'])
+                if m:
+                    conv_actor_id = m.group(1).strip()
+                break
     conv_trace_id = str(uuid_mod.uuid4())
 
     with conn.cursor() as cur:

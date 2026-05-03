@@ -618,10 +618,35 @@
                             <div class="col-auto">
                                 <label class="small text-secondary">專案路徑</label>
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <input type="text" class="form-control form-control-sm"
                                        x-model="projectPath" placeholder="留空=全部"
-                                       @keydown.enter="loadTraces()">
+                                       @keydown.enter="applyFilters()">
+                            </div>
+                            <div class="col-auto">
+                                <label class="small text-secondary">最少 turns</label>
+                            </div>
+                            <div class="col-auto">
+                                <input type="number" class="form-control form-control-sm" min="0" max="10000"
+                                       style="width:90px;" x-model.number="filterMinTurns"
+                                       @change="applyFilters()">
+                            </div>
+                            <div class="col-auto">
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="cm-fil-agent"
+                                           x-model="filterWithAgent" @change="applyFilters()">
+                                    <label class="form-check-label small" for="cm-fil-agent">僅含 agent</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="cm-fil-ccp"
+                                           x-model="filterWithCcp" @change="applyFilters()">
+                                    <label class="form-check-label small" for="cm-fil-ccp">僅含 cc-p</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="cm-fil-noans"
+                                           x-model="filterOnlyUnanswered" @change="applyFilters()">
+                                    <label class="form-check-label small" for="cm-fil-noans">僅無 assistant 回應</label>
+                                </div>
                             </div>
                             <div class="col-auto">
                                 <button class="btn btn-sm btn-outline-primary"
@@ -632,7 +657,7 @@
                             </div>
                             <div class="col text-end">
                                 <span class="small text-secondary"
-                                      x-text="traces.length + ' 條 trace'"></span>
+                                      x-text="traces.length + ' 條 trace (limit=' + limit + ')'"></span>
                             </div>
                         </div>
                     </div>
@@ -663,8 +688,27 @@
                                         <div class="text-nowrap overflow-hidden small"
                                              :class="selectedTraceId === tr.trace_id ? 'text-white-50' : 'text-secondary'"
                                              x-text="formatTime(tr.last_ts)"></div>
+                                        <div class="mt-1">
+                                            <template x-if="tr.has_agent">
+                                                <span class="badge bg-info text-dark me-1"
+                                                      x-text="'agent×' + (tr.agent_count || 1)"></span>
+                                            </template>
+                                            <template x-if="tr.has_ccp">
+                                                <span class="badge me-1"
+                                                      style="background:#7c3aed;color:#fff;">cc-p</span>
+                                            </template>
+                                            <template x-if="tr.has_assistant === false">
+                                                <span class="badge bg-warning text-dark"
+                                                      title="無 assistant 回應(可能是 /model /exit 等指令)">無回應</span>
+                                            </template>
+                                        </div>
                                     </a>
                                 </template>
+                                <div class="list-group-item text-center py-2"
+                                     x-show="traces.length >= limit && !loadingTraces">
+                                    <button class="btn btn-sm btn-outline-secondary"
+                                            @click="loadMore()">顯示更多 (+100)</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -672,11 +716,36 @@
                     <!-- 右：因果鏈渲染 -->
                     <div class="col-md-9">
                         <div class="card">
-                            <div class="card-header small fw-bold d-flex justify-content-between">
+                            <div class="card-header small fw-bold d-flex justify-content-between align-items-center flex-wrap">
                                 <span>Trace 因果鏈</span>
                                 <span x-show="loadingTrace" class="text-secondary small">載入中…</span>
                                 <span x-show="selectedTraceId && !loadingTrace" class="small text-secondary fw-mono"
                                       x-text="selectedTraceId || ''"></span>
+                            </div>
+                            <!-- Summary 列：actor 數、是否含 agent、是否含 assistant 回應 -->
+                            <div class="px-2 py-1 border-bottom small bg-light"
+                                 x-show="traceSummary && !loadingTrace">
+                                <span class="text-secondary me-2">turns</span>
+                                <span class="badge bg-dark me-2" x-text="traceSummary?.turnCount || 0"></span>
+                                <span class="text-secondary me-2">actors</span>
+                                <span class="badge bg-dark me-2" x-text="traceSummary?.actorCount || 0"></span>
+                                <template x-for="a in (traceSummary?.actors || [])" :key="a.name">
+                                    <span class="badge me-1" :class="actorBadgeClass(a.name)"
+                                          x-text="a.name + ' × ' + a.count"
+                                          :style="(/^cc-p:/.test(a.name)) ? 'background:#7c3aed' : ''"></span>
+                                </template>
+                                <template x-if="traceSummary && !traceSummary.hasAssistant">
+                                    <span class="badge bg-warning text-dark ms-2"
+                                          title="此 trace 全部為 user_message,沒有 assistant 回應(可能是 /model /exit 等指令)">
+                                        無 assistant 回應
+                                    </span>
+                                </template>
+                                <template x-if="traceSummary && traceSummary.hasAgent">
+                                    <span class="badge bg-info text-dark ms-2">含 agent</span>
+                                </template>
+                                <template x-if="traceSummary && traceSummary.hasSidechain">
+                                    <span class="badge bg-secondary ms-2">含 sidechain</span>
+                                </template>
                             </div>
                             <div class="card-body p-0">
                                 <div id="beak-cm-container"
@@ -685,6 +754,57 @@
                                          class="d-flex align-items-center justify-content-center h-100 text-secondary small">
                                         點選左側 trace 以渲染因果鏈
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Turn 詳情面板 (點 node 後展示) -->
+                        <div class="card mt-2" x-show="selectedTurn">
+                            <div class="card-header py-1 d-flex justify-content-between align-items-center">
+                                <div class="small">
+                                    <span class="badge bg-dark me-1">Turn
+                                        <span x-text="selectedTurn?.turn_seq"></span>
+                                    </span>
+                                    <span class="badge me-1" :class="actorBadgeClass(selectedTurn?.actor_id)"
+                                          x-text="selectedTurn?.actor_id || '(no actor)'"></span>
+                                    <span class="badge bg-secondary me-1"
+                                          x-text="selectedTurn?.span_kind || selectedTurn?.role || '-'"></span>
+                                    <template x-if="selectedTurn?.tool_name">
+                                        <span class="badge bg-info text-dark me-1" x-text="selectedTurn?.tool_name"></span>
+                                    </template>
+                                    <template x-if="selectedTurn?.is_sidechain">
+                                        <span class="badge bg-secondary me-1">sidechain</span>
+                                    </template>
+                                    <span class="text-secondary ms-2 fw-mono"
+                                          x-text="'#' + (selectedTurn?.id || '') + '  '
+                                                  + 'in=' + (selectedTurn?.usage_input_tokens || 0)
+                                                  + ' out=' + (selectedTurn?.usage_output_tokens || 0)"></span>
+                                    <span class="text-secondary ms-2"
+                                          x-text="formatTime(selectedTurn?.timestamp)"></span>
+                                    <span x-show="loadingTurnFull" class="text-secondary ms-2">(載入完整內容…)</span>
+                                </div>
+                                <button type="button" class="btn-close btn-sm" @click="closeNode()"></button>
+                            </div>
+                            <div class="card-body py-2"
+                                 style="max-height:340px;overflow:auto;">
+                                <template x-if="selectedTurn?.tool_params">
+                                    <details class="mb-2">
+                                        <summary class="small text-secondary">tool_params</summary>
+                                        <pre class="small mb-0"
+                                             style="background:#f8fafc;padding:6px;border-radius:4px;white-space:pre-wrap;word-break:break-word;"
+                                             x-text="formatToolParams(selectedTurn?.tool_params)"></pre>
+                                    </details>
+                                </template>
+                                <pre class="small mb-0"
+                                     style="white-space:pre-wrap;word-break:break-word;font-family:Consolas,'Courier New',monospace;"
+                                     x-text="selectedTurn?.content || '(無內容)'"></pre>
+                                <div x-show="selectedTurn && selectedTurn.content_full_len > (selectedTurn.content || '').length"
+                                     class="small text-secondary mt-2">
+                                    內容已截斷 (顯示
+                                    <span x-text="(selectedTurn?.content || '').length"></span>
+                                    /
+                                    <span x-text="selectedTurn?.content_full_len"></span>
+                                    chars)
                                 </div>
                             </div>
                         </div>

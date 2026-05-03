@@ -322,6 +322,7 @@ def spawn_session(
             model=model,
             append_system_prompt=system_prompt,
             timeout=timeout,
+            launch_kind=f'cc-p:{name}',
         )
     except Exception as e:
         with session_scope() as s:

@@ -14,19 +14,33 @@
             projectPath: '',
             errorMsg: '',
             _chart: null,
+            // 點選 node 後展示用
+            selectedTurn: null,
+            loadingTurnFull: false,
+            // trace summary
+            traceSummary: null,
+            // trace 清單 filter & pagination
+            limit: 100,
+            filterWithAgent: false,
+            filterWithCcp: false,
+            filterOnlyUnanswered: false,
+            filterMinTurns: 0,
 
             init: function() {
                 this.loadTraces();
             },
 
-            loadTraces: function() {
+            loadTraces: function(append) {
                 var self = this;
                 self.loadingTraces = true;
                 self.errorMsg = '';
-                var url = '/beakbroodnest/api/conversation-map/traces?limit=30';
-                if (self.projectPath) {
-                    url += '&project_path=' + encodeURIComponent(self.projectPath);
-                }
+                var params = ['limit=' + self.limit];
+                if (self.projectPath) params.push('project_path=' + encodeURIComponent(self.projectPath));
+                if (self.filterWithAgent) params.push('with_agent=1');
+                if (self.filterWithCcp) params.push('with_ccp=1');
+                if (self.filterOnlyUnanswered) params.push('only_unanswered=1');
+                if (self.filterMinTurns > 0) params.push('min_turns=' + self.filterMinTurns);
+                var url = '/beakbroodnest/api/conversation-map/traces?' + params.join('&');
                 fetch(url)
                     .then(function(r) {
                         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -42,12 +56,24 @@
                     });
             },
 
+            loadMore: function() {
+                this.limit += 100;
+                this.loadTraces();
+            },
+
+            applyFilters: function() {
+                this.limit = 100;
+                this.loadTraces();
+            },
+
             selectTrace: function(traceId) {
                 var self = this;
                 if (self.loadingTrace) return;
                 self.selectedTraceId = traceId;
                 self.loadingTrace = true;
                 self.errorMsg = '';
+                self.selectedTurn = null;
+                self.traceSummary = null;
                 fetch('/beakbroodnest/api/conversation-map/trace/' + encodeURIComponent(traceId))
                     .then(function(r) {
                         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -60,17 +86,80 @@
                             self.errorMsg = '此 trace 無 turn 資料';
                             return;
                         }
+                        self.traceSummary = self.computeSummary(data.turns);
                         var el = document.getElementById('beak-cm-container');
                         if (!el) return;
                         if (!self._chart) {
                             self._chart = BeakConversationMapChart.create(el, {});
                         }
-                        self._chart.drawTraceMode(data.turns);
+                        self._chart.drawTraceMode(data.turns, function(turn) {
+                            self.onNodeClick(turn);
+                        });
                     })
                     .catch(function(e) {
                         self.errorMsg = '載入 trace 失敗: ' + e.message;
                         self.loadingTrace = false;
                     });
+            },
+
+            computeSummary: function(turns) {
+                var actorSet = {}, hasAgent = false, hasAssistant = false, hasSidechain = false;
+                for (var i=0;i<turns.length;i++) {
+                    var a = turns[i].actor_id || (turns[i].role === 'user' ? 'human' : 'cc-main');
+                    actorSet[a] = (actorSet[a]||0)+1;
+                    if (/^cc-main:agent:/.test(a)) hasAgent = true;
+                    if (turns[i].span_kind === 'assistant_message') hasAssistant = true;
+                    if (turns[i].is_sidechain) hasSidechain = true;
+                }
+                var actors = Object.keys(actorSet).map(function(k){return {name:k,count:actorSet[k]};});
+                actors.sort(function(a,b){return b.count - a.count;});
+                return {
+                    actors: actors,
+                    actorCount: actors.length,
+                    turnCount: turns.length,
+                    hasAgent: hasAgent,
+                    hasAssistant: hasAssistant,
+                    hasSidechain: hasSidechain,
+                };
+            },
+
+            onNodeClick: function(turn) {
+                // 先放入截斷版的內容（已隨 trace 一起回來）
+                this.selectedTurn = Object.assign({}, turn);
+                // 若有更完整內容（content_full_len > content.length），lazy load 全文
+                var truncated = (turn.content_full_len || 0) > (turn.content || '').length;
+                if (!truncated) return;
+                var self = this;
+                self.loadingTurnFull = true;
+                fetch('/beakbroodnest/api/conversation-map/turn/' + encodeURIComponent(turn.id))
+                    .then(function(r){ return r.ok ? r.json() : null; })
+                    .then(function(full){
+                        self.loadingTurnFull = false;
+                        if (full && self.selectedTurn && self.selectedTurn.id === turn.id) {
+                            self.selectedTurn.content = full.content || self.selectedTurn.content;
+                            self.selectedTurn.tool_params = full.tool_params || self.selectedTurn.tool_params;
+                            self.selectedTurn.content_full_len = (full.content || '').length;
+                        }
+                    })
+                    .catch(function(){ self.loadingTurnFull = false; });
+            },
+
+            closeNode: function() { this.selectedTurn = null; },
+
+            actorBadgeClass: function(actor) {
+                if (!actor) return 'bg-secondary';
+                if (actor === 'human') return 'bg-secondary';
+                if (actor === 'cc-main') return 'bg-primary';
+                if (/^cc-main:agent:/.test(actor)) return 'bg-info text-dark';
+                if (/^cc-p:/.test(actor)) return 'text-white';
+                if (actor === 'hook') return 'bg-warning text-dark';
+                return 'bg-light text-dark';
+            },
+
+            formatToolParams: function(p) {
+                if (!p) return '';
+                try { return JSON.stringify(p, null, 2); }
+                catch(e) { return String(p); }
             },
 
             formatTime: function(ts) {

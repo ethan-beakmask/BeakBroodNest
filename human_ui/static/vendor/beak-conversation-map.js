@@ -595,8 +595,9 @@ var BeakConversationMapChart = (function() {
     // Trace Mode -- 直式 git graph 因果鏈渲染
     // ============================================================
 
-    P.drawTraceMode = function(turns) {
+    P.drawTraceMode = function(turns, onNodeClick) {
         var svgNS = 'http://www.w3.org/2000/svg';
+        this._onNodeClick = onNodeClick || null;
 
         // Constants
         var NODE_W = 120, NODE_H = 32, SLOT_H = 52, BRANCH_W = 168;
@@ -827,7 +828,14 @@ var BeakConversationMapChart = (function() {
             var isSuper = !!t.superseded_by;
 
             var nodeG = document.createElementNS(svgNS, 'g');
+            nodeG.style.cursor = 'pointer';
             if (isSuper) { nodeG.setAttribute('opacity','0.4'); nodeG.setAttribute('filter','grayscale(1)'); }
+            (function(turnObj, self){
+                nodeG.addEventListener('click', function(ev){
+                    ev.stopPropagation();
+                    if (self._onNodeClick) self._onNodeClick(turnObj);
+                });
+            })(t, this);
 
             var rect = document.createElementNS(svgNS, 'rect');
             rect.setAttribute('x', String(p.x)); rect.setAttribute('y', String(p.y));

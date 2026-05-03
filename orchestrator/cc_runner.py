@@ -17,12 +17,19 @@ def call_claude(
     resume_session_id: str | None = None,
     append_system_prompt: str | None = None,
     timeout: int = 600,
+    launch_kind: str | None = None,
 ) -> dict:
     """呼叫 claude -p（單輪），回傳解析後的 JSON dict。
 
     若 resume_session_id 提供則接續既有 session，否則建立新 session。
     回傳的 dict 至少含 session_id 與 result 欄位。
+
+    launch_kind: 若提供（如 'cc-p:dev1'），會在 prompt 開頭注入
+        ``[CC-LAUNCH-KIND=<value>]\\n`` marker，讓 importer 把該 conversation
+        的 actor_id 設為 ``cc-p:<value>`` 而非 ``cc-main``。
     """
+    if launch_kind:
+        prompt = f'[CC-LAUNCH-KIND={launch_kind}]\n{prompt}'
     cmd = [
         'claude', '-p',
         '--permission-mode', 'bypassPermissions',
