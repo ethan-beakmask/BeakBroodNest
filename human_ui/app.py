@@ -230,20 +230,39 @@ def inject_cache_ver():
 # 頁面路由
 # ============================================================
 
+def _resolve_canvas(s, slug=None, only_projects=False):
+    """白板解析：slug 參數 > session['last_canvas_slug'] > is_archived=false 中 id 最大者。
+
+    only_projects=True 時 fallback 限定 is_project=true（slug 參數本身不受此限）。
+    """
+    if slug:
+        canvas = s.query(Canvas).filter(
+            Canvas.slug == slug, Canvas.is_archived == False
+        ).first()
+        if canvas:
+            return canvas
+
+    last = session.get('last_canvas_slug')
+    if last:
+        q = s.query(Canvas).filter(Canvas.slug == last, Canvas.is_archived == False)
+        if only_projects:
+            q = q.filter(Canvas.is_project == True)
+        canvas = q.first()
+        if canvas:
+            return canvas
+
+    q = s.query(Canvas).filter(Canvas.is_archived == False)
+    if only_projects:
+        q = q.filter(Canvas.is_project == True)
+    return q.order_by(Canvas.id.desc()).first()
+
+
 @app.route('/beakbroodnest/')
 @app.route('/beakbroodnest')
 def index():
-    """首頁：導向最後存取的白板，若無則導向第一個"""
-    last_slug = session.get('last_canvas_slug')
+    """首頁：導向最後存取的白板，若無則導向 id 最大的白板"""
     with session_scope() as s:
-        if last_slug:
-            canvas = s.query(Canvas).filter(
-                Canvas.slug == last_slug, Canvas.is_archived == False
-            ).first()
-            if canvas:
-                return redirect(f'/beakbroodnest/canvas/{last_slug}')
-
-        canvas = s.query(Canvas).filter(Canvas.is_archived == False).order_by(Canvas.id).first()
+        canvas = _resolve_canvas(s)
         if not canvas:
             canvas = Canvas(name='預設白板', description='', owner='ethan')
             s.add(canvas)
@@ -288,14 +307,25 @@ def observe_page():
     return render_template('observe.html')
 
 
+@app.route('/beakbroodnest/project/')
+@app.route('/beakbroodnest/project')
+def project_index():
+    """專案頁無 slug：呈現空狀態頁，由用戶從下拉選單明確選取"""
+    return render_template('project.html', canvas_slug='',
+                           username=session.get('username', 'default'))
+
+
 @app.route('/beakbroodnest/project/<slug>')
 def project_page(slug):
-    """專案 Dashboard（唯讀進度總覽）"""
-    from core.models import Canvas
+    """專案 Dashboard（唯讀進度總覽）。slug 不存在時導回空狀態頁，避免錯誤頁誤導"""
     with session_scope() as s:
-        canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
+        canvas = s.query(Canvas).filter(
+            Canvas.slug == slug, Canvas.is_archived == False
+        ).first()
         if not canvas:
-            abort(404)
+            return redirect('/beakbroodnest/project/')
+        session['last_canvas_slug'] = slug
+        session.modified = True
     return render_template('project.html', canvas_slug=slug,
                            username=session.get('username', 'default'))
 

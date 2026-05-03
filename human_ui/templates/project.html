@@ -35,18 +35,36 @@
         <!-- Compact title bar -->
         <div class="d-flex align-items-center justify-content-between mb-2" style="font-size:12px;color:#6c757d;">
             <div class="d-flex align-items-center gap-2">
-                <span style="font-weight:600;color:#333;" x-text="canvas.name || 'Loading...'"></span>
-                <span x-text="summary.total + ' items'"></span>
-                <span class="text-success" x-text="pctDone + '% done'"></span>
-                <span>H:<span x-text="summary.h"></span> M:<span x-text="summary.m"></span> L:<span x-text="summary.l"></span></span>
+                <select class="form-select form-select-sm"
+                        style="width:auto;font-size:12px;font-weight:600;color:#333;padding:1px 22px 1px 6px;"
+                        x-ref="canvasSelect"
+                        x-model="canvasSlug"
+                        @change="switchCanvas($event.target.value)">
+                    <option value="">-- 請選擇白板 --</option>
+                    <template x-for="opt in canvasOptions" :key="opt.slug">
+                        <option :value="opt.slug" x-text="opt.name"></option>
+                    </template>
+                </select>
+                <template x-if="canvasSlug">
+                    <span class="d-flex align-items-center gap-2">
+                        <span x-text="summary.total + ' items'"></span>
+                        <span class="text-success" x-text="pctDone + '% done'"></span>
+                        <span>H:<span x-text="summary.h"></span> M:<span x-text="summary.m"></span> L:<span x-text="summary.l"></span></span>
+                    </span>
+                </template>
             </div>
-            <a :href="'/beakbroodnest/canvas/' + canvasSlug" class="btn btn-sm btn-outline-secondary" style="font-size:11px;padding:1px 8px;">
+            <a x-show="canvasSlug" :href="'/beakbroodnest/canvas/' + canvasSlug" class="btn btn-sm btn-outline-secondary" style="font-size:11px;padding:1px 8px;">
                 開啟白板
             </a>
         </div>
 
+        <!-- Empty state：無選定白板時顯示提示 -->
+        <div x-show="!canvasSlug" class="alert alert-secondary text-center" style="margin-top:24px;">
+            尚未選擇白板，請從上方下拉選單挑選欲檢視的專案
+        </div>
+
         <!-- View Tabs -->
-        <ul class="nav nav-tabs mb-3">
+        <ul x-show="canvasSlug" class="nav nav-tabs mb-3">
             <li class="nav-item">
                 <a class="nav-link" :class="activeTab === 'table' && 'active'"
                    href="#" @click.prevent="activeTab = 'table'">表格</a>
@@ -460,6 +478,7 @@
 function projectApp() {
     return {
         canvasSlug: '{{ canvas_slug }}',
+        canvasOptions: [],
         canvas: {},
         summary: { total: 0, pending: 0, in_progress: 0, done: 0, blocked: 0, h: 0, m: 0, l: 0 },
         items: [],
@@ -479,10 +498,38 @@ function projectApp() {
         wbsNumByAtom: {},
 
         async init() {
+            await this.loadCanvasOptions();
+            if (!this.canvasSlug) return; // 空狀態頁，不載入資料
             await this.load();
             // 預設進入專案管理分頁
             var self = this;
             this.$nextTick(function() { initBeakGantt(self.canvasSlug); });
+        },
+
+        async loadCanvasOptions() {
+            try {
+                const resp = await fetch('/beakbroodnest/api/canvases?only_projects=1');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                const list = Array.isArray(data) ? data : (data.items || data.canvases || []);
+                this.canvasOptions = list
+                    .filter(c => !c.is_archived)
+                    .map(c => ({ slug: c.slug, name: c.name }));
+                // x-for 動態加 option 後，x-model 不會自動 re-sync select.value，手動寫回
+                var self = this;
+                this.$nextTick(function() {
+                    if (self.$refs.canvasSelect) {
+                        self.$refs.canvasSelect.value = self.canvasSlug;
+                    }
+                });
+            } catch (e) {
+                console.error('loadCanvasOptions error:', e);
+            }
+        },
+
+        switchCanvas(slug) {
+            if (slug === '{{ canvas_slug }}') return;
+            window.location.href = slug ? ('/beakbroodnest/project/' + slug) : '/beakbroodnest/project/';
         },
 
         async load() {
