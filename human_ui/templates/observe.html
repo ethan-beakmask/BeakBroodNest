@@ -531,6 +531,11 @@
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-dark">
                         <tr>
+                            <th @click="sortBacklog('row_id')" role="button" class="sortable-th" style="width:60px;">
+                                #
+                                <span x-show="backlogSort.field === 'row_id'"
+                                      x-text="backlogSort.asc ? ' &#9650;' : ' &#9660;'"></span>
+                            </th>
                             <th @click="sortBacklog('title')" role="button" class="sortable-th">
                                 標題
                                 <span x-show="backlogSort.field === 'title'"
@@ -561,6 +566,7 @@
                     <tbody>
                         <template x-for="r in sortedBacklogRows()" :key="r.source + '-' + r.row_id">
                             <tr>
+                                <td class="small text-secondary fw-mono" x-text="'#' + r.row_id"></td>
                                 <td>
                                     <a href="#" @click.prevent="openBacklogItem(r)"
                                        class="text-decoration-none" x-text="r.title || '(無標題)'"></a>
@@ -591,7 +597,7 @@
                             </tr>
                         </template>
                         <tr x-show="backlogRows.length === 0">
-                            <td colspan="9" class="text-center text-secondary py-4">沒有符合條件的待辦項目</td>
+                            <td colspan="10" class="text-center text-secondary py-4">沒有符合條件的待辦項目</td>
                         </tr>
                     </tbody>
                 </table>
@@ -748,6 +754,7 @@
                 <div class="modal-header">
                     <h5 class="modal-title">
                         <span class="badge bg-primary me-2">AI atom</span>
+                        <span class="badge bg-secondary me-2 fw-mono" x-text="'#' + atomEdit.atom_id"></span>
                         <input type="text" class="form-control form-control-sm d-inline-block"
                                style="width: 500px;" x-model="atomEdit.title">
                     </h5>

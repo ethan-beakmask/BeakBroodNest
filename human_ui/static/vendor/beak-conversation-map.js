@@ -606,8 +606,8 @@ var BeakConversationMapChart = (function() {
         // pre-migration: actor_id is null; derive from role so colours and columns work
         function _resolveActor(t) {
             var r = t.role || '';
-            // user-role turns are always human regardless of actor_id
             if (r === 'user') return 'human';
+            if (r === 'attachment') return 'hook';
             if (t.actor_id) return t.actor_id;
             return 'cc-main';
         }
@@ -635,6 +635,8 @@ var BeakConversationMapChart = (function() {
         actors.sort(function(a, b) {
             if (a === 'cc-main') return -1;
             if (b === 'cc-main') return 1;
+            if (a === 'hook')    return 1;
+            if (b === 'hook')    return -1;
             if (a === 'human')   return 1;
             if (b === 'human')   return -1;
             return actorFirstIdx[a] - actorFirstIdx[b];
@@ -709,6 +711,7 @@ var BeakConversationMapChart = (function() {
         function _actorColor(actor) {
             if (!actor || actor === 'human') return '#6b7280';
             if (actor === 'cc-main') return '#3b82f6';
+            if (actor === 'hook') return '#f59e0b';
             if (/^cc-main:agent:/.test(actor)) return '#0891b2';
             if (/^cc-p:/.test(actor)) return '#7c3aed';
             if (/^cc-slave:/.test(actor)) return '#ea580c';
