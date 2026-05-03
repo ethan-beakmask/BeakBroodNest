@@ -658,11 +658,13 @@ var BeakConversationMapChart = (function() {
 
         // ---- Step 6: clear + build viewport ----
         this._container.innerHTML = '';
-        this._container.style.cssText = (this._container.style.cssText || '') +
-            ';overflow:hidden;background:#f8fafc;';
+        var cs = this._container.style;
+        cs.position = 'relative';
+        cs.overflow = 'hidden';
+        cs.background = '#f8fafc';
 
         var viewport = document.createElement('div');
-        viewport.style.cssText = 'width:100%;height:100%;overflow:auto;cursor:grab;position:relative;';
+        viewport.style.cssText = 'width:100%;height:100%;overflow:auto;cursor:default;position:relative;';
         this._container.appendChild(viewport);
 
         var svg = document.createElementNS(svgNS, 'svg');
@@ -671,27 +673,41 @@ var BeakConversationMapChart = (function() {
         svg.style.display = 'block';
         viewport.appendChild(svg);
 
-        // ---- zoom/pan ----
-        var _pan = {x:0,y:0}, _scale = 1, _drag = false, _ds = {x:0,y:0}, _dp = {x:0,y:0};
+        // ---- sticky header overlay (跟著 X pan + scale,不跟著 Y scroll) ----
+        var headerSvg = document.createElementNS(svgNS, 'svg');
+        headerSvg.setAttribute('width', '100%');
+        headerSvg.setAttribute('height', String(HEADER_H));
+        headerSvg.style.cssText = 'position:absolute;top:0;left:0;right:0;height:'+HEADER_H+'px;'
+            + 'background:rgba(248,250,252,0.96);backdrop-filter:blur(2px);'
+            + 'border-bottom:1px solid #e5e7eb;z-index:5;pointer-events:none;display:block;';
+        this._container.appendChild(headerSvg);
+        var headerG = document.createElementNS(svgNS, 'g');
+        headerSvg.appendChild(headerG);
+
+        // ---- zoom only (不允許滑鼠拖拉,垂直/水平捲動交給 viewport 原生捲軸) ----
+        var _scale = 1;
         var _g = document.createElementNS(svgNS, 'g');
         svg.appendChild(_g);
-        function _applyTx() { _g.setAttribute('transform','translate('+_pan.x+','+_pan.y+') scale('+_scale+')'); }
+        function _syncHeader() {
+            // header 跟著 viewport 水平捲動 + zoom 同步 (Y 永遠在頂)
+            headerG.setAttribute('transform','translate('+(-viewport.scrollLeft)+',0) scale('+_scale+')');
+        }
+        function _applyTx() {
+            // zoom 後 svg 變大,讓 viewport 原生捲軸能滾到全部內容
+            svg.setAttribute('width',  String(totalW * _scale));
+            svg.setAttribute('height', String(totalH * _scale));
+            _g.setAttribute('transform','scale('+_scale+')');
+            _syncHeader();
+        }
+        // 純滾輪 = 瀏覽器原生上下捲動;Ctrl+滾輪 = 縮放
         viewport.addEventListener('wheel', function(e) {
+            if (!e.ctrlKey) return;
             e.preventDefault();
             _scale = Math.min(4, Math.max(0.1, _scale * (e.deltaY > 0 ? 0.9 : 1.1)));
             _applyTx();
         }, {passive:false});
-        viewport.addEventListener('mousedown', function(e) {
-            if (e.button !== 0) return;
-            _drag = true; _ds = {x:e.clientX,y:e.clientY}; _dp = {x:_pan.x,y:_pan.y};
-            viewport.style.cursor = 'grabbing';
-        });
-        document.addEventListener('mousemove', function(e) {
-            if (!_drag) return;
-            _pan.x = _dp.x + e.clientX - _ds.x; _pan.y = _dp.y + e.clientY - _ds.y;
-            _applyTx();
-        });
-        document.addEventListener('mouseup', function() { _drag = false; viewport.style.cursor = 'grab'; });
+        // viewport 水平捲動時,sticky header 跟著平移
+        viewport.addEventListener('scroll', _syncHeader);
 
         // ---- defs: arrowhead markers ----
         var defs = document.createElementNS(svgNS, 'defs');
@@ -749,7 +765,8 @@ var BeakConversationMapChart = (function() {
             lbl.setAttribute('text-anchor','middle'); lbl.setAttribute('font-size','11');
             lbl.setAttribute('font-weight','600'); lbl.setAttribute('fill',_actorColor(actors[i]));
             lbl.textContent = actors[i].length > 20 ? actors[i].slice(0,19)+'…' : actors[i];
-            _g.appendChild(lbl);
+            // 畫到 sticky header (隨水平 pan + scale 同步,不跟著垂直 scroll 消失)
+            headerG.appendChild(lbl);
         }
 
         // ---- Step 9: draw edges ----

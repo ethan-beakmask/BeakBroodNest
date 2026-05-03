@@ -17,6 +17,7 @@
             // 點選 node 後展示用
             selectedTurn: null,
             loadingTurnFull: false,
+            wrapContent: false,  // 詳情內容是否自動折行 (預設不折,水平捲動)
             // trace summary
             traceSummary: null,
             // trace 清單 filter & pagination
