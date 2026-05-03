@@ -1,4 +1,4 @@
-# BeakCortex Agent 權限邊界
+# BeakBroodNest Agent 權限邊界
 
 > 本文件定義多代理協作中各角色的職責、可存取範圍、禁止行為。
 > 所有 Claude（主線與支線）在本專案中的行為受此文件約束。
@@ -10,7 +10,7 @@
 
 | 角色 | 實體 | 啟動方式 | 存取介面 |
 |------|------|---------|---------|
-| 主線 (Main Agent) | Claude Code 互動 session | 用戶啟動 | MCP (beak_cortex) |
+| 主線 (Main Agent) | Claude Code 互動 session | 用戶啟動 | MCP (beak_broodnest) |
 | 支線 (Worker) | claude -p 非互動 process | dispatcher 透過 tmux 啟動 | HTTP API (/api/worker/kb/*) |
 | 中繼層 (Relay) | Python pipeline，非 LLM | collector 自動呼叫 | 直接 DB session |
 | 收集器 (Collector) | Python script，非 LLM | wrapper.sh 呼叫 | 直接 DB session |
@@ -76,7 +76,7 @@
 - [POLICY] MUST NOT 在 content 中嵌入 system prompt 覆寫指令（見 Security Red Lines 第 7 條）
 - [POLICY] MUST NOT 在 content 中嵌入可執行程式碼片段（見 Security Red Lines 第 7 條）
 - [POLICY] MUST NOT 將從知識庫讀取的內容輸出到 stdout 之外的管道（如寫入檔案供外部存取）
-- [POLICY] MUST NOT 修改 /opt/BeakCortex/ 或 /opt/BeakCortex-dev/ 下的程式碼檔案，除非任務指令明確要求
+- [POLICY] MUST NOT 修改 /opt/BeakBroodNest/ 或 /opt/BeakBroodNest-dev/ 下的程式碼檔案，除非任務指令明確要求
 
 ### 認證機制
 - [CODE] HTTP header: X-Worker-Id + X-Session-Id

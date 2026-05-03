@@ -27,6 +27,6 @@ fi
 echo "" >&2
 echo "[pre-push] 禁止裸 push 到 github remote" >&2
 echo "  GitHub 公開倉庫須走 scripts/push_github.sh 過濾內部檔。" >&2
-echo "  正確流程：bash /opt/BeakCortex/scripts/push_github.sh" >&2
+echo "  正確流程：bash /opt/BeakBroodNest/scripts/push_github.sh" >&2
 echo "" >&2
 exit 1

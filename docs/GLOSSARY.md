@@ -1,6 +1,6 @@
-# BeakCortex 術語表
+# BeakBroodNest 術語表
 
-> 本文件定義 BeakCortex 專案中具有特定含義的術語。
+> 本文件定義 BeakBroodNest 專案中具有特定含義的術語。
 > 目的：消除 Claude（主代理與子代理）對領域術語的歧義理解，防止術語漂移導致的幻覺。
 > 所有 Claude 在本專案中使用這些術語時，必須符合此處的定義。
 
@@ -9,7 +9,7 @@
 ## 核心概念
 
 ### 知識原子 (Atom)
-BeakCortex 的最小知識單位。對應資料庫表 `knowledge_atoms`。
+BeakBroodNest 的最小知識單位。對應資料庫表 `knowledge_atoms`。
 不是化學概念，不是 Atom 編輯器，不是 RSS Atom。
 一個原子 = 一筆獨立的知識紀錄，可以是一段文字、一份流程、一個歸納結論、一張套表、或一個碎片想法。
 原子是獨立實體，不綁定在任何白板上；白板上的卡片只是原子的「投影」。
@@ -62,7 +62,7 @@ E 類型原子中，某個 schema 欄位的實際填入值。對應 `atom_field_
 
 ### 因果鏈 (Causal Chain)
 原子之間的有向語意連結。對應 `atom_relations` 表。
-與 Obsidian 雙向連結的根本差異：BeakCortex 的連結有方向性和語意類型，不是等權無向邊。
+與 Obsidian 雙向連結的根本差異：BeakBroodNest 的連結有方向性和語意類型，不是等權無向邊。
 
 ### 關係類型 (Relation Type)
 `atom_relations.relation_type` 的允許值，分為五個維度：
@@ -184,11 +184,11 @@ MVP 階段為 passthrough（直接通過），未來將加入內容審查邏輯�
 ## 基礎設施
 
 ### MCP Server
-Model Context Protocol 伺服器，BeakCortex 對 AI 的存取介面。
+Model Context Protocol 伺服器，BeakBroodNest 對 AI 的存取介面。
 對應 `ai_kb/mcp_server.py`。提供 note_store / note_search / note_get / note_update 等工具。
 Claude Code 透過 MCP 協定直接呼叫，不需繞 Bash 或 HTTP。
 
 ### 開發目錄 vs 運行目錄
-- 開發目錄：`/opt/BeakCortex-dev/`（有 .git，版控中）
-- 運行目錄：`/opt/BeakCortex/`（無 .git，含 config.ini、venv、OLD）
+- 開發目錄：`/opt/BeakBroodNest-dev/`（有 .git，版控中）
+- 運行目錄：`/opt/BeakBroodNest/`（無 .git，含 config.ini、venv、OLD）
 - 開發完成後 rsync 同步到運行目錄。兩者的 config.ini 獨立，不互相覆蓋。

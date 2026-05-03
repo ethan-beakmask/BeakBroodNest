@@ -1,5 +1,5 @@
 /**
- * BeakCortex PDF utilities
+ * BeakBroodNest PDF utilities
  *
  * 用 pdfjs-dist 在 client side 提供：
  *   - renderFirstPageThumbnail(source, maxWidth) -> Promise<dataURL>
@@ -12,7 +12,7 @@
  * 避免白板首次載入時就吃 1.6MB worker。
  */
 
-const PDFJS_BASE = '/beakcortex/static/vendor/pdfjs/';
+const PDFJS_BASE = '/beakbroodnest/static/vendor/pdfjs/';
 let _pdfjsPromise = null;
 
 async function _loadPdfjs() {

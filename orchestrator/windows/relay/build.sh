@@ -1,11 +1,11 @@
 #!/bin/bash
-# Cross-compile BeakCortex Relay for Windows amd64
+# Cross-compile BeakBroodNest Relay for Windows amd64
 # -H windowsgui: 隱藏 console 視窗，純背景執行 + 系統列圖示
 
 set -e
 cd "$(dirname "$0")"
 
-OUTPUT="BeakCortex.exe"
+OUTPUT="BeakBroodNest.exe"
 
 echo "正在交叉編譯 Windows amd64..."
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \

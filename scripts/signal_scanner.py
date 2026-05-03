@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 復盤系統 - 訊號掃描器 (P1 階段)
+BeakBroodNest 復盤系統 - 訊號掃描器 (P1 階段)
 
 兩種運作模式：
   1. MD 模式（-i）：掃描 P0 產出的結構化 MD 檔案（向後相容）
@@ -344,7 +344,7 @@ def _is_likely_file_path(path: str) -> bool:
         return False
     # 排除常見的命令路徑
     skip_prefixes = (
-        '/opt/BeakCortex/venv/',
+        '/opt/BeakBroodNest/venv/',
         '/tmp/heartbeat/',
     )
     for prefix in skip_prefixes:
@@ -1064,7 +1064,7 @@ def _print_single_summary(result: Dict[str, Any]) -> None:
 # ============================================================
 
 USAGE_TEXT = f"""
-BeakCortex 復盤系統 - 訊號掃描器 (P1) v{VERSION}
+BeakBroodNest 復盤系統 - 訊號掃描器 (P1) v{VERSION}
 ==================================================
 
 掃描對話記錄中的卡關、出錯、回退、低效訊號，
@@ -1127,7 +1127,7 @@ def main() -> int:
         return 0
 
     parser = argparse.ArgumentParser(
-        description='BeakCortex P1 訊號掃描器',
+        description='BeakBroodNest P1 訊號掃描器',
         add_help=True,
     )
     # DB 模式參數

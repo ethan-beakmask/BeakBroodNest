@@ -123,7 +123,7 @@ function whiteboardConnectionsMixin() {
                 if (srcKind === 'textbox') payload.source_textbox_id = srcTbId;
                 if (tgtKind === 'atom')    payload.target_atom_id = tgtAtomId;
                 if (tgtKind === 'textbox') payload.target_textbox_id = tgtTbId;
-                var resp = await API.post('/beakcortex/api/canvas-connections', payload);
+                var resp = await API.post('/beakbroodnest/api/canvas-connections', payload);
                 if (resp && !resp.error) {
                     var newConnId = resp.id;
                     var self = this;
@@ -136,7 +136,7 @@ function whiteboardConnectionsMixin() {
                             self.$nextTick(function() { self.renderConnections(); });
                         },
                         redo: async function() {
-                            try { await API.post('/beakcortex/api/canvas-connections', payload); } catch (e) {}
+                            try { await API.post('/beakbroodnest/api/canvas-connections', payload); } catch (e) {}
                             await self.loadData();
                             self.$nextTick(function() { self.renderConnections(); });
                         },
@@ -161,7 +161,7 @@ function whiteboardConnectionsMixin() {
                 if (sourceEntryId) payload.source_entry_id = sourceEntryId;
                 if (targetEntryId) payload.target_entry_id = targetEntryId;
 
-                var resp = await API.post('/beakcortex/api/canvas-connections', payload);
+                var resp = await API.post('/beakbroodnest/api/canvas-connections', payload);
                 if (resp && !resp.error) {
                     var newConnId = resp.id;
                     var self = this;
@@ -174,7 +174,7 @@ function whiteboardConnectionsMixin() {
                             self.$nextTick(function() { self.renderConnections(); });
                         },
                         redo: async function() {
-                            try { await API.post('/beakcortex/api/canvas-connections', payload); } catch (e) {}
+                            try { await API.post('/beakbroodnest/api/canvas-connections', payload); } catch (e) {}
                             await self.loadData();
                             self.$nextTick(function() { self.renderConnections(); });
                         },
@@ -730,7 +730,7 @@ function whiteboardConnectionsMixin() {
                 if (this.connTypeChangeLabel !== undefined) payload.label = this.connTypeChangeLabel;
                 // color 空字串 = 用 relation_type 預設色（後端會由 registry 帶入）
                 if (this.connTypeChangeColor) payload.color = this.connTypeChangeColor;
-                var resp = await API.put('/beakcortex/api/canvas-connections/' + this.connTypeChangeTarget, payload);
+                var resp = await API.put('/beakbroodnest/api/canvas-connections/' + this.connTypeChangeTarget, payload);
                 // 本地更新 connection 屬性 + 同步重繪
                 var connId = this.connTypeChangeTarget;
                 var newType = this.selectedRelationType;

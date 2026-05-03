@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 復盤系統 - DB 匯入模組
+BeakBroodNest 復盤系統 - DB 匯入模組
 
 將 Claude Code JSONL 對話記錄匯入 PostgreSQL，供後續訊號掃描及語意摘要處理。
 從 parse_conversation.py 拆分而來，可獨立執行或由 parse_conversation.py 呼叫。
@@ -36,15 +36,15 @@ from parse_conversation import (
 
 # config.ini 搜尋路徑（優先順序）
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakCortex/config.ini',
+    '/opt/BeakBroodNest/config.ini',
 ]
 
 # 預設 DB 連線參數（找不到 config.ini 時使用）
 DEFAULT_DB_PARAMS = {
     'host': 'localhost',
     'port': 5432,
-    'database': 'beak_cortex',
-    'user': 'beak_cortex',
+    'database': 'beak_broodnest',
+    'user': 'beak_broodnest',
     'password': 'postgres123',
 }
 
@@ -79,8 +79,8 @@ def _load_db_params() -> dict:
                 return {
                     'host': cfg.get('postgresql', 'host', fallback='localhost'),
                     'port': cfg.getint('postgresql', 'port', fallback=5432),
-                    'database': cfg.get('postgresql', 'database', fallback='beak_cortex'),
-                    'user': cfg.get('postgresql', 'username', fallback='beak_cortex'),
+                    'database': cfg.get('postgresql', 'database', fallback='beak_broodnest'),
+                    'user': cfg.get('postgresql', 'username', fallback='beak_broodnest'),
                     'password': cfg.get('postgresql', 'password', fallback='postgres123'),
                 }
     return DEFAULT_DB_PARAMS.copy()
@@ -92,7 +92,7 @@ def _get_db_connection():
         import psycopg2
     except ImportError:
         print("[ERROR] psycopg2 未安裝。請執行: pip install psycopg2-binary")
-        print("        或使用 BeakCortex venv: /opt/BeakCortex/venv/bin/pip install psycopg2-binary")
+        print("        或使用 BeakBroodNest venv: /opt/BeakBroodNest/venv/bin/pip install psycopg2-binary")
         sys.exit(1)
 
     params = _load_db_params()
@@ -739,7 +739,7 @@ def import_batch_db(since_days: int = 0, limit: int = 0) -> None:
 # 使用說明
 # ============================================================
 
-USAGE_TEXT = """BeakCortex 復盤系統 - DB 匯入模組
+USAGE_TEXT = """BeakBroodNest 復盤系統 - DB 匯入模組
 
 將 Claude Code JSONL 對話記錄匯入 PostgreSQL。
 
@@ -781,7 +781,7 @@ def main():
         sys.exit(0)
 
     parser = argparse.ArgumentParser(
-        description='BeakCortex 復盤系統 - JSONL 對話匯入 PostgreSQL',
+        description='BeakBroodNest 復盤系統 - JSONL 對話匯入 PostgreSQL',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 

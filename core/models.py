@@ -1032,7 +1032,7 @@ class Message(Base):
     4. 各專案只需 CLAUDE.md 加一條 note_inbox 規則
 
     身份格式：{scope}:{identity}
-      project:beakcortex     -- 專案主線 Claude
+      project:beakbroodnest     -- 專案主線 Claude
       task:daily-review      -- 排程/任務身份
       user:ethan             -- 人類
     """
@@ -1051,7 +1051,7 @@ class Message(Base):
     # 收件人
     recipient: Mapped[str] = mapped_column(
         String(200), nullable=False
-    )  # e.g. "project:beakcortex"
+    )  # e.g. "project:beakbroodnest"
 
     # 內容
     subject: Mapped[str] = mapped_column(String(500), nullable=False)

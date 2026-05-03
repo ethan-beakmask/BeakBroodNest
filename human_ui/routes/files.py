@@ -18,7 +18,7 @@ from core.db import session_scope
 from core.models import UploadedFile
 
 bp = Blueprint('files', __name__)
-logger = logging.getLogger('beak_cortex')
+logger = logging.getLogger('beak_broodnest')
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 TOKEN_RE = re.compile(r'^[A-Za-z0-9_-]{16,64}$')
@@ -136,7 +136,7 @@ def upload_file():
         s.flush()
         result = rec.to_dict()
         # 加上方便前端直接使用的 URL
-        result['url'] = f'/beakcortex/files/{token}'
+        result['url'] = f'/beakbroodnest/files/{token}'
 
     return jsonify(result), 201
 
@@ -145,7 +145,7 @@ def upload_file():
 def download_file(token):
     """提供 inline / attachment 檔案下載。
 
-    - 已透過 app.before_request 強制登入；未登入會被導去 /beakcortex/login
+    - 已透過 app.before_request 強制登入；未登入會被導去 /beakbroodnest/login
     - token 必須符合白名單字元，避免路徑遍歷
     """
     if not TOKEN_RE.match(token or ''):
@@ -221,7 +221,7 @@ def list_files():
         items = []
         for r in rows:
             d = r.to_dict()
-            d['url'] = f'/beakcortex/files/{r.token}'
+            d['url'] = f'/beakbroodnest/files/{r.token}'
             items.append(d)
         return jsonify({
             'total': total,
@@ -244,5 +244,5 @@ def get_file_meta(token):
         if not rec:
             return jsonify({'error': '找不到檔案'}), 404
         d = rec.to_dict()
-        d['url'] = f'/beakcortex/files/{rec.token}'
+        d['url'] = f'/beakbroodnest/files/{rec.token}'
         return jsonify(d)

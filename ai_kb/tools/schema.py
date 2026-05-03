@@ -13,7 +13,7 @@ from core.models import (
 )
 from core import relations as rel_service
 
-logger = logging.getLogger('beak_cortex.mcp')
+logger = logging.getLogger('beak_broodnest.mcp')
 
 
 def register(mcp):

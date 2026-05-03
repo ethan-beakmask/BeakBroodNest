@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 復盤系統 - 訊號掃描器 DB 模式
+BeakBroodNest 復盤系統 - 訊號掃描器 DB 模式
 
 從 PostgreSQL conversation_turns 表讀取對話資料，
 掃描訊號後更新 p1_scanned_at 和 p1_signals 欄位。

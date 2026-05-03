@@ -8,7 +8,7 @@
   4. 各專案只需 CLAUDE.md 加一條 note_inbox 規則
 
 身份格式: {scope}:{identity}
-  project:beakcortex, task:daily-review, user:ethan
+  project:beakbroodnest, task:daily-review, user:ethan
 """
 import json
 import datetime
@@ -20,7 +20,7 @@ from sqlalchemy import and_
 from core.db import session_scope
 from core.models import Message, KnowledgeAtom
 
-logger = logging.getLogger('beak_cortex.mcp.messaging')
+logger = logging.getLogger('beak_broodnest.mcp.messaging')
 
 # ============================================================
 # 身份推斷
@@ -32,7 +32,7 @@ _current_cwd: str = ''
 
 # 從啟動目錄推斷專案身份的對照表
 _CWD_PROJECT_MAP = {
-    '/opt/BeakCortex': 'project:beakcortex',
+    '/opt/BeakBroodNest': 'project:beakbroodnest',
     '/opt/BeakPlatform': 'project:beakplatform',
     '/opt/BeakPlatform-dev': 'project:beakplatform',
     '/opt/BeakMeshWall': 'project:beakmeshwall',
@@ -103,7 +103,7 @@ def get_cwd() -> str:
 
 KNOWN_RECIPIENTS_HINT = {
     # 專案
-    'project:beakcortex',
+    'project:beakbroodnest',
     'project:beakplatform',
     'project:beakmeshwall',
     'project:beakrisk',
@@ -128,7 +128,7 @@ def register(mcp):
         """發送訊息給指定的專案/Claude/人類。
 
         recipient: 收件人身份，格式 {scope}:{identity}
-          project:beakcortex     -- BeakCortex 專案的 Claude
+          project:beakbroodnest     -- BeakBroodNest 專案的 Claude
           project:beakplatform   -- BeakPlatform 專案的 Claude
           project:beakmeshwall   -- BeakMeshWall 專案的 Claude
           project:beakrisk       -- BeakRisk 專案的 Claude

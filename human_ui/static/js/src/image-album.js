@@ -1,5 +1,5 @@
 /**
- * BeakCortex Image Album Picker
+ * BeakBroodNest Image Album Picker
  *
  * 提供「圖檔相簿」modal：
  *   - 列出已上傳 image kind 檔案（GET /api/files?kind=image）
@@ -200,7 +200,7 @@ class ImageAlbumPicker {
                 page_size: String(this.pageSize),
             })
             if (this.q) params.set('q', this.q)
-            const resp = await fetch('/beakcortex/api/files?' + params.toString(), {
+            const resp = await fetch('/beakbroodnest/api/files?' + params.toString(), {
                 credentials: 'same-origin',
             })
             if (!resp.ok) throw new Error('HTTP ' + resp.status)
@@ -319,7 +319,7 @@ class ImageAlbumPicker {
                 const fd = new FormData()
                 fd.append('file', file)
                 fd.append('kind', 'image')
-                const resp = await fetch('/beakcortex/api/files/upload', {
+                const resp = await fetch('/beakbroodnest/api/files/upload', {
                     method: 'POST',
                     body: fd,
                     credentials: 'same-origin',

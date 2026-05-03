@@ -1,4 +1,4 @@
-# BeakCortex Relay Receiver 設定檔範本
+# BeakBroodNest Relay Receiver 設定檔範本
 # 複製為 config.yaml 後填入實際路徑與位址。本檔屬於本機環境設定，不入版控。
 
 server:

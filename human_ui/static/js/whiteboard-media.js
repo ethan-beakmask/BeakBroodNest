@@ -394,7 +394,7 @@ function whiteboardMediaMixin() {
             var token = this.mediaCardPdfToken(ca);
             if (!token) return;
             try {
-                var url = '/beakcortex/files/' + encodeURIComponent(token);
+                var url = '/beakbroodnest/files/' + encodeURIComponent(token);
                 var dataUrl = await window.PdfUtils.renderFirstPageThumbnail(url, 480);
                 var img = document.createElement('img');
                 img.src = dataUrl;

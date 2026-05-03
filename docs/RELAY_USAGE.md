@@ -1,4 +1,4 @@
-# BeakCortex Relay 使用文件
+# BeakBroodNest Relay 使用文件
 
 跨機通訊工具：Ubuntu orchestrator -> Windows MobaXterm。
 本文件對象為 Claude Code 與其他自動化代理，提供呼叫方式、設定欄位、錯誤排查的單一參考點。
@@ -9,7 +9,7 @@
 
 ```
 [Ubuntu 192.168.0.16]                           [Windows 192.168.0.10]
-  notify_windows.py                               BeakCortex.exe
+  notify_windows.py                               BeakBroodNest.exe
   monitor.py            ---- HTTP/JSON ---->      (系統列常駐, port 5200)
   curl                                            |
                                                   v
@@ -20,22 +20,22 @@
 ```
 
 - Ubuntu 端：`orchestrator/notify_windows.py`、`orchestrator/monitor.py`
-- Windows 端：`orchestrator/windows/relay/`（Go 原始碼）編譯成 `BeakCortex.exe`
+- Windows 端：`orchestrator/windows/relay/`（Go 原始碼）編譯成 `BeakBroodNest.exe`
 - Python 版 `orchestrator/windows/relay_receiver.py` 為**歷史保留**，不再迭代，現役為 Go 版
 
 ---
 
-## 2. Windows 端：BeakCortex.exe
+## 2. Windows 端：BeakBroodNest.exe
 
 ### 2.1 來源
-- 原始碼：`/opt/BeakCortex/orchestrator/windows/relay/`
+- 原始碼：`/opt/BeakBroodNest/orchestrator/windows/relay/`
 - 編譯腳本：`build.sh`（在 Ubuntu 端用 `GOOS=windows GOARCH=amd64` 交叉編譯）
-- 部署管道：`build.sh` 偵測到 `/mnt/smb` 已掛載時自動複製 `BeakCortex.exe` 與 `config.yaml`
+- 部署管道：`build.sh` 偵測到 `/mnt/smb` 已掛載時自動複製 `BeakBroodNest.exe` 與 `config.yaml`
 
 ### 2.2 啟動
-Windows 端雙擊 `BeakCortex.exe` 或從系統列圖示啟動。
+Windows 端雙擊 `BeakBroodNest.exe` 或從系統列圖示啟動。
 - 用 `-H windowsgui` 編譯，**無 console 視窗**
-- log 寫到 exe 同目錄的 `BeakCortex.log`
+- log 寫到 exe 同目錄的 `BeakBroodNest.log`
 - 設定檔預設讀同目錄的 `config.yaml`，可用 `--config` 指定其他路徑
 
 ### 2.3 端點
@@ -68,7 +68,7 @@ mobaxterm:
 | v1.1.0 | `5dfb24d` | Go 版首發，**不檢查 Authorization header**（即使 `auth.token` 設了也照樣放行） |
 | v1.2.1 | `191d717` | 新增 `authMiddleware`，缺/錯 token 回 401；移除啟動時的 `printUsage` 噪音 |
 
-打 `/status` 看 server 是否啟動；無法直接從回傳判斷版本，要看啟動 log 第一行 `BeakCortex Relay v1.x.x 啟動`。
+打 `/status` 看 server 是否啟動；無法直接從回傳判斷版本，要看啟動 log 第一行 `BeakBroodNest Relay v1.x.x 啟動`。
 
 ---
 
@@ -78,7 +78,7 @@ mobaxterm:
 
 ```bash
 cd /opt/<專案>
-/opt/BeakCortex/venv/bin/python /opt/BeakCortex/orchestrator/notify_windows.py [選項]
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/orchestrator/notify_windows.py [選項]
 ```
 
 | 選項 | 說明 |
@@ -95,28 +95,28 @@ cd /opt/<專案>
 ```bash
 # 把訊息貼到當前專案對應的 MobaXterm 分頁
 cd /opt/BeakSeal
-/opt/BeakCortex/venv/bin/python /opt/BeakCortex/orchestrator/notify_windows.py \
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/orchestrator/notify_windows.py \
   -m "支線任務完成"
 # -> action=paste, target=([BeakSeal])
 
 # 只通知，不貼字
-/opt/BeakCortex/venv/bin/python /opt/BeakCortex/orchestrator/notify_windows.py \
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/orchestrator/notify_windows.py \
   -m "ping" --action notify
 
 # 啟動 MobaXterm 並開特定 bookmark
 cd /opt/BeakMeshWall-dev
-/opt/BeakCortex/venv/bin/python /opt/BeakCortex/orchestrator/notify_windows.py --launch
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/orchestrator/notify_windows.py --launch
 # -> bookmark=User sessions\192.168.0.16 ([BeakMeshWall])
 ```
 
 ### 3.2 直接 curl（不依賴 notify_windows.py）
 
-從 `/opt/BeakCortex/config.ini [relay]` 讀 `host` / `port` / `token`：
+從 `/opt/BeakBroodNest/config.ini [relay]` 讀 `host` / `port` / `token`：
 
 ```bash
-RELAY_HOST=$(grep -E '^host' /opt/BeakCortex/config.ini | head -1 | awk -F= '{print $2}' | tr -d ' ')
-RELAY_PORT=$(grep -E '^port' /opt/BeakCortex/config.ini | head -1 | awk -F= '{print $2}' | tr -d ' ')
-RELAY_TOKEN=$(grep -E '^token' /opt/BeakCortex/config.ini | head -1 | awk -F= '{print $2}' | tr -d ' ')
+RELAY_HOST=$(grep -E '^host' /opt/BeakBroodNest/config.ini | head -1 | awk -F= '{print $2}' | tr -d ' ')
+RELAY_PORT=$(grep -E '^port' /opt/BeakBroodNest/config.ini | head -1 | awk -F= '{print $2}' | tr -d ' ')
+RELAY_TOKEN=$(grep -E '^token' /opt/BeakBroodNest/config.ini | head -1 | awk -F= '{print $2}' | tr -d ' ')
 
 # /status
 curl -s -H "Authorization: Bearer $RELAY_TOKEN" \
@@ -147,7 +147,7 @@ curl -X POST "http://$RELAY_HOST:$RELAY_PORT/launch" \
 
 ## 4. config.ini `[relay]` 區段（Ubuntu 端）
 
-`/opt/BeakCortex/config.ini`：
+`/opt/BeakBroodNest/config.ini`：
 
 ```ini
 [relay]
@@ -165,7 +165,7 @@ token = <與 Windows 端 config.yaml auth.token 相同>
 | action    | Python 版（舊） | Go v1.1.0+ | 行為 |
 |---|---|---|---|
 | `paste`   | OK | OK | 找 MobaXterm 視窗 -> 切到 `target` 分頁 -> 送字 + Enter |
-| `notify`  | OK | OK | 只寫 log（Windows 端 `BeakCortex.log`），不操作視窗 |
+| `notify`  | OK | OK | 只寫 log（Windows 端 `BeakBroodNest.log`），不操作視窗 |
 | `clipboard` | OK | **不支援**（回 `success=false`，要求改用 paste） | — |
 
 `paste` 內部策略（Go 版）：
@@ -180,7 +180,7 @@ token = <與 Windows 端 config.yaml auth.token 相同>
 
 | 症狀 | 原因 | 處置 |
 |---|---|---|
-| `Connection refused` / timeout | Windows 端 `BeakCortex.exe` 沒跑、防火牆擋、IP 寫錯 | RDP 看 Windows 系統列；確認 `config.ini` host 是 `192.168.0.10` |
+| `Connection refused` / timeout | Windows 端 `BeakBroodNest.exe` 沒跑、防火牆擋、IP 寫錯 | RDP 看 Windows 系統列；確認 `config.ini` host 是 `192.168.0.10` |
 | HTTP 401 `unauthorized` | v1.2.1 開了 token 驗證但 client 沒帶／帶錯 | 對齊 Ubuntu `config.ini [relay] token` 與 Windows `config.yaml auth.token` |
 | `paste` 回 `phase1-fallback` 或找不到目標分頁 | MobaXterm 沒開、bookmark 名稱對不上、target 關鍵字寫錯 | 先 `--launch` 開分頁，或調整 `target`／`default_target` |
 | `paste` 成功但訊息亂碼 | `WM_CHAR` 對非 BMP 字元支援有限 | 拆短訊息或避開 emoji |

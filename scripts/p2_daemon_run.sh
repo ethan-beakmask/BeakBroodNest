@@ -1,7 +1,7 @@
 #!/bin/bash
-# BeakCortex P2 daemon wrapper
+# BeakBroodNest P2 daemon wrapper
 #
-# 由 systemd timer (beakcortex-p2.timer) 每 30 分鐘觸發一次，
+# 由 systemd timer (beakbroodnest-p2.timer) 每 30 分鐘觸發一次，
 # 每次處理 batch_size 個 topic 後退出，下次 timer 接力。
 #
 # 用 wrapper 包起來的原因：
@@ -17,13 +17,13 @@ set -u
 LOG=/opt/tmp/p2_daemon.log
 exec >> "$LOG" 2>&1
 
-echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakcortex-p2 wrapper start ====="
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakbroodnest-p2 wrapper start ====="
 START_EPOCH=$(date +%s)
 
 export PATH="/home/ethan/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HOME="/home/ethan"
 
-cd /opt/BeakCortex || exit 2
+cd /opt/BeakBroodNest || exit 2
 
 # 用 sentinel 檔案明確區分「flock 取得鎖（內部命令有跑）」與「flock 沒取到鎖（直接 skip）」
 # 避免單看 elapsed 時間誤判，例如 Topics: 0 也會在 1 秒內結束。
@@ -32,8 +32,8 @@ trap 'rm -rf "$SENTINEL_DIR"' EXIT
 
 /usr/bin/flock -E 0 -n /tmp/beak-p2.lock bash -c "
     touch '$SENTINEL_DIR/acquired'
-    exec /opt/BeakCortex/venv/bin/python \
-        /opt/BeakCortex/scripts/semantic_summarizer.py \
+    exec /opt/BeakBroodNest/venv/bin/python \
+        /opt/BeakBroodNest/scripts/semantic_summarizer.py \
         --all \
         --skip-subagents \
         --since-days 14 \
@@ -50,5 +50,5 @@ else
     NOTE="(skipped: lock held by another batch)"
 fi
 
-echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakcortex-p2 wrapper end rc=$RC elapsed=${ELAPSED}s $NOTE ====="
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') beakbroodnest-p2 wrapper end rc=$RC elapsed=${ELAPSED}s $NOTE ====="
 exit "$RC"

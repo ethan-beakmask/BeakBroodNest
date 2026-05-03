@@ -14,7 +14,7 @@ def register(mcp):
         title: str,
         instruction: str,
         model: str = 'sonnet',
-        working_dir: str = '/opt/BeakCortex',
+        working_dir: str = '/opt/BeakBroodNest',
         priority: int = 5,
         timeout_seconds: int = 600,
     ) -> str:

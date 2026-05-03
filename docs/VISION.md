@@ -1,4 +1,4 @@
-# BeakCortex -- 知識白板與 AI 共用知識庫
+# BeakBroodNest -- 知識白板與 AI 共用知識庫
 
 > 建立日期：2026-04-09
 > 狀態：規劃討論中（2026-04-09 第一輪討論完成，2026-04-10 追加因果卡控與應用場景）
@@ -36,7 +36,7 @@
 - **Gantt/Project**：有依賴關係，但門檻高，非傳統程式設計師不會用
 - **Obsidian/Notion**：記錄自由，但沒有因果卡控，筆記堆成山看不出阻塞點
 
-BeakCortex 的因果鍊 + 時間軸 + `blocks` 關係 + lifecycle 狀態，天然能回答：
+BeakBroodNest 的因果鍊 + 時間軸 + `blocks` 關係 + lifecycle 狀態，天然能回答：
 - **卡在哪** -- 哪些上游原子未完成
 - **為什麼不開始** -- 追溯阻塞鍊的根節點
 - **缺少什麼才能開始** -- 列出所有未完成的前置條件
@@ -164,7 +164,7 @@ active（活躍）-> aging（老化）-> archived（歸檔）-> terminal（終�
 - archived：不主動顯示，搜尋可達
 - terminal：僅在明確搜尋時顯示，標記為「已過時」
 
-**與 Obsidian 的根本差異**：Obsidian 那坨 edge 把所有筆記等價呈現，活的死的全擠在一起，失焦。BeakCortex 讓活的知識凸顯，死的知識退場但不消失。
+**與 Obsidian 的根本差異**：Obsidian 那坨 edge 把所有筆記等價呈現，活的死的全擠在一起，失焦。BeakBroodNest 讓活的知識凸顯，死的知識退場但不消失。
 
 ---
 
@@ -421,7 +421,7 @@ CREATE TABLE atom_embeddings (
 UI 讓活的知識凸顯、死的退場。
 
 **因果鍊**：Obsidian 的雙向連結只知道「A 和 B 有關」，
-BeakCortex 的連結知道「A 導致了 B」「C 反駁了 A」。
+BeakBroodNest 的連結知道「A 導致了 B」「C 反駁了 A」。
 這讓知識不只是一堆節點的圖，而是有推理脈絡的論證網絡。
 B(發散) -> C(收斂) -> D(歸納) 的過程本身就是因果鍊的建構過程。
 
@@ -499,7 +499,7 @@ Phase 4: 深度整合
 ## 9. 目錄結構（預想）
 
 ```
-/opt/BeakCortex/
+/opt/BeakBroodNest/
   OLD/                      # 舊檔案歸檔
   docs/                     # 規劃文件
     VISION.md               # 本文件

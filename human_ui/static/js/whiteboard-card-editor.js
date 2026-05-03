@@ -766,7 +766,7 @@ function whiteboardCardEditorMixin() {
 
             this.showToast('索引 PDF 內文中，請稍候...', 'info');
             try {
-                var url = '/beakcortex/files/' + encodeURIComponent(token);
+                var url = '/beakbroodnest/files/' + encodeURIComponent(token);
                 var text = await window.PdfUtils.extractAllText(url);
                 if (!text || !text.trim()) {
                     this.showToast('PDF 沒有可抽取的文字（可能是純圖檔掃描件）', 'warning');

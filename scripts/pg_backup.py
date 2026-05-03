@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex PostgreSQL 備份排程
+BeakBroodNest PostgreSQL 備份排程
 
-每日備份 beak_cortex 資料庫，保留 N 天份，自動輪替。
+每日備份 beak_broodnest 資料庫，保留 N 天份，自動輪替。
 備份格式: pg_dump custom format (.dump)
 
 使用範例:
@@ -32,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 HEARTBEAT_DIR = '/opt/tmp/heartbeat'
 HEARTBEAT_BASE = 'pg_backup'
 LOG_PATH = '/opt/tmp/scripts-pg_backup.log'
-BACKUP_DIR = '/opt/BeakCortex/backups'
+BACKUP_DIR = '/opt/BeakBroodNest/backups'
 
 
 def _write_heartbeat():
@@ -59,8 +59,8 @@ def run_backup(keep_days: int = 7, dry_run: bool = False, config_path: str | Non
 
     db_host = cfg.get('postgresql', 'host', fallback='localhost')
     db_port = cfg.get('postgresql', 'port', fallback='5432')
-    db_name = cfg.get('postgresql', 'database', fallback='beak_cortex')
-    db_user = cfg.get('postgresql', 'user', fallback='beak_cortex')
+    db_name = cfg.get('postgresql', 'database', fallback='beak_broodnest')
+    db_user = cfg.get('postgresql', 'user', fallback='beak_broodnest')
     db_password = cfg.get('postgresql', 'password', fallback='postgres123')
 
     # 確保備份目錄存在
@@ -68,7 +68,7 @@ def run_backup(keep_days: int = 7, dry_run: bool = False, config_path: str | Non
 
     # 備份檔名
     timestamp = datetime.now().strftime('%Y%m%d_%H%M')
-    backup_file = os.path.join(BACKUP_DIR, f'beak_cortex_{timestamp}.dump')
+    backup_file = os.path.join(BACKUP_DIR, f'beak_broodnest_{timestamp}.dump')
 
     logger.info(f'開始備份: {db_name}@{db_host}:{db_port} -> {backup_file}')
 
@@ -119,7 +119,7 @@ def run_backup(keep_days: int = 7, dry_run: bool = False, config_path: str | Non
 
 def _show_rotation(keep_days: int, logger, dry_run: bool = False):
     """輪替舊備份，保留最近 keep_days 天"""
-    pattern = os.path.join(BACKUP_DIR, 'beak_cortex_*.dump')
+    pattern = os.path.join(BACKUP_DIR, 'beak_broodnest_*.dump')
     files = sorted(glob.glob(pattern), reverse=True)
 
     if len(files) <= keep_days:
@@ -143,7 +143,7 @@ def _show_rotation(keep_days: int, logger, dry_run: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakCortex PostgreSQL 備份排程',
+        description='BeakBroodNest PostgreSQL 備份排程',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:

@@ -1,4 +1,4 @@
-# BeakCortex -- 知識白板與 AI 共用知識庫
+# BeakBroodNest -- 知識白板與 AI 共用知識庫
 
 ## Security Red Lines
 
@@ -21,7 +21,7 @@
 5. **MUST** 將暫存檔案權限設為 0600（僅擁有者可讀寫）。**MUST NOT** 使用 `delete=False` 的 NamedTemporaryFile 而不清理。
    -- 暫存檔可能包含知識庫內容或子代理指令，預設的 world-readable 權限會暴露敏感資訊。
 
-### BeakCortex 特有紅線
+### BeakBroodNest 特有紅線
 
 6. **MUST** 將 MCP tool handler 的所有參數視為不可信輸入。
    -- MCP 參數由 LLM 產生，等同於外部輸入。即使呼叫者是主 Claude，參數值仍可能受 prompt injection 影響。
@@ -39,19 +39,19 @@
     -- 對話紀錄可能包含用戶的敏感資訊或惡意構造的 prompt injection payload。
 
 ## 專案概述
-- 路徑: `/opt/BeakCortex/`（單一目錄，含 .git 版控倉庫；2026-04-26 P1 重組合併原 dev/runtime 雙目錄）
+- 路徑: `/opt/BeakBroodNest/`（單一目錄，含 .git 版控倉庫；2026-04-26 P1 重組合併原 dev/runtime 雙目錄）
 - 技術棧: Python Flask + PostgreSQL + SQLAlchemy + MCP SDK
 - Port: 5170（對外經 nginx → gunicorn 127.0.0.1:5171，由 systemd 管理）
-- DB: `beak_cortex`（user: `beak_cortex`, pw: `postgres123`）
-- MCP 設定: `/opt/.mcp.json`（故意置於父目錄讓所有 /opt/* 子專案向上搜尋共用 beak_cortex；`/mcp` 命令 UI 會把路徑誤標為 `/opt/BeakCortex/.mcp.json`，那是 UI 拼接 project 路徑的顯示行為，實檔在父目錄）
+- DB: `beak_broodnest`（user: `beak_broodnest`, pw: `postgres123`）
+- MCP 設定: `/opt/.mcp.json`（故意置於父目錄讓所有 /opt/* 子專案向上搜尋共用 beak_broodnest；`/mcp` 命令 UI 會把路徑誤標為 `/opt/BeakBroodNest/.mcp.json`，那是 UI 拼接 project 路徑的顯示行為，實檔在父目錄）
 - 規劃文件: `docs/VISION.md`
 - 舊 MVP 參考: `OLD/`（不入版控）
-- 對外發佈: 直接 `git push github master`（本專案已整理為適合公開，認證走 ssh：`ethan-beakmask/BeakCortex`）
+- 對外發佈: 直接 `git push github master`（本專案已整理為適合公開，認證走 ssh：`ethan-beakmask/BeakBroodNest`）
 
 ## 修改規範
-- 直接於 `/opt/BeakCortex/` 編輯任何檔案，工作區即版控倉庫
+- 直接於 `/opt/BeakBroodNest/` 編輯任何檔案，工作區即版控倉庫
 - `config.ini` 不入版控（已在 .gitignore 排除）
-- 程式碼變更後若影響 gunicorn 行為，須 `sudo systemctl restart beakcortex.service`
+- 程式碼變更後若影響 gunicorn 行為，須 `sudo systemctl restart beakbroodnest.service`
 
 ## 文件編輯鍵盤規格（強制遵循）
 - 規格文件：`docs/KEYBOARD_SPEC.md`
@@ -63,7 +63,7 @@
 ## 每次對話必做
 1. 呼叫 `note_inbox` 檢查未讀訊息，有未讀則摘要告知用戶，並標記已讀
 2. 呼叫 `note_overview` 取得知識庫概覽（原子數、標籤、最近更新、阻塞項目）
-3. 呼叫 `note_search` 搜尋 tag=「待辦」+ tag=「BeakCortex」取得當前專案待辦
+3. 呼叫 `note_search` 搜尋 tag=「待辦」+ tag=「BeakBroodNest」取得當前專案待辦
 4. 根據知識庫回傳的內容理解專案狀態，不要重新掃描目錄結構
 5. 若用戶指定任務，用 `note_get` 讀取對應原子的完整內容再開工
 6. 開工前搜尋方法論紀錄：`note_search(schema_id=2, query="任務相關關鍵字")`，若有命中則閱讀 improved_approach 和 applicable_when 判斷是否適用
@@ -114,7 +114,7 @@ docs/               規劃文件
 - **查詢統一**：兩表的 `read_at IS NULL` 透過 PostgreSQL view `pending_outputs` 統一查詢（schema：source/row_id/session_name/task_id/kind/content/created_at/read_at）。主線一個入口看全部未讀。
 - **通知一致**：`worker_inbox` 寫入（cc-inbox-put）與 `worker_reports` 寫入（collector）皆走 `notify.notify_pending()`，前綴 `[CC-Orch]`、未讀數來自 view。
 
-### CLI（路徑：`/opt/BeakCortex/orchestrator/cli/`）
+### CLI（路徑：`/opt/BeakBroodNest/orchestrator/cli/`）
 ```bash
 cc-spawn --name dev1 --role "後端開發" --message "請寫個 fizzbuzz.py"
 cc-talk  --session dev1 --message "改用 list comprehension"
@@ -130,7 +130,7 @@ cc-list
 - `cc-spawn` 拒絕雙底線開頭的 name（防撞名）；hook 內部呼叫帶 `allow_underscore=True` 旁路
 
 ### 場景 2 使用方式
-在 `/opt/BeakCortex/` 內輸入 `aside: <你的臨時問題>` 即被攔截，由 hook_aside 長期支線處理，主 cc 完全不見此 prompt。
+在 `/opt/BeakBroodNest/` 內輸入 `aside: <你的臨時問題>` 即被攔截，由 hook_aside 長期支線處理，主 cc 完全不見此 prompt。
 
 ### 驗收測試
 ```bash
@@ -139,27 +139,27 @@ cc-spawn --name e2e --role 測試 --message "1+1?" --model haiku --no-inbox-prot
 cc-talk  --session e2e --message "上題你回答是 2，那 2+2 呢?只回數字"   # 應答 4
 cc-inbox-put --session e2e --kind notice --content "test"
 cc-inbox-get --unread-only --mark-read
-# 場景 2: 在新 cc 開 /opt/BeakCortex 並輸入 'aside: 列出檔案'，主 cc 不會看到此 prompt
+# 場景 2: 在新 cc 開 /opt/BeakBroodNest 並輸入 'aside: 列出檔案'，主 cc 不會看到此 prompt
 ```
 
 ## 啟動與服務管理
 
 ### 正式服務（systemd 管理）
 ```bash
-sudo systemctl {start|stop|restart|status} beakcortex.service
+sudo systemctl {start|stop|restart|status} beakbroodnest.service
 ```
 ExecStart: `gunicorn --bind 127.0.0.1:5171 ... human_ui.app:app`，對外經 nginx 接到 192.168.0.16:5170。
 
 ### 首次初始化資料庫
 ```bash
-/opt/BeakCortex/venv/bin/python /opt/BeakCortex/human_ui/app.py --init-db --seed
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/human_ui/app.py --init-db --seed
 ```
 
 ### 開發 Flask dev server（hot reload，5175）
 ```bash
-/opt/BeakCortex/venv/bin/python /opt/BeakCortex/human_ui/app.py --serve --port 5175 --host 192.168.0.16
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/human_ui/app.py --serve --port 5175 --host 192.168.0.16
 ```
-與正式 gunicorn (5171) 並存，皆連同一個 `beak_cortex` DB。
+與正式 gunicorn (5171) 並存，皆連同一個 `beak_broodnest` DB。
 
 ### 推送到 GitHub
 本專案已整理為可直接公開，所有 remote 一視同仁直接 push：

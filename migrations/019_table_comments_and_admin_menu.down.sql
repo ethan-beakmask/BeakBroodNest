@@ -3,6 +3,6 @@
 
 BEGIN;
 
-DELETE FROM nav_menu WHERE url = '/beakcortex/admin/tables';
+DELETE FROM nav_menu WHERE url = '/beakbroodnest/admin/tables';
 
 COMMIT;

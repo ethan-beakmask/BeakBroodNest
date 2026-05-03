@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.db import init_engine, session_scope
 
 # dev 目錄沒有 config.ini，指向運行目錄
-init_engine(config_path='/opt/BeakCortex/config.ini')
+init_engine(config_path='/opt/BeakBroodNest/config.ini')
 from core.models import (
     KnowledgeAtom, AtomRelation, Canvas, CanvasAtom, CanvasConnection,
 )

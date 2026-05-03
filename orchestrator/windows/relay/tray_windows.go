@@ -43,7 +43,7 @@ func StartTray(cfg *Config, state *State, srv *Server) {
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
 
 	// 註冊視窗類別
-	className := utf16Ptr("BeakCortexRelayClass")
+	className := utf16Ptr("BeakBroodNestRelayClass")
 	// 從 .exe 資源載入自訂圖示 (resource ID 1)，失敗時 fallback 系統圖示
 	hIcon, _, _ := procLoadIconW.Call(hInstance, uintptr(1))
 	if hIcon == 0 {

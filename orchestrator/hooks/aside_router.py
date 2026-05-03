@@ -1,4 +1,4 @@
-#!/opt/BeakCortex/venv/bin/python
+#!/opt/BeakBroodNest/venv/bin/python
 """aside_router.py -- UserPromptSubmit hook，攔截 'aside:' 前綴。
 
 機制：
@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path('/opt/BeakCortex')
+ROOT = Path('/opt/BeakBroodNest')
 sys.path.insert(0, str(ROOT))
 
 PREFIX = 'aside:'

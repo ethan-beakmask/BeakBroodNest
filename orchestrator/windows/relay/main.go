@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	appName    = "BeakCortex Relay"
+	appName    = "BeakBroodNest Relay"
 	appVersion = "1.2.1"
 )
 
@@ -32,7 +32,7 @@ func main() {
 	}
 
 	// 設定 log 輸出到檔案（與執行檔同目錄）
-	logPath := resolveRelPath("BeakCortex.log")
+	logPath := resolveRelPath("BeakBroodNest.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "無法開啟 log 檔 %s: %v\n", logPath, err)
@@ -82,6 +82,6 @@ func printUsage() {
   --config 路徑  指定設定檔（預設同目錄 config.yaml）
   --help         顯示此說明後結束
 
-Log 檔案：同目錄 BeakCortex.log
+Log 檔案：同目錄 BeakBroodNest.log
 `, appName, appVersion)
 }

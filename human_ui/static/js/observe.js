@@ -1,5 +1,5 @@
 /**
- * BeakCortex Observe -- Alpine.js 觀察儀表板
+ * BeakBroodNest Observe -- Alpine.js 觀察儀表板
  */
 function observeApp() {
     return {
@@ -64,7 +64,7 @@ function observeApp() {
 
         async fetchStats() {
             try {
-                const resp = await fetch('/beakcortex/api/observe/stats');
+                const resp = await fetch('/beakbroodnest/api/observe/stats');
                 this.stats = await resp.json();
             } catch (e) {
                 console.error('fetchStats error:', e);
@@ -73,7 +73,7 @@ function observeApp() {
 
         async fetchConversations() {
             try {
-                const resp = await fetch('/beakcortex/api/observe/conversations?limit=50');
+                const resp = await fetch('/beakbroodnest/api/observe/conversations?limit=50');
                 this.conversations = await resp.json();
                 this.applySorting();
             } catch (e) {
@@ -83,7 +83,7 @@ function observeApp() {
 
         async fetchPipelines() {
             try {
-                const resp = await fetch('/beakcortex/api/observe/pipeline-runs?limit=50');
+                const resp = await fetch('/beakbroodnest/api/observe/pipeline-runs?limit=50');
                 this.pipelines = await resp.json();
             } catch (e) {
                 console.error('fetchPipelines error:', e);
@@ -92,7 +92,7 @@ function observeApp() {
 
         async fetchSessions() {
             try {
-                const resp = await fetch('/beakcortex/api/observe/session-logs?limit=50');
+                const resp = await fetch('/beakbroodnest/api/observe/session-logs?limit=50');
                 this.sessions = await resp.json();
             } catch (e) {
                 console.error('fetchSessions error:', e);
@@ -102,8 +102,8 @@ function observeApp() {
         async fetchReviews() {
             try {
                 const [reviewsResp, globalResp] = await Promise.all([
-                    fetch('/beakcortex/api/observe/reviews'),
-                    fetch('/beakcortex/api/observe/reviews/global-stats'),
+                    fetch('/beakbroodnest/api/observe/reviews'),
+                    fetch('/beakbroodnest/api/observe/reviews/global-stats'),
                 ]);
                 this.reviews = await reviewsResp.json();
                 const globalData = await globalResp.json();
@@ -132,7 +132,7 @@ function observeApp() {
 
         async showSignals(convId) {
             try {
-                const resp = await fetch(`/beakcortex/api/observe/conversations/${convId}/signals`);
+                const resp = await fetch(`/beakbroodnest/api/observe/conversations/${convId}/signals`);
                 this.signalDetail = await resp.json();
                 const modal = new bootstrap.Modal(document.getElementById('signalModal'));
                 modal.show();
@@ -154,7 +154,7 @@ function observeApp() {
             if (!this._backlogDefaultApplied) {
                 this._backlogDefaultApplied = true;
                 try {
-                    const resp = await fetch('/beakcortex/api/preferences/last_active_canvas_slug');
+                    const resp = await fetch('/beakbroodnest/api/preferences/last_active_canvas_slug');
                     const data = await resp.json();
                     const slug = data && data.value;
                     if (slug) {
@@ -309,7 +309,7 @@ function observeApp() {
 
         async loadBacklogCounts() {
             try {
-                const resp = await fetch('/beakcortex/api/observe/backlog/counts');
+                const resp = await fetch('/beakbroodnest/api/observe/backlog/counts');
                 const data = await resp.json();
                 this.backlogCounts = data.counts || { active: 0, blocked: 0, archived: 0 };
                 this.backlogProjects = data.projects || [];
@@ -328,7 +328,7 @@ function observeApp() {
                 params.set('atom_type', this.backlogFilters.atomTypes.join(','));
             }
             try {
-                const resp = await fetch('/beakcortex/api/observe/backlog?' + params.toString());
+                const resp = await fetch('/beakbroodnest/api/observe/backlog?' + params.toString());
                 this.backlogRows = await resp.json();
             } catch (e) {
                 console.error('loadBacklog error:', e);
@@ -339,7 +339,7 @@ function observeApp() {
         async loadTaskSchema() {
             if (this.backlogTaskSchema) return;
             try {
-                const resp = await fetch('/beakcortex/api/entry-schemas');
+                const resp = await fetch('/beakbroodnest/api/entry-schemas');
                 if (resp.ok) {
                     const schemas = await resp.json();
                     this.backlogTaskSchema = schemas.find(s => s.code === 'task') || null;
@@ -403,7 +403,7 @@ function observeApp() {
             // 取得完整 entry 資料(含 field_values)
             let entry;
             try {
-                const resp = await fetch('/beakcortex/api/entries/' + r.entry_id);
+                const resp = await fetch('/beakbroodnest/api/entries/' + r.entry_id);
                 if (!resp.ok) throw new Error('GET entry failed');
                 entry = await resp.json();
             } catch (e) {
@@ -424,7 +424,7 @@ function observeApp() {
                 mode: 'edit',
                 onSave: async ({ rawText, fieldValues }) => {
                     try {
-                        const resp = await fetch('/beakcortex/api/entries/' + r.entry_id, {
+                        const resp = await fetch('/beakbroodnest/api/entries/' + r.entry_id, {
                             method: 'PUT',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
@@ -451,7 +451,7 @@ function observeApp() {
             // 取得完整 atom 資料
             let atom;
             try {
-                const resp = await fetch('/beakcortex/api/atoms/' + r.atom_id);
+                const resp = await fetch('/beakbroodnest/api/atoms/' + r.atom_id);
                 if (!resp.ok) throw new Error('GET atom failed');
                 atom = await resp.json();
             } catch (e) {
@@ -525,7 +525,7 @@ function observeApp() {
                     content_json: json,
                     force_owner_override: this.atomEdit.owner !== 'ethan',
                 };
-                const resp = await fetch('/beakcortex/api/atoms/' + this.atomEdit.atom_id, {
+                const resp = await fetch('/beakbroodnest/api/atoms/' + this.atomEdit.atom_id, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),

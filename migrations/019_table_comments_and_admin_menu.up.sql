@@ -88,9 +88,9 @@ COMMENT ON TABLE worker_reports           IS '支線 Agent 執行完成後回報
 -- nav_menu 加入「資料表總覽」項目
 -- ============================================================
 INSERT INTO nav_menu (name, url, icon, sort_order, is_active, created_at)
-SELECT '資料表總覽', '/beakcortex/admin/tables', '', 90, TRUE, NOW()
+SELECT '資料表總覽', '/beakbroodnest/admin/tables', '', 90, TRUE, NOW()
 WHERE NOT EXISTS (
-    SELECT 1 FROM nav_menu WHERE url = '/beakcortex/admin/tables'
+    SELECT 1 FROM nav_menu WHERE url = '/beakbroodnest/admin/tables'
 );
 
 COMMIT;

@@ -10,7 +10,7 @@ from pathlib import Path
 
 STATE_DIR = Path(os.environ.get(
     'BEAKCORTEX_ORCH_STATE_DIR',
-    '/opt/tmp/beakcortex-orch',
+    '/opt/tmp/beakbroodnest-orch',
 ))
 NOTIFY_FLAG = STATE_DIR / 'notify.flag'
 

@@ -1,4 +1,4 @@
-module beakcortex-relay
+module beakbroodnest-relay
 
 go 1.22
 

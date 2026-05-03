@@ -12,7 +12,7 @@ from core import embeddings as embed_service
 from orchestrator.models import WorkerTask, WorkerReport
 
 bp = Blueprint('orchestrator', __name__)
-logger = logging.getLogger('beak_cortex')
+logger = logging.getLogger('beak_broodnest')
 
 
 @bp.route('/api/orchestrator/stats', methods=['GET'])

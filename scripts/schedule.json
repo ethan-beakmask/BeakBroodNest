@@ -1,5 +1,5 @@
 {
-    "_comment": "BeakCortex 集中式排程設定。scheduler.py 每 5 分鐘 tick 一次，檢查哪些任務到期。",
+    "_comment": "BeakBroodNest 集中式排程設定。scheduler.py 每 5 分鐘 tick 一次，檢查哪些任務到期。",
     "tasks": [
         {
             "name": "vitality_decay",

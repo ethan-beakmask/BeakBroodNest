@@ -1,5 +1,5 @@
 /**
- * BeakCortex PdfThumbnail -- Tiptap node
+ * BeakBroodNest PdfThumbnail -- Tiptap node
  *
  * 表示 PDF 在 Tiptap 編輯器內的縮圖區塊：
  *   - block-level，atomic（contentEditable=false）
@@ -7,7 +7,7 @@
  *   - 縮圖透過 window.PdfUtils.renderFirstPageThumbnail 動態產生
  *
  * Attributes:
- *   token       - uploaded_files.token，用來組 /beakcortex/files/<token>
+ *   token       - uploaded_files.token，用來組 /beakbroodnest/files/<token>
  *   filename    - 顯示用檔名
  *   pages       - 頁數（已知時填入，純資訊用）
  */
@@ -99,7 +99,7 @@ class PdfThumbnailView {
         if (node.attrs.token) {
             const link = document.createElement('a')
             link.className = 'pdf-thumb-link'
-            link.href = '/beakcortex/files/' + encodeURIComponent(node.attrs.token)
+            link.href = '/beakbroodnest/files/' + encodeURIComponent(node.attrs.token)
             link.target = '_blank'
             link.rel = 'noopener'
             link.textContent = '開啟'
@@ -116,7 +116,7 @@ class PdfThumbnailView {
         if (this.node.attrs.thumbnailToken) {
             this.imgWrap.innerHTML = ''
             const img = document.createElement('img')
-            img.src = '/beakcortex/files/' + encodeURIComponent(this.node.attrs.thumbnailToken)
+            img.src = '/beakbroodnest/files/' + encodeURIComponent(this.node.attrs.thumbnailToken)
             img.alt = this.node.attrs.filename || ''
             img.draggable = false
             this.imgWrap.appendChild(img)
@@ -124,7 +124,7 @@ class PdfThumbnailView {
         }
         // 退路：用 PDF.js 即時渲染（舊 PDF 沒上傳縮圖時）
         if (!this.node.attrs.token || !window.PdfUtils) return
-        const url = '/beakcortex/files/' + encodeURIComponent(this.node.attrs.token)
+        const url = '/beakbroodnest/files/' + encodeURIComponent(this.node.attrs.token)
         try {
             const dataUrl = await window.PdfUtils.renderFirstPageThumbnail(url, 360)
             this.imgWrap.innerHTML = ''

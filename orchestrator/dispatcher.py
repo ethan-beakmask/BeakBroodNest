@@ -34,7 +34,7 @@ WRAPPER_PATH = os.path.join(os.path.dirname(__file__), 'wrapper.sh')
 
 
 def _load_kb_url() -> str:
-    """從 config.ini 讀取 BeakCortex HTTP base URL"""
+    """從 config.ini 讀取 BeakBroodNest HTTP base URL"""
     config_path = Path(__file__).resolve().parent.parent / 'config.ini'
     cfg = configparser.ConfigParser()
     cfg.read(str(config_path), encoding='utf-8')
@@ -47,8 +47,8 @@ def _build_kb_preamble(worker_id: str, session_id: str) -> str:
     """生成 KB 存取說明 preamble，注入到支線 instruction 前面"""
     base_url = _load_kb_url()
     return (
-        '[BeakCortex KB Access]\n'
-        '你可以透過以下 HTTP API 存取 BeakCortex 知識庫（使用 Bash curl）:\n'
+        '[BeakBroodNest KB Access]\n'
+        '你可以透過以下 HTTP API 存取 BeakBroodNest 知識庫（使用 Bash curl）:\n'
         f'  Base URL: {base_url}\n'
         f'  認證 Header: -H "X-Worker-Id: {worker_id}" -H "X-Session-Id: {session_id}"\n'
         '\n'
@@ -58,7 +58,7 @@ def _build_kb_preamble(worker_id: str, session_id: str) -> str:
         '  POST /api/worker/kb/atoms  body: {"title":"...","content":"...","atom_type":"F","tags":["..."]}  寫入原子\n'
         '\n'
         '使用時機: 需要查詢專案知識或儲存研究結果時。不強制使用。\n'
-        '[/BeakCortex KB Access]\n\n'
+        '[/BeakBroodNest KB Access]\n\n'
         '[方法論檢索 - 開工前必做]\n'
         '開始任務前，先搜尋是否有相關的方法論紀錄（前人經驗）:\n'
         f'  curl -s -H "X-Worker-Id: {worker_id}" -H "X-Session-Id: {session_id}" '
@@ -122,7 +122,7 @@ def create_task(
     title: str,
     instruction: str,
     model: str = 'sonnet',
-    working_dir: str = '/opt/BeakCortex',
+    working_dir: str = '/opt/BeakBroodNest',
     priority: int = 5,
     timeout_seconds: int = 600,
     main_pane: str = '',
@@ -207,7 +207,7 @@ def create_and_dispatch(
     title: str,
     instruction: str,
     model: str = 'sonnet',
-    working_dir: str = '/opt/BeakCortex',
+    working_dir: str = '/opt/BeakBroodNest',
     priority: int = 5,
     timeout_seconds: int = 600,
     main_pane: str = '',
@@ -242,7 +242,7 @@ INBOX_PROTOCOL_TEMPLATE = """\
 4. 與其他支線衝突需要協調
 
 呼叫主 CC 的方法（透過 Bash 工具執行此指令）：
-  /opt/BeakCortex/orchestrator/cli/cc-inbox-put --session {name} --kind <kind> --content "<內容>"
+  /opt/BeakBroodNest/orchestrator/cli/cc-inbox-put --session {name} --kind <kind> --content "<內容>"
 
 kind 可選值:
   question - 你需要主 CC 回答才能繼續（阻塞型）

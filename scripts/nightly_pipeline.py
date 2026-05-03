@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""BeakCortex 復盤 Pipeline -- 集中執行 P0~P3。
+"""BeakBroodNest 復盤 Pipeline -- 集中執行 P0~P3。
 
 由 scheduler 每天 08:25 觸發（cron 表達式 25 8 * * *，因 scheduler 每 5 分鐘 tick，
 無法精確命中 08:22；08:25 是離 08:22 最近且對齊 5 分鐘的時刻）。
@@ -134,7 +134,7 @@ def _record_pipeline_run(stages, overall_status, error_detail=''):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='BeakCortex 每日復盤 Pipeline')
+    parser = argparse.ArgumentParser(description='BeakBroodNest 每日復盤 Pipeline')
     parser.add_argument('--dry-run', action='store_true', help='印命令但不執行')
     parser.add_argument('--skip', action='append', default=[],
                         choices=['p0', 'p1', 'p2', 'p3'],
@@ -154,7 +154,7 @@ def main():
     if args.p0_limit > 0:
         p0_cmd += ['--limit', str(args.p0_limit)]
 
-    # 與 P2-3 daemon (beakcortex-p2.service) 共用 /tmp/beak-p2.lock，
+    # 與 P2-3 daemon (beakbroodnest-p2.service) 共用 /tmp/beak-p2.lock，
     # 取不到鎖時 flock -E 0 回 exit 0，nightly 把這次 P2 stage 視為 OK 跳過。
     p2_cmd = [
         '/usr/bin/flock', '-E', '0', '-n', '/tmp/beak-p2.lock',

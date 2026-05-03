@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BeakCortex - Login</title>
+    <title>BeakBroodNest - Login</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -72,11 +72,11 @@
 </head>
 <body>
     <div class="login-card">
-        <div class="login-title">BeakCortex</div>
+        <div class="login-title">BeakBroodNest</div>
         {% if error %}
         <div class="alert">{{ error }}</div>
         {% endif %}
-        <form method="POST" action="/beakcortex/login">
+        <form method="POST" action="/beakbroodnest/login">
             <div class="form-group">
                 <label for="username" class="form-label">Account</label>
                 <input type="text" class="form-input" id="username" name="username"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex P3 復盤分析器 -- 雛形版
+BeakBroodNest P3 復盤分析器 -- 雛形版
 
 從 P1 訊號 + 對話內容產出三類分析：
   a. 改進評估：可改進的做法
@@ -32,14 +32,14 @@ from typing import Dict, List, Optional
 # ============================================================
 
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakCortex/config.ini',
+    '/opt/BeakBroodNest/config.ini',
 ]
 
 DEFAULT_DB_PARAMS = {
     'host': 'localhost',
     'port': 5432,
-    'database': 'beak_cortex',
-    'user': 'beak_cortex',
+    'database': 'beak_broodnest',
+    'user': 'beak_broodnest',
     'password': 'postgres123',
 }
 
@@ -53,8 +53,8 @@ def _load_db_params() -> dict:
                 return {
                     'host': cfg.get('postgresql', 'host', fallback='localhost'),
                     'port': cfg.getint('postgresql', 'port', fallback=5432),
-                    'database': cfg.get('postgresql', 'database', fallback='beak_cortex'),
-                    'user': cfg.get('postgresql', 'username', fallback='beak_cortex'),
+                    'database': cfg.get('postgresql', 'database', fallback='beak_broodnest'),
+                    'user': cfg.get('postgresql', 'username', fallback='beak_broodnest'),
                     'password': cfg.get('postgresql', 'password', fallback='postgres123'),
                 }
     return DEFAULT_DB_PARAMS.copy()
@@ -275,7 +275,7 @@ def collect_user_mentions(conn, conversation_id: str = None) -> list:
 # ============================================================
 
 REVIEW_SYSTEM_PROMPT = """\
-你是 BeakCortex 復盤系統的改進評估器。你的任務是根據對話中的錯誤訊號，評估是否有可改進的做法。
+你是 BeakBroodNest 復盤系統的改進評估器。你的任務是根據對話中的錯誤訊號，評估是否有可改進的做法。
 
 ## 嚴格規則
 
@@ -448,7 +448,7 @@ def save_review_results(conn, conversation_id: str,
 # 結果寫入 JSON（供觀察 UI 讀取）
 # ============================================================
 
-RESULTS_DIR = '/opt/BeakCortex/data/reviews'
+RESULTS_DIR = '/opt/BeakBroodNest/data/reviews'
 
 
 def save_results_json(conversation_id: str, error_stats: dict,
@@ -554,7 +554,7 @@ def analyze_all(conn, dry_run: bool = False, skip_claude: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakCortex P3 復盤分析器',
+        description='BeakBroodNest P3 復盤分析器',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:

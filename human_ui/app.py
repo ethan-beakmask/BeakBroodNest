@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex -- 人類介面 Flask 入口
+BeakBroodNest -- 人類介面 Flask 入口
 路由已拆分至 routes/ 子模組
 """
 import argparse
@@ -31,8 +31,8 @@ from core import relations as rel_service
 from human_ui.routes import ALL_BLUEPRINTS
 
 
-app = Flask(__name__, static_url_path='/beakcortex/static')
-logger = logging.getLogger('beak_cortex')
+app = Flask(__name__, static_url_path='/beakbroodnest/static')
+logger = logging.getLogger('beak_broodnest')
 
 # ============================================================
 # IP 白名單（僅限內網）
@@ -101,25 +101,25 @@ def _check_auth():
         _migrations_done = True
 
     exempt = (
-        request.path == '/beakcortex/login'
-        or request.path == '/beakcortex/health'
-        or request.path.startswith('/beakcortex/static/')
-        or request.path.startswith('/beakcortex/api/worker/')
-        or request.path.startswith('/beakcortex/gantt-mvp')
+        request.path == '/beakbroodnest/login'
+        or request.path == '/beakbroodnest/health'
+        or request.path.startswith('/beakbroodnest/static/')
+        or request.path.startswith('/beakbroodnest/api/worker/')
+        or request.path.startswith('/beakbroodnest/gantt-mvp')
     )
     if exempt:
         return
 
     if not session.get('authenticated'):
-        if request.is_json or request.path.startswith('/beakcortex/api/'):
+        if request.is_json or request.path.startswith('/beakbroodnest/api/'):
             return jsonify({'error': '未登入'}), 401
-        return redirect('/beakcortex/login')
+        return redirect('/beakbroodnest/login')
 
 
-@app.route('/beakcortex/login', methods=['GET', 'POST'])
+@app.route('/beakbroodnest/login', methods=['GET', 'POST'])
 def login_page():
     if session.get('authenticated'):
-        return redirect('/beakcortex/')
+        return redirect('/beakbroodnest/')
 
     error = None
     if request.method == 'POST':
@@ -147,23 +147,23 @@ def login_page():
             session.permanent = True
             session['authenticated'] = True
             session['username'] = username
-            return redirect('/beakcortex/')
+            return redirect('/beakbroodnest/')
         else:
             error = '帳號或密碼錯誤'
 
     return render_template('login.html', error=error)
 
 
-@app.route('/beakcortex/logout')
+@app.route('/beakbroodnest/logout')
 def logout():
     last_slug = session.get('last_canvas_slug')
     session.clear()
     if last_slug:
         session['last_canvas_slug'] = last_slug
-    return redirect('/beakcortex/login')
+    return redirect('/beakbroodnest/login')
 
 
-@app.route('/beakcortex/api/auth/change-password', methods=['PUT'])
+@app.route('/beakbroodnest/api/auth/change-password', methods=['PUT'])
 def change_password():
     """變更密碼"""
     data = request.get_json()
@@ -200,7 +200,7 @@ def change_password():
 # 健康檢查端點
 # ============================================================
 
-@app.route("/beakcortex/health")
+@app.route("/beakbroodnest/health")
 def _health_check():
     """回傳服務狀態與知識原子數量"""
     try:
@@ -210,9 +210,9 @@ def _health_check():
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": str(e)}), 503
 
-# 註冊所有 Blueprint（統一前綴 /beakcortex）
+# 註冊所有 Blueprint（統一前綴 /beakbroodnest）
 for bp in ALL_BLUEPRINTS:
-    app.register_blueprint(bp, url_prefix='/beakcortex')
+    app.register_blueprint(bp, url_prefix='/beakbroodnest')
 
 
 @app.context_processor
@@ -230,8 +230,8 @@ def inject_cache_ver():
 # 頁面路由
 # ============================================================
 
-@app.route('/beakcortex/')
-@app.route('/beakcortex')
+@app.route('/beakbroodnest/')
+@app.route('/beakbroodnest')
 def index():
     """首頁：導向最後存取的白板，若無則導向第一個"""
     last_slug = session.get('last_canvas_slug')
@@ -241,7 +241,7 @@ def index():
                 Canvas.slug == last_slug, Canvas.is_archived == False
             ).first()
             if canvas:
-                return redirect(f'/beakcortex/canvas/{last_slug}')
+                return redirect(f'/beakbroodnest/canvas/{last_slug}')
 
         canvas = s.query(Canvas).filter(Canvas.is_archived == False).order_by(Canvas.id).first()
         if not canvas:
@@ -249,10 +249,10 @@ def index():
             s.add(canvas)
             s.flush()
         slug = canvas.slug
-    return redirect(f'/beakcortex/canvas/{slug}')
+    return redirect(f'/beakbroodnest/canvas/{slug}')
 
 
-@app.route('/beakcortex/canvas/<slug>')
+@app.route('/beakbroodnest/canvas/<slug>')
 def canvas_page(slug):
     """白板頁面"""
     with session_scope() as s:
@@ -264,31 +264,31 @@ def canvas_page(slug):
     return render_template('whiteboard.html', canvas_slug=slug)
 
 
-@app.route('/beakcortex/help')
+@app.route('/beakbroodnest/help')
 def help_page():
     """線上說明"""
     return render_template('help.html')
 
 
-@app.route('/beakcortex/card-test')
+@app.route('/beakbroodnest/card-test')
 def card_test_page():
     """Card Editor 獨立測試頁"""
     return render_template('card_test.html')
 
 
-@app.route('/beakcortex/dashboard')
+@app.route('/beakbroodnest/dashboard')
 def dashboard_page():
     """Orchestrator 儀錶板"""
     return render_template('dashboard.html')
 
 
-@app.route('/beakcortex/observe')
+@app.route('/beakbroodnest/observe')
 def observe_page():
     """Pipeline 觀察儀表板"""
     return render_template('observe.html')
 
 
-@app.route('/beakcortex/project/<slug>')
+@app.route('/beakbroodnest/project/<slug>')
 def project_page(slug):
     """專案 Dashboard（唯讀進度總覽）"""
     from core.models import Canvas
@@ -306,7 +306,7 @@ def project_page(slug):
 
 def create_argument_parser():
     parser = argparse.ArgumentParser(
-        description='BeakCortex 人類介面 -- 知識白板與筆記系統',
+        description='BeakBroodNest 人類介面 -- 知識白板與筆記系統',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -614,7 +614,7 @@ def seed_test_data():
 
     with ss() as s:
         # 標籤
-        t1 = Tag(name='BeakCortex', color='#3b82f6', tag_type='domain')
+        t1 = Tag(name='BeakBroodNest', color='#3b82f6', tag_type='domain')
         t2 = Tag(name='架構設計', color='#10b981', tag_type='tag')
         t3 = Tag(name='待討論', color='#f59e0b', tag_type='tag')
         s.add_all([t1, t2, t3])
@@ -629,7 +629,7 @@ def seed_test_data():
         )
         a2 = KnowledgeAtom(
             title='因果鍊讓知識有方向性',
-            content='Obsidian 的雙向連結只知道「A 和 B 有關」，BeakCortex 的連結知道「A 導致了 B」。',
+            content='Obsidian 的雙向連結只知道「A 和 B 有關」，BeakBroodNest 的連結知道「A 導致了 B」。',
             atom_type='D',
             source='human',
         )
@@ -662,7 +662,7 @@ def seed_test_data():
         rel_service.create_relation(s, a3.id, a4.id, 'blocks', label='資料層是 UI 的前置條件')
 
         # 白板
-        canvas = Canvas(name='BeakCortex 規劃', description='Phase 0~1 規劃白板')
+        canvas = Canvas(name='BeakBroodNest 規劃', description='Phase 0~1 規劃白板')
         s.add(canvas)
         s.flush()
 
@@ -679,7 +679,7 @@ def main():
     parser = create_argument_parser()
 
     if len(sys.argv) == 1:
-        print('BeakCortex -- 知識白板與 AI 共用知識庫')
+        print('BeakBroodNest -- 知識白板與 AI 共用知識庫')
         print()
         print('必要動作（擇一）:')
         print('  --serve        啟動 Web 伺服器')
@@ -728,7 +728,7 @@ def main():
         if reset_auth_credentials():
             print()
             print('請重啟服務使變更生效:')
-            print('  sudo systemctl restart beakcortex')
+            print('  sudo systemctl restart beakbroodnest')
         sys.exit(0)
 
     if args.init_db:
@@ -783,7 +783,7 @@ def main():
         app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
         app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=365)
 
-        logger.info(f'BeakCortex 啟動於 http://{host}:{port}')
+        logger.info(f'BeakBroodNest 啟動於 http://{host}:{port}')
         app.run(host=host, port=port, debug=debug)
 
 

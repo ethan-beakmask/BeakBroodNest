@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# BeakCortex 安裝與升級腳本
+# BeakBroodNest 安裝與升級腳本
 # 適用於 Ubuntu 22.04/24.04 LTS
 # =============================================================================
 # 用法:
@@ -11,24 +11,24 @@
 #   sudo bash install.sh --stop                  停止服務
 #
 # 環境變數 (可選):
-#   INSTALL_DIR            安裝目錄 (預設: /opt/BeakCortex)
-#   DB_NAME                資料庫名稱 (預設: beak_cortex)
-#   DB_USER                資料庫使用者 (預設: beak_cortex)
+#   INSTALL_DIR            安裝目錄 (預設: /opt/BeakBroodNest)
+#   DB_NAME                資料庫名稱 (預設: beak_broodnest)
+#   DB_USER                資料庫使用者 (預設: beak_broodnest)
 #   DB_PASS                資料庫密碼 (預設: postgres123)
 #   CORTEX_PORT            外部存取 port (預設: 5170)
 #   GITHUB_TOKEN           GitHub Personal Access Token (私有 repo 時需要)
-#   GITHUB_REPO            GitHub clone URL (預設: ethan-beakmask/BeakCortex)
+#   GITHUB_REPO            GitHub clone URL (預設: ethan-beakmask/BeakBroodNest)
 # =============================================================================
 set -e
 
 # === 設定 ===
-INSTALL_DIR="${INSTALL_DIR:-/opt/BeakCortex}"
-DB_NAME="${DB_NAME:-beak_cortex}"
-DB_USER="${DB_USER:-beak_cortex}"
+INSTALL_DIR="${INSTALL_DIR:-/opt/BeakBroodNest}"
+DB_NAME="${DB_NAME:-beak_broodnest}"
+DB_USER="${DB_USER:-beak_broodnest}"
 DB_PASS="${DB_PASS:-postgres123}"
 CORTEX_PORT="${CORTEX_PORT:-5170}"
-GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethan-beakmask/BeakCortex.git}"
-SERVICE_NAME="beakcortex"
+GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethan-beakmask/BeakBroodNest.git}"
+SERVICE_NAME="beakbroodnest"
 HEALTH_TIMEOUT=30
 
 # === 顏色 ===
@@ -63,7 +63,7 @@ check_ubuntu() {
 resolve_ports() {
     NGINX_PORT="$CORTEX_PORT"
     APP_PORT=$((CORTEX_PORT + 1))
-    HEALTH_URL="http://127.0.0.1:${APP_PORT}/beakcortex/health"
+    HEALTH_URL="http://127.0.0.1:${APP_PORT}/beakbroodnest/health"
 }
 
 health_check() {
@@ -100,7 +100,7 @@ case "${1:-}" in
     --stop)      ACTION="stop" ;;
     "")          ACTION="fresh" ;;
     *)
-        echo "BeakCortex 安裝與升級腳本"
+        echo "BeakBroodNest 安裝與升級腳本"
         echo ""
         echo "用法:"
         echo "  sudo bash install.sh                  全新安裝"
@@ -122,7 +122,7 @@ esac
 #  --status
 # =========================================================================
 if [ "$ACTION" = "status" ]; then
-    echo "=== BeakCortex 服務狀態 ==="
+    echo "=== BeakBroodNest 服務狀態 ==="
     echo ""
 
     # systemd service
@@ -168,7 +168,7 @@ fi
 if [ "$ACTION" = "start" ]; then
     check_root
     resolve_ports
-    log_info "啟動 BeakCortex..."
+    log_info "啟動 BeakBroodNest..."
     systemctl start "$SERVICE_NAME"
     health_check
     exit 0
@@ -180,7 +180,7 @@ fi
 # =========================================================================
 if [ "$ACTION" = "stop" ]; then
     check_root
-    log_info "停止 BeakCortex..."
+    log_info "停止 BeakBroodNest..."
     systemctl stop "$SERVICE_NAME"
     log_info "服務已停止"
     exit 0
@@ -195,7 +195,7 @@ if [ "$ACTION" = "update" ]; then
     resolve_ports
 
     echo "============================================"
-    echo "  BeakCortex 升級更新"
+    echo "  BeakBroodNest 升級更新"
     echo "============================================"
 
     if [ ! -d "$INSTALL_DIR/.git" ]; then
@@ -280,7 +280,7 @@ check_ubuntu
 resolve_ports
 
 echo "============================================"
-echo "  BeakCortex 全新安裝"
+echo "  BeakBroodNest 全新安裝"
 echo "============================================"
 echo ""
 echo "  安裝目錄: $INSTALL_DIR"
@@ -462,7 +462,7 @@ log_info "資料庫就緒 (知識原子: $atom_count)"
 # 建立 Standalone 登入帳密
 log_info "設定 Web UI 登入帳號..."
 echo ""
-echo "  請設定 BeakCortex Web UI 的登入帳號與密碼"
+echo "  請設定 BeakBroodNest Web UI 的登入帳號與密碼"
 echo "  （整合 BeakPlatform 後此帳號將停用）"
 echo ""
 
@@ -508,7 +508,7 @@ log_step "7/7" "設定服務..."
 # systemd service
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SVCEOF
 [Unit]
-Description=BeakCortex Gunicorn Service
+Description=BeakBroodNest Gunicorn Service
 After=network.target postgresql.service
 Requires=postgresql.service
 
@@ -520,8 +520,8 @@ ExecStart=$INSTALL_DIR/venv/bin/gunicorn \
     --workers 2 \
     --threads 2 \
     --timeout 120 \
-    --access-logfile /opt/tmp/beakcortex-gunicorn-access.log \
-    --error-logfile /opt/tmp/beakcortex-gunicorn-error.log \
+    --access-logfile /opt/tmp/beakbroodnest-gunicorn-access.log \
+    --error-logfile /opt/tmp/beakbroodnest-gunicorn-error.log \
     "human_ui.app:app"
 Restart=on-failure
 RestartSec=5
@@ -542,9 +542,9 @@ SERVER_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '/src/ {print $7; exit}')
 SERVER_IP="${SERVER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 
 cat > "/etc/nginx/sites-available/$SERVICE_NAME" << NGXEOF
-# === BeakCortex 知識庫 ===
+# === BeakBroodNest 知識庫 ===
 
-upstream beakcortex {
+upstream beakbroodnest {
     server 127.0.0.1:${APP_PORT};
 }
 
@@ -552,7 +552,7 @@ server {
     listen ${SERVER_IP}:${NGINX_PORT};
 
     location / {
-        proxy_pass http://beakcortex;
+        proxy_pass http://beakbroodnest;
         proxy_http_version 1.1;
         proxy_set_header Host \$http_host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -563,8 +563,8 @@ server {
         proxy_send_timeout 60s;
     }
 
-    location /beakcortex/health {
-        proxy_pass http://beakcortex;
+    location /beakbroodnest/health {
+        proxy_pass http://beakbroodnest;
         access_log off;
     }
 }
@@ -578,7 +578,7 @@ log_info "Nginx 設定完成 (${SERVER_IP}:${NGINX_PORT} -> 127.0.0.1:${APP_PORT
 mkdir -p /opt/tmp
 
 # === 啟動服務 ===
-log_info "啟動 BeakCortex..."
+log_info "啟動 BeakBroodNest..."
 systemctl restart "$SERVICE_NAME"
 health_check || true
 
@@ -586,7 +586,7 @@ echo ""
 echo "============================================"
 log_info "全新安裝完成"
 echo ""
-echo "  URL:     http://${SERVER_IP}:${NGINX_PORT}/beakcortex/login"
+echo "  URL:     http://${SERVER_IP}:${NGINX_PORT}/beakbroodnest/login"
 echo "  帳號:    ${AUTH_USER}"
 echo "  原子數:  $(get_atom_count)"
 echo ""

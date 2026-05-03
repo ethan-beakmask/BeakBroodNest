@@ -1,4 +1,4 @@
-# BeakCortex 文件編輯鍵盤規格
+# BeakBroodNest 文件編輯鍵盤規格
 
 > 適用範圍：卡片編輯器 (Tiptap WYSIWYG MD)、白板上的卡片編輯、心智圖右鍵編輯卡片。
 > 白板的滑鼠操作不在此規格內。
@@ -102,7 +102,7 @@
 新增或修改鍵盤行為時:
 1. **先更新本文件** (KEYBOARD_SPEC.md),確認與既有規則不衝突
 2. 改動實作 (對應檔案)
-3. 知識庫補方法論原子 (BeakCortex MCP `note_store`,schema_id=2)
+3. 知識庫補方法論原子 (BeakBroodNest MCP `note_store`,schema_id=2)
 4. commit 訊息要明確指出鍵盤規格變更
 
 衝突檢查重點:

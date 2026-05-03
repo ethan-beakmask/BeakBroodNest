@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 復盤系統 - P2 語意摘要器
+BeakBroodNest 復盤系統 - P2 語意摘要器
 
 從 PostgreSQL conversation_turns 表讀取 P1 訊號，
 將鄰近訊號合併為主題 (topic)，擷取上下文後呼叫 claude -p 產生結構化摘要。
@@ -66,7 +66,7 @@ DEFAULT_SINCE_DAYS = 0
 # ============================================================
 
 SYSTEM_PROMPT_TEMPLATE = """\
-你是 BeakCortex 復盤系統的語意摘要器。你的任務是對一段 Claude Code 對話中的「高訊號片段」產出結構化摘要。
+你是 BeakBroodNest 復盤系統的語意摘要器。你的任務是對一段 Claude Code 對話中的「高訊號片段」產出結構化摘要。
 
 ## 嚴格規則
 
@@ -961,7 +961,7 @@ def print_results_summary(results: List[Dict[str, Any]]) -> None:
 
 def create_argument_parser():
     parser = argparse.ArgumentParser(
-        description='BeakCortex P2 語意摘要器',
+        description='BeakBroodNest P2 語意摘要器',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:

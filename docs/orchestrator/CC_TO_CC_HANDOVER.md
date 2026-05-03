@@ -1,19 +1,19 @@
 # CC-to-CC 雙向互動 MVP 移交說明（存檔）
 
 > **本檔為歷史 reference。**
-> 來源：`/opt/backup/mvp/HANDOVER.md`，由 `project:backup` 在 2026-05-02 移交給 BeakCortex orchestrator。
+> 來源：`/opt/backup/mvp/HANDOVER.md`，由 `project:backup` 在 2026-05-02 移交給 BeakBroodNest orchestrator。
 > 整合工作於同日完成（首段 commit 為 `feat(orchestrator): integrate MVP cc-to-cc bidirectional bridge`），MVP 目錄已退場。
 > 保留原因：第六段（踩雷紀錄）、第二段（兩個情境是舉例不是寫死類型）對未來新增 hook（summary: / translate: / lookup: 等前綴）或除錯 cc-to-cc 通訊仍有參考價值。
-> 文中提到 `/opt/backup/mvp/...` 的檔案皆已不存在；對映到 BeakCortex 後的位置請見 `CLAUDE.md` orchestrator 章節。
+> 文中提到 `/opt/backup/mvp/...` 的檔案皆已不存在；對映到 BeakBroodNest 後的位置請見 `CLAUDE.md` orchestrator 章節。
 
 ---
 
 # 原文
 
-**收件人**：在 `/opt/BeakCortex/` 工作的 Claude Code
+**收件人**：在 `/opt/BeakBroodNest/` 工作的 Claude Code
 **交付日期**：2026-05-02
 **MVP 路徑**：`/opt/backup/mvp/`（已退場）
-**目標路徑**：`/opt/BeakCortex/orchestrator/`（已合併）
+**目標路徑**：`/opt/BeakBroodNest/orchestrator/`（已合併）
 
 ---
 
@@ -112,7 +112,7 @@ CREATE TABLE inbox (
 
 ### Schema 遷移時的必要修正：加 `purpose` 欄位
 
-MVP 把 aside hook 的長期支線寫死叫 `aside1`，這在實務上會撞名（用戶可能也想用 aside1 當工人支線名）。整合到 BeakCortex 時**務必**加 `purpose` 欄位區隔用途：
+MVP 把 aside hook 的長期支線寫死叫 `aside1`，這在實務上會撞名（用戶可能也想用 aside1 當工人支線名）。整合到 BeakBroodNest 時**務必**加 `purpose` 欄位區隔用途：
 
 ```sql
 ALTER TABLE sessions ADD COLUMN purpose TEXT NOT NULL DEFAULT 'worker';
@@ -179,7 +179,7 @@ cd /opt/backup/mvp
 sqlite3 state/cc_mvp.db ".schema"                # 確認 schema
 ```
 
-### 階段 B：把概念對映到 BeakCortex schema
+### 階段 B：把概念對映到 BeakBroodNest schema
 1. 在 `orchestrator/models.py` 加 `WorkerSession`（對應 MVP 的 sessions 表）
    - **必含 `purpose` 欄位**（見第三段「Schema 遷移時的必要修正」）
    - 預設 `worker`，hook 用 `hook_aside` / `hook_summary` / ...
@@ -200,7 +200,7 @@ sqlite3 state/cc_mvp.db ".schema"                # 確認 schema
 - KB preamble 多注入一段「你可以呼叫 cc-inbox-put 提問題」
 
 ### 階段 E：實作場景 2 的 hook
-1. 把 `/opt/backup/mvp/hooks/aside_router.py` 複製到 `/opt/BeakCortex/orchestrator/hooks/`
+1. 把 `/opt/backup/mvp/hooks/aside_router.py` 複製到 `/opt/BeakBroodNest/orchestrator/hooks/`
 2. 改裡面的 ROOT 路徑 + DB 連線（從 SQLite 改 PostgreSQL）
 3. **重要**：MVP 寫死 `ASIDE_NAME='aside1'`，整合時改成查 purpose：
    ```python
@@ -209,13 +209,13 @@ sqlite3 state/cc_mvp.db ".schema"                # 確認 schema
    ASIDE_NAME = '__aside_default__'  # 雙底線保留字，第一次建立用
    # 找 session: WHERE purpose='hook_aside' AND status='active' LIMIT 1
    ```
-4. 在 `/opt/BeakCortex/.claude/settings.json` 加 UserPromptSubmit hook 設定
-5. **重要**：BeakCortex 既有 `.claude/settings.json` 可能有其他 hooks，要 merge 不要覆蓋
+4. 在 `/opt/BeakBroodNest/.claude/settings.json` 加 UserPromptSubmit hook 設定
+5. **重要**：BeakBroodNest 既有 `.claude/settings.json` 可能有其他 hooks，要 merge 不要覆蓋
 6. 設計上保留擴展空間：未來可能加 `summary:`、`translate:`、`lookup:` 等其他前綴 hook，每個各自一條 hook session（purpose 不同）
 
 ### 階段 F：驗收測試（強制）
 1. 場景 1：`spawn_session('dev1', '後端', 'sonnet', '寫個 fizzbuzz.py')` → dev1 提異議 → 主回 → dev1 完成
-2. 場景 2：在 `/opt/BeakCortex/` 開新 cc，輸入 `aside: 列出檔案` → hook 攔截 → 確認主 cc 不知道
+2. 場景 2：在 `/opt/BeakBroodNest/` 開新 cc，輸入 `aside: 列出檔案` → hook 攔截 → 確認主 cc 不知道
 3. 主線純淨度：問主 cc「你被問過什麼 aside？」應答「沒被問過」
 
 ---
@@ -266,7 +266,7 @@ sqlite3 state/cc_mvp.db ".schema"                # 確認 schema
 | 項目 | 為何重要 | 預估工作量 |
 |---|---|---|
 | **Stop hook 自動注入未讀 inbox** | 主 cc 不必手動 cc-inbox-get；turn 結束自動帶上待處理異議 | 0.5 天 |
-| **Inbox 整合進 BeakCortex `note_inbox`** | 既有跨專案訊息基建已存在，schema 對齊即可 | 0.5 天 |
+| **Inbox 整合進 BeakBroodNest `note_inbox`** | 既有跨專案訊息基建已存在，schema 對齊即可 | 0.5 天 |
 | **支線並發測試 + 衝突仲裁** | 場景 1 真實情境（多支線開發同一系統） | 1 天 |
 | **Status line 顯示未讀數** | 不必抓 tmux display-message 的 0.75 秒閃光 | 0.5 天 |
 | **支線心跳監控** | 配合你既有的 `/opt/tmp/heartbeat/` | 0.5 天 |
@@ -277,10 +277,10 @@ sqlite3 state/cc_mvp.db ".schema"                # 確認 schema
 ## 八、驗收標準（給用戶 Ethan 看的）
 
 整合完成的判斷依據：
-- [ ] BeakCortex orchestrator 的 dispatcher 能 spawn 多輪會話
+- [ ] BeakBroodNest orchestrator 的 dispatcher 能 spawn 多輪會話
 - [ ] WorkerInbox 表存在，支線可寫、主可讀
 - [ ] tmux 通知正常閃出
-- [ ] aside hook 在 `/opt/BeakCortex/` 內生效，`aside: ...` 被攔截
+- [ ] aside hook 在 `/opt/BeakBroodNest/` 內生效，`aside: ...` 被攔截
 - [ ] 主線純淨度測試通過（aside 內容不進主 cc context）
 - [ ] 既有的一次性任務派遣（`dispatch_task`）功能未壞
 - [ ] heartbeat 寫入
@@ -289,23 +289,23 @@ sqlite3 state/cc_mvp.db ".schema"                # 確認 schema
 
 ## 九、可直接複製的源檔
 
-以下檔案的內容可直接抄進去（路徑改成 BeakCortex 對應位置）：
+以下檔案的內容可直接抄進去（路徑改成 BeakBroodNest 對應位置）：
 
-| MVP 來源 | BeakCortex 目標 | 是否需修改 |
+| MVP 來源 | BeakBroodNest 目標 | 是否需修改 |
 |---|---|---|
-| `/opt/backup/mvp/bin/cc-spawn` | `/opt/BeakCortex/orchestrator/cli/cc-spawn` | 改 ROOT 路徑、改 DB（PG）|
-| `/opt/backup/mvp/bin/cc-talk` | `/opt/BeakCortex/orchestrator/cli/cc-talk` | 改 ROOT、改 DB |
-| `/opt/backup/mvp/bin/cc-inbox-put` | `/opt/BeakCortex/orchestrator/cli/cc-inbox-put` | 改 ROOT、改 DB |
-| `/opt/backup/mvp/bin/cc-inbox-get` | `/opt/BeakCortex/orchestrator/cli/cc-inbox-get` | 改 ROOT、改 DB |
-| `/opt/backup/mvp/lib/notify.py` | `/opt/BeakCortex/orchestrator/notify.py` | 直接抄 |
-| `/opt/backup/mvp/hooks/aside_router.py` | `/opt/BeakCortex/orchestrator/hooks/aside_router.py` | 改 ROOT、改 DB、改 ASIDE_NAME（避免和場景 1 撞） |
-| `/opt/backup/mvp/lib/cc.py` | `/opt/BeakCortex/orchestrator/cc_runner.py` | 直接抄 |
+| `/opt/backup/mvp/bin/cc-spawn` | `/opt/BeakBroodNest/orchestrator/cli/cc-spawn` | 改 ROOT 路徑、改 DB（PG）|
+| `/opt/backup/mvp/bin/cc-talk` | `/opt/BeakBroodNest/orchestrator/cli/cc-talk` | 改 ROOT、改 DB |
+| `/opt/backup/mvp/bin/cc-inbox-put` | `/opt/BeakBroodNest/orchestrator/cli/cc-inbox-put` | 改 ROOT、改 DB |
+| `/opt/backup/mvp/bin/cc-inbox-get` | `/opt/BeakBroodNest/orchestrator/cli/cc-inbox-get` | 改 ROOT、改 DB |
+| `/opt/backup/mvp/lib/notify.py` | `/opt/BeakBroodNest/orchestrator/notify.py` | 直接抄 |
+| `/opt/backup/mvp/hooks/aside_router.py` | `/opt/BeakBroodNest/orchestrator/hooks/aside_router.py` | 改 ROOT、改 DB、改 ASIDE_NAME（避免和場景 1 撞） |
+| `/opt/backup/mvp/lib/cc.py` | `/opt/BeakBroodNest/orchestrator/cc_runner.py` | 直接抄 |
 
 ---
 
 ## 十、整合完成後
 
-請更新 `/opt/BeakCortex/CLAUDE.md` 的 orchestrator 章節，加上：
+請更新 `/opt/BeakBroodNest/CLAUDE.md` 的 orchestrator 章節，加上：
 - 場景 1 的多輪互動使用方式
 - 場景 2 的 aside hook 使用方式
 - 如何驗收（測試指令）

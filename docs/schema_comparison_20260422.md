@@ -1,4 +1,4 @@
-# BeakCortex Schema 三方比較報告
+# BeakBroodNest Schema 三方比較報告
 
 產出時間: 2026-04-22 03:15
 目的: 為 DB 合併提供決策依據，先不執行合併
@@ -10,8 +10,8 @@
 | # | 來源 | 說明 |
 |---|------|------|
 | CODE | 程式碼 | models.py + lifecycle.py + orchestrator/models.py + init_pipeline_tables.sql + migration 001 |
-| PROD | beak_cortex | 正式 DB，MCP server 使用中，Gunicorn port 5171 |
-| DEV | beak_cortex_dev | 開發 DB，port 5175（目前未啟動） |
+| PROD | beak_broodnest | 正式 DB，MCP server 使用中，Gunicorn port 5171 |
+| DEV | beak_broodnest_dev | 開發 DB，port 5175（目前未啟動） |
 
 ---
 

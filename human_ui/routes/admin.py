@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Admin: 系統管理頁面（資料表總覽等）。
 
-/beakcortex/admin/tables           頁面
-/beakcortex/api/admin/tables       JSON: 所有 public schema 的資料表清單，
+/beakbroodnest/admin/tables           頁面
+/beakbroodnest/api/admin/tables       JSON: 所有 public schema 的資料表清單，
                                    含 PG comment、筆數、最後寫入時間。
 """
 import logging
@@ -18,7 +18,7 @@ from core.db import get_engine
 from sqlalchemy import text
 
 bp = Blueprint('admin', __name__)
-logger = logging.getLogger('beak_cortex')
+logger = logging.getLogger('beak_broodnest')
 
 
 _IDENT_RE = re.compile(r'^[a-z_][a-z0-9_]*$')

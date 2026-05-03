@@ -1,4 +1,4 @@
-#!/opt/BeakCortex/venv/bin/python
+#!/opt/BeakBroodNest/venv/bin/python
 """
 cc-inbox-put -- 支線寫入訊息給主 cc（並觸發通知）
 
@@ -18,7 +18,7 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path('/opt/BeakCortex')
+ROOT = Path('/opt/BeakBroodNest')
 sys.path.insert(0, str(ROOT))
 
 from core.db import session_scope  # noqa: E402

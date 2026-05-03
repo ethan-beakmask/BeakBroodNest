@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 集中式排程器
+BeakBroodNest 集中式排程器
 
 單一 crontab 入口，取代多行個別排程。
 每 5 分鐘由 crontab 呼叫 --tick，檢查 schedule.json 中哪些任務到期並執行。
 
 設計原則：
-- 所有 BeakCortex 排程任務集中在 schedule.json
+- 所有 BeakBroodNest 排程任務集中在 schedule.json
 - crontab 只保留這一行 scheduler 入口
 - 各任務仍為獨立 script，scheduler 負責觸發時機
 - 任務自行管理 heartbeat、log
@@ -298,7 +298,7 @@ def show_status():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakCortex 集中式排程器',
+        description='BeakBroodNest 集中式排程器',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:

@@ -1,12 +1,12 @@
-# BeakCortex 組態檔範本
+# BeakBroodNest 組態檔範本
 # 複製為 config.ini 後修改為實際值
 # config.ini 已在 .gitignore 中排除
 
 [postgresql]
 host = localhost
 port = 5432
-database = beak_cortex
-username = beak_cortex
+database = beak_broodnest
+username = beak_broodnest
 password = postgres123
 
 [flask]

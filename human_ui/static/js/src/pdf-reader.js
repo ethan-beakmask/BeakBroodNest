@@ -1,5 +1,5 @@
 /**
- * BeakCortex PdfReader -- Tiptap node
+ * BeakBroodNest PdfReader -- Tiptap node
  *
  * 兩種 viewMode：
  *   reader    -- 完整 PDF.js 多頁 viewer，支援文字選取與矩形截圖
@@ -13,7 +13,7 @@
  */
 import { Node, mergeAttributes } from '@tiptap/core'
 
-const PDFJS_BASE = '/beakcortex/static/vendor/pdfjs/'
+const PDFJS_BASE = '/beakbroodnest/static/vendor/pdfjs/'
 let _pdfjsPromise = null
 async function _loadPdfjs() {
     if (_pdfjsPromise) return _pdfjsPromise
@@ -202,7 +202,7 @@ class PdfReaderView {
         if (this.node.attrs.token) {
             const link = document.createElement('a')
             link.className = 'pdf-thumb-link'
-            link.href = '/beakcortex/files/' + encodeURIComponent(this.node.attrs.token)
+            link.href = '/beakbroodnest/files/' + encodeURIComponent(this.node.attrs.token)
             link.target = '_blank'
             link.rel = 'noopener'
             link.textContent = '開啟'
@@ -218,7 +218,7 @@ class PdfReaderView {
         if (this.node.attrs.thumbnailToken) {
             imgWrap.innerHTML = ''
             const img = document.createElement('img')
-            img.src = '/beakcortex/files/' + encodeURIComponent(this.node.attrs.thumbnailToken)
+            img.src = '/beakbroodnest/files/' + encodeURIComponent(this.node.attrs.thumbnailToken)
             img.alt = this.node.attrs.filename || ''
             img.draggable = false
             imgWrap.appendChild(img)
@@ -226,7 +226,7 @@ class PdfReaderView {
         }
         if (!this.node.attrs.token || !window.PdfUtils) return
         try {
-            const url = '/beakcortex/files/' + encodeURIComponent(this.node.attrs.token)
+            const url = '/beakbroodnest/files/' + encodeURIComponent(this.node.attrs.token)
             const dataUrl = await window.PdfUtils.renderFirstPageThumbnail(url, 360)
             imgWrap.innerHTML = ''
             const img = document.createElement('img')
@@ -268,7 +268,7 @@ class PdfReaderView {
         if (this.node.attrs.token) {
             const link = document.createElement('a')
             link.className = 'pdf-thumb-link'
-            link.href = '/beakcortex/files/' + encodeURIComponent(this.node.attrs.token)
+            link.href = '/beakbroodnest/files/' + encodeURIComponent(this.node.attrs.token)
             link.target = '_blank'
             link.rel = 'noopener'
             link.textContent = '開啟'
@@ -301,7 +301,7 @@ class PdfReaderView {
     async _loadDocument(pagesContainer) {
         try {
             const pdfjs = await _loadPdfjs()
-            const url = '/beakcortex/files/' + encodeURIComponent(this.node.attrs.token)
+            const url = '/beakbroodnest/files/' + encodeURIComponent(this.node.attrs.token)
             const task = pdfjs.getDocument({ url })
             this._doc = await task.promise
             const pageCount = Math.min(this._doc.numPages, 500)

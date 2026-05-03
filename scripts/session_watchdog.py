@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex Session Watchdog -- 對話監控器
+BeakBroodNest Session Watchdog -- 對話監控器
 
 監控正在進行的 Claude Code 對話，偵測異常狀態並記錄到 session_logs 表。
 可配合 crontab 每分鐘執行一次。
@@ -45,7 +45,7 @@ from typing import Dict, List, Optional, Tuple
 CLAUDE_PROJECTS_DIR = os.path.expanduser('~/.claude/projects')
 
 # 狀態檔（記錄上次檢查時的 JSONL 狀態）
-STATE_FILE = '/opt/BeakCortex/data/watchdog_state.json'
+STATE_FILE = '/opt/BeakBroodNest/data/watchdog_state.json'
 
 # 閾值
 THRESHOLDS = {
@@ -57,7 +57,7 @@ THRESHOLDS = {
 
 # DB 連線
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakCortex/config.ini',
+    '/opt/BeakBroodNest/config.ini',
 ]
 
 
@@ -70,12 +70,12 @@ def _load_db_params() -> dict:
                 return {
                     'host': cfg.get('postgresql', 'host', fallback='localhost'),
                     'port': cfg.getint('postgresql', 'port', fallback=5432),
-                    'database': cfg.get('postgresql', 'database', fallback='beak_cortex'),
-                    'user': cfg.get('postgresql', 'username', fallback='beak_cortex'),
+                    'database': cfg.get('postgresql', 'database', fallback='beak_broodnest'),
+                    'user': cfg.get('postgresql', 'username', fallback='beak_broodnest'),
                     'password': cfg.get('postgresql', 'password', fallback='postgres123'),
                 }
-    return {'host': 'localhost', 'port': 5432, 'database': 'beak_cortex',
-            'user': 'beak_cortex', 'password': 'postgres123'}
+    return {'host': 'localhost', 'port': 5432, 'database': 'beak_broodnest',
+            'user': 'beak_broodnest', 'password': 'postgres123'}
 
 
 def _get_db_connection():
@@ -565,7 +565,7 @@ def import_current():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakCortex Session Watchdog -- 對話監控器',
+        description='BeakBroodNest Session Watchdog -- 對話監控器',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -576,7 +576,7 @@ def main():
   python session_watchdog.py --import-current      寫入 session_logs
 
 搭配 crontab:
-  * * * * * ethan /opt/BeakCortex/venv/bin/python3 /opt/BeakCortex/scripts/session_watchdog.py --check --alert >> /opt/tmp/BeakCortex-session_watchdog.log 2>&1
+  * * * * * ethan /opt/BeakBroodNest/venv/bin/python3 /opt/BeakBroodNest/scripts/session_watchdog.py --check --alert >> /opt/tmp/BeakBroodNest-session_watchdog.log 2>&1
         """
     )
     group = parser.add_mutually_exclusive_group(required=True)

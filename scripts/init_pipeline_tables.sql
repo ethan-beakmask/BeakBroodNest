@@ -1,4 +1,4 @@
--- BeakCortex Pipeline 表結構
+-- BeakBroodNest Pipeline 表結構
 -- conversations + conversation_turns (P0~P2 pipeline 用)
 -- pipeline_runs + session_logs (執行追蹤與觀察用)
 

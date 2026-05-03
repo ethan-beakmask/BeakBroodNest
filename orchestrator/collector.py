@@ -80,7 +80,7 @@ def collect(task_id: int, exit_code: int, output_file: str, main_pane: str = '',
 
 
 def main():
-    parser = argparse.ArgumentParser(description='BeakCortex Worker 結果收集器')
+    parser = argparse.ArgumentParser(description='BeakBroodNest Worker 結果收集器')
     parser.add_argument('--task-id', type=int, required=True, help='任務 ID')
     parser.add_argument('--exit-code', type=int, required=True, help='claude process exit code')
     parser.add_argument('--output-file', type=str, default='', help='輸出檔路徑')
@@ -88,7 +88,7 @@ def main():
     parser.add_argument('--session-id', type=str, default='', help='對話級別識別碼')
 
     if len(sys.argv) == 1:
-        print('BeakCortex Worker 結果收集器')
+        print('BeakBroodNest Worker 結果收集器')
         print()
         print('此程式由 wrapper.sh 自動呼叫，不需手動執行。')
         print()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 復盤系統 - 對話轉換器 (P0 階段)
+BeakBroodNest 復盤系統 - 對話轉換器 (P0 階段)
 
 將 Claude Code JSONL 對話記錄轉為結構化 Markdown，
 供後續訊號掃描及語意摘要處理。
@@ -665,7 +665,7 @@ def process_convertall(output_dir: Optional[str],
 # 使用說明
 # ============================================================
 
-USAGE_TEXT = """BeakCortex 復盤系統 - 對話轉換器
+USAGE_TEXT = """BeakBroodNest 復盤系統 - 對話轉換器
 
 將 Claude Code JSONL 對話記錄轉為結構化 Markdown 或匯入 PostgreSQL。
 
@@ -707,7 +707,7 @@ DB 匯入說明:
   {prog} -i 1
   {prog} -i 1 -o review_session.md --thinking summary
   {prog} -i /path/to/file.jsonl --sidechain exclude --tool-limit 5000
-  {prog} -convertall --output-dir /opt/BeakCortex/temp/reviews
+  {prog} -convertall --output-dir /opt/BeakBroodNest/temp/reviews
   {prog} -i 1 --import-db
   {prog} -convertall --import-db
 """
@@ -729,7 +729,7 @@ def main():
         sys.exit(0)
 
     parser = argparse.ArgumentParser(
-        description='BeakCortex 復盤系統 - JSONL 對話轉 Markdown / 匯入 DB',
+        description='BeakBroodNest 復盤系統 - JSONL 對話轉 Markdown / 匯入 DB',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 

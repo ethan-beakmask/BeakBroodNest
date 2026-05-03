@@ -41,8 +41,8 @@ TERMINAL_STATUSES = ('completed', 'failed', 'timeout', 'cancelled')
 ACTIVE_STATUSES = ('pending', 'dispatched', 'running')
 OUTPUT_SIZE_LIMIT = 10 * 1024 * 1024  # 10 MB
 DEFAULT_POLL_INTERVAL = 10
-LOG_FILE = '/opt/tmp/BeakCortex-orchestrator-monitor.log'
-RUNTIME_CONFIG = '/opt/BeakCortex/config.ini'
+LOG_FILE = '/opt/tmp/BeakBroodNest-orchestrator-monitor.log'
+RUNTIME_CONFIG = '/opt/BeakBroodNest/config.ini'
 PANE_GRACE_SECONDS = 30  # pane 消失後的寬限期
 NOTIFY_COOLDOWN = 3600   # 同群組通知��卻 (秒)
 GROUP_WINDOW_HOURS = 24  # ��組判定時間窗口
@@ -123,7 +123,7 @@ def load_relay_config(config_path: str = RUNTIME_CONFIG) -> dict:
 
 
 def send_notification(message: str, target: str, host: str, port: int, token: str = '') -> bool:
-    """透過 notify_windows.py 向 Windows beakcortex.exe 發送通知"""
+    """透過 notify_windows.py 向 Windows beakbroodnest.exe 發送通知"""
     from orchestrator.notify_windows import send_message
     rc = send_message(
         message=message,
@@ -166,7 +166,7 @@ class TaskMonitor:
         self.notify_host = notify_host or relay_cfg['host']
         self.notify_port = notify_port or relay_cfg['port']
         self.notify_token = notify_token or relay_cfg['token']
-        self.notify_target = notify_target or '([BeakCortex])'
+        self.notify_target = notify_target or '([BeakBroodNest])'
 
         # 已通知群組: {frozenset(task_ids): unix_timestamp}
         self._notified: dict[frozenset, float] = {}
@@ -446,7 +446,7 @@ def show_status():
 def main():
     parser = argparse.ArgumentParser(
         prog='monitor.py',
-        description='BeakCortex Orchestrator 支線監控 daemon',
+        description='BeakBroodNest Orchestrator 支線監控 daemon',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -476,7 +476,7 @@ Log: {LOG_FILE}
     parser.add_argument('-i', '--interval', type=int, default=DEFAULT_POLL_INTERVAL,
                         metavar='SEC', help=f'輪詢間隔秒數 (預設 {DEFAULT_POLL_INTERVAL})')
     parser.add_argument('--target', default='', metavar='TGT',
-                        help='Windows relay 目標分頁 (預設 ([BeakCortex]))')
+                        help='Windows relay 目標分頁 (預設 ([BeakBroodNest]))')
     parser.add_argument('--host', default='', metavar='IP',
                         help='Windows relay IP (預設從 config.ini 讀取)')
     parser.add_argument('--port', type=int, default=0, metavar='PORT',
@@ -489,7 +489,7 @@ Log: {LOG_FILE}
                         help='顯示 debug 層級 log')
 
     if len(sys.argv) == 1:
-        print('BeakCortex Orchestrator 支線監控 daemon')
+        print('BeakBroodNest Orchestrator 支線監控 daemon')
         print()
         print('獨立非 AI 程式，自動偵測支線任務逾時/異常/完成，')
         print('並透過 Windows relay 通知主線驗收。')

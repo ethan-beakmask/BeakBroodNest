@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/opt/BeakCortex/orchestrator/hooks/aside_router.py"
+            "command": "/opt/BeakBroodNest/orchestrator/hooks/aside_router.py"
           }
         ]
       }

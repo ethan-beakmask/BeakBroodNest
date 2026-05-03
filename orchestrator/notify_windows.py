@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-notify_windows.py - 向 Windows 端 beakcortex.exe 發送通知訊息
+notify_windows.py - 向 Windows 端 beakbroodnest.exe 發送通知訊息
 用途：orchestrator 支線完成時通知主線（或其他用途）
 
 通訊安全：透過 config.ini [relay] 區段的 token 進行 Bearer 認證
@@ -136,7 +136,7 @@ def launch_mobaxterm(host, port, bookmark, token=''):
 def main():
     parser = argparse.ArgumentParser(
         prog="notify_windows.py",
-        description="向 Windows 端 beakcortex.exe 發送文字訊息",
+        description="向 Windows 端 beakbroodnest.exe 發送文字訊息",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例：

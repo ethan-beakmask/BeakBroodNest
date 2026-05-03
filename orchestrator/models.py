@@ -30,7 +30,7 @@ class WorkerTask(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     instruction: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(String(30), default='sonnet', nullable=False)
-    working_dir: Mapped[str] = mapped_column(Text, default='/opt/BeakCortex')
+    working_dir: Mapped[str] = mapped_column(Text, default='/opt/BeakBroodNest')
 
     # pending -> dispatched -> running -> completed/failed/timeout/cancelled
     status: Mapped[str] = mapped_column(String(20), default='pending', nullable=False)

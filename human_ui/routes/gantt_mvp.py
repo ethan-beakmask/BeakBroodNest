@@ -3,8 +3,8 @@
 
 固定讀取 Cortex 專案 (slug=vRhORoxV) 的 task entries。
 提供兩個 API：
-  GET  /beakcortex/gantt-mvp/api/tasks  -> Frappe Gantt + Mermaid 資料
-  PUT  /beakcortex/gantt-mvp/api/tasks/<entry_id> -> 拖拉後回寫日期
+  GET  /beakbroodnest/gantt-mvp/api/tasks  -> Frappe Gantt + Mermaid 資料
+  PUT  /beakbroodnest/gantt-mvp/api/tasks/<entry_id> -> 拖拉後回寫日期
 """
 
 from flask import Blueprint, jsonify, request, render_template

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex Uploaded Files GC -- 上傳檔案孤兒清理排程
+BeakBroodNest Uploaded Files GC -- 上傳檔案孤兒清理排程
 
 掃描 uploaded_files 表，找出沒被任何卡片或結構化 entry 引用的檔案，
 若超過 grace period（預設 7 天），實體 unlink 並標記 is_deleted=true。
@@ -47,8 +47,8 @@ HEARTBEAT_DIR = '/opt/tmp/heartbeat'
 HEARTBEAT_BASE = 'uploads_gc'
 LOG_PATH = '/opt/tmp/scripts-uploads_gc.log'
 
-# /beakcortex/files/<token> 的 token 抓取（與 routes/files.py 的 TOKEN_RE 一致）
-TOKEN_URL_RE = re.compile(r'/beakcortex/files/([A-Za-z0-9_-]{16,64})')
+# /beakbroodnest/files/<token> 的 token 抓取（與 routes/files.py 的 TOKEN_RE 一致）
+TOKEN_URL_RE = re.compile(r'/beakbroodnest/files/([A-Za-z0-9_-]{16,64})')
 
 # 預設參數
 DEFAULT_GRACE_DAYS = 7        # 孤兒檔案保留天數（軟刪除窗口）
@@ -278,7 +278,7 @@ def run_gc(
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakCortex 上傳檔案孤兒清理排程',
+        description='BeakBroodNest 上傳檔案孤兒清理排程',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:

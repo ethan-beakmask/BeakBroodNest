@@ -1,4 +1,4 @@
-#!/opt/BeakCortex/venv/bin/python
+#!/opt/BeakBroodNest/venv/bin/python
 """
 cc-pending -- 主線統一未讀查詢（worker_reports + worker_inbox）
 
@@ -21,7 +21,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path('/opt/BeakCortex')
+ROOT = Path('/opt/BeakBroodNest')
 sys.path.insert(0, str(ROOT))
 
 from sqlalchemy import text  # noqa: E402

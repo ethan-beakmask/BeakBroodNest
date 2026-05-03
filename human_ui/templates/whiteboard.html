@@ -1,23 +1,23 @@
 {% extends "base.html" %}
-{% block title %}白板 - BeakCortex{% endblock %}
+{% block title %}白板 - BeakBroodNest{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="/beakcortex/static/css/whiteboard.css?v={{ cache_ver }}">
-<link rel="stylesheet" href="/beakcortex/static/css/card-editor.css?v={{ cache_ver }}">
+<link rel="stylesheet" href="/beakbroodnest/static/css/whiteboard.css?v={{ cache_ver }}">
+<link rel="stylesheet" href="/beakbroodnest/static/css/card-editor.css?v={{ cache_ver }}">
 {% endblock %}
 {% block extra_js %}
-<script src="/beakcortex/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/pdf-utils.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-connections.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-minimap.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-card-editor.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-textboxes.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-media.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-exchange.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard-mindmap.js?v={{ cache_ver }}"></script>
-<script src="/beakcortex/static/js/whiteboard.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/pdf-utils.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-connections.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-minimap.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-card-editor.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-undo.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-batch.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-groups.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-textboxes.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-media.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-exchange.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-mindmap.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard.js?v={{ cache_ver }}"></script>
 {% endblock %}
 
 {% block body %}
@@ -35,12 +35,12 @@
 
     <!-- Header -->
     <div class="app-header">
-        <div class="logo">BeakCortex</div>
+        <div class="logo">BeakBroodNest</div>
         {% include 'partials/nav_menu.html' %}
         <div class="header-right">
             <button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
-            <a href="/beakcortex/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
-            <a href="/beakcortex/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
+            <a href="/beakbroodnest/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
+            <a href="/beakbroodnest/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
             <span x-show="isSnapshot" style="font-size:11px;padding:2px 8px;background:#f59e0b;color:#fff;border-radius:3px;font-weight:600;">ARCHIVED</span>
         </div>
@@ -252,7 +252,7 @@
                                     <div class="wb-media-pdf-thumb">
                                         <!-- 已快取的縮圖：直接 <img>，瀏覽器接管 -->
                                         <template x-if="mediaCardPdfThumbnailToken(ca)">
-                                            <img :src="'/beakcortex/files/' + mediaCardPdfThumbnailToken(ca)"
+                                            <img :src="'/beakbroodnest/files/' + mediaCardPdfThumbnailToken(ca)"
                                                  :alt="ca.atom ? ca.atom.title : ''" draggable="false">
                                         </template>
                                         <!-- 沒快取（舊資料）：client side 即時渲染 -->

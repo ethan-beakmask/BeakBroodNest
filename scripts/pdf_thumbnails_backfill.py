@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 一次性回填：為缺 thumbnailToken 的 PDF 媒體卡片生成第一頁縮圖。
+BeakBroodNest 一次性回填：為缺 thumbnailToken 的 PDF 媒體卡片生成第一頁縮圖。
 
 掃描 knowledge_atoms (content_type='media', is_deleted=false) 中
 content_json.content[0].type='pdfThumbnail' 但 attrs.thumbnailToken 為空 的原子，

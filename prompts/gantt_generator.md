@@ -2,9 +2,9 @@
 
 ## 用途
 
-這份 prompt 交給 Claude 或其他 LLM，讓 AI 根據用戶描述的專案計畫產出符合 BeakCortex 甘特圖格式的 JSON。
+這份 prompt 交給 Claude 或其他 LLM，讓 AI 根據用戶描述的專案計畫產出符合 BeakBroodNest 甘特圖格式的 JSON。
 
-產出的 JSON 可直接透過 API 寫入 BeakCortex，渲染為 Frappe Gantt 互動圖表。
+產出的 JSON 可直接透過 API 寫入 BeakBroodNest，渲染為 Frappe Gantt 互動圖表。
 
 ---
 
@@ -151,7 +151,7 @@
 
 ## 使用方式
 
-### 在 BeakCortex MCP 中使用
+### 在 BeakBroodNest MCP 中使用
 
 Claude Code 可以透過 `note_store` 將 AI 產出的 JSON 存為 D-type atom，再由甘特圖頁面讀取渲染。
 
@@ -160,7 +160,7 @@ Claude Code 可以透過 `note_store` 將 AI 產出的 JSON 存為 D-type atom�
 1. 把上面的 prompt 貼給 Claude（或任何 LLM）
 2. 接著描述你的計畫
 3. LLM 回傳 JSON
-4. 複製 JSON 貼到 BeakCortex 的匯入介面（未來功能）
+4. 複製 JSON 貼到 BeakBroodNest 的匯入介面（未來功能）
 
 ### 驗證
 

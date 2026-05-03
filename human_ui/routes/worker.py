@@ -11,7 +11,7 @@ from core import embeddings as embed_service
 from orchestrator.models import WorkerTask
 
 bp = Blueprint('worker', __name__)
-logger = logging.getLogger('beak_cortex')
+logger = logging.getLogger('beak_broodnest')
 
 
 def _authenticate_worker(s):

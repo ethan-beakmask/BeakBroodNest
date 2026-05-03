@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify
 from core.db import get_engine
 
 bp = Blueprint('observe', __name__)
-logger = logging.getLogger('beak_cortex')
+logger = logging.getLogger('beak_broodnest')
 
 
 def _raw_query(sql, params=None):
@@ -157,7 +157,7 @@ def conversation_signals(conv_id):
 def reviews():
     """列出 P3 復盤分析結果"""
     import os, json as jsonlib
-    results_dir = '/opt/BeakCortex/data/reviews'
+    results_dir = '/opt/BeakBroodNest/data/reviews'
     items = []
     if os.path.isdir(results_dir):
         for fname in sorted(os.listdir(results_dir), reverse=True):
@@ -177,7 +177,7 @@ def reviews():
 def review_global_stats():
     """全域技術統計"""
     import json as jsonlib
-    fpath = '/opt/BeakCortex/data/reviews/_global_stats.json'
+    fpath = '/opt/BeakBroodNest/data/reviews/_global_stats.json'
     if os.path.isfile(fpath):
         with open(fpath, 'r', encoding='utf-8') as f:
             return jsonify(jsonlib.load(f))

@@ -1,5 +1,5 @@
 /**
- * BeakCortex StructuredEntry -- Tiptap Node Extension
+ * BeakBroodNest StructuredEntry -- Tiptap Node Extension
  *
  * Z 階段架構:
  *   - 文件流內 entry NodeView 是「純展示」(整個 contentEditable=false)
@@ -633,7 +633,7 @@ class StructuredEntryView {
         imgBox.className = 'se-idcard-image'
         if (token) {
             const img = document.createElement('img')
-            img.src = '/beakcortex/files/' + encodeURIComponent(token)
+            img.src = '/beakbroodnest/files/' + encodeURIComponent(token)
             img.alt = ''
             img.draggable = false
             imgBox.appendChild(img)
@@ -671,7 +671,7 @@ class StructuredEntryView {
         const link = document.createElement('a')
         link.className = 'se-file-link'
         if (token) {
-            link.href = '/beakcortex/files/' + encodeURIComponent(token)
+            link.href = '/beakbroodnest/files/' + encodeURIComponent(token)
             link.target = '_blank'
             link.rel = 'noopener'
             link.title = '點擊下載 ' + filename

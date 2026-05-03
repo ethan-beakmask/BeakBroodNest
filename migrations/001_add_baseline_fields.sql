@@ -1,7 +1,7 @@
 -- Migration 001: Gantt baseline 支援
 -- 為 entry_schema_fields 加入 is_frozen 旗標
 -- 為 todo schema 注入 baseline_start / baseline_end / progress 三個新欄位
--- 執行前請先備份：pg_dump -h 192.168.0.16 -U beak_cortex beak_cortex_dev > backup.sql
+-- 執行前請先備份：pg_dump -h 192.168.0.16 -U beak_broodnest beak_broodnest_dev > backup.sql
 --
 -- 欄位對照：
 --   既有 actual_start (id=5), actual_end (id=6) -- 不動，Phase 4 拖拉寫入目標

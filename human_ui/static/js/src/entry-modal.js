@@ -1,5 +1,5 @@
 /**
- * BeakCortex Entry Modal -- Schema-driven 編輯對話框
+ * BeakBroodNest Entry Modal -- Schema-driven 編輯對話框
  *
  * 取代「在 PM 文件流內 inline 編輯 entry」的混血架構。
  * 文件流內的 structuredEntry NodeView 只負責顯示;編輯一律走本 modal。
@@ -224,7 +224,7 @@ class EntryModal {
             const token = (this.fieldValues.image_token || '').trim()
             if (token) {
                 const img = document.createElement('img')
-                img.src = '/beakcortex/files/' + encodeURIComponent(token)
+                img.src = '/beakbroodnest/files/' + encodeURIComponent(token)
                 img.alt = ''
                 img.draggable = false
                 imgBox.appendChild(img)

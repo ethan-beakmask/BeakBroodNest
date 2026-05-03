@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex 背景 Embedding Worker
+BeakBroodNest 背景 Embedding Worker
 掃描 needs_embedding=True 的原子，批次生成向量嵌入。
 
 用法:
@@ -10,7 +10,7 @@ BeakCortex 背景 Embedding Worker
   python scripts/embed_worker.py --interval 10  自訂掃描間隔（秒）
 
 搭配 crontab 使用（每分鐘執行一次）:
-  * * * * * cd /opt/BeakCortex && venv/bin/python scripts/embed_worker.py >> /opt/tmp/BeakCortex-embed_worker.log 2>&1
+  * * * * * cd /opt/BeakBroodNest && venv/bin/python scripts/embed_worker.py >> /opt/tmp/BeakBroodNest-embed_worker.log 2>&1
 """
 import argparse
 import logging
@@ -25,7 +25,7 @@ from core.db import init_engine, session_scope
 from core.models import KnowledgeAtom, AtomEmbedding
 from core import embeddings as embed_service
 
-logger = logging.getLogger('beak_cortex.embed_worker')
+logger = logging.getLogger('beak_broodnest.embed_worker')
 
 HEARTBEAT_PATH = '/opt/tmp/heartbeat/embed_worker'
 
@@ -98,7 +98,7 @@ def process_pending():
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakCortex 背景 Embedding Worker'
+        description='BeakBroodNest 背景 Embedding Worker'
     )
     parser.add_argument('--daemon', action='store_true',
                         help='持續監聽模式')

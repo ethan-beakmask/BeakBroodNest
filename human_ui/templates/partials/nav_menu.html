@@ -42,7 +42,7 @@ function navMenu() {
         currentPath: window.location.pathname,
         async load() {
             try {
-                const resp = await fetch('/beakcortex/api/nav-menu');
+                const resp = await fetch('/beakbroodnest/api/nav-menu');
                 if (!resp.ok) return;
                 this.items = await resp.json();
                 this._resolveContext();
@@ -56,9 +56,9 @@ function navMenu() {
         _resolveContext() {
             var path = this.currentPath;
 
-            // 從 /beakcortex/canvas/<slug> 或 /beakcortex/project/<slug> 提取 slug
+            // 從 /beakbroodnest/canvas/<slug> 或 /beakbroodnest/project/<slug> 提取 slug
             var slug = '';
-            var m = path.match(/^\/beakcortex\/(canvas|project)\/([A-Za-z0-9_-]+)/);
+            var m = path.match(/^\/beakbroodnest\/(canvas|project)\/([A-Za-z0-9_-]+)/);
             if (m) slug = m[2];
 
             // 找出白板/專案選單項（靠 url pattern 識別）
@@ -75,12 +75,12 @@ function navMenu() {
                 // 焦點互傳：有 slug 時動態改寫 URL
                 if (slug) {
                     // 白板入口（首頁 / 或 /canvas/...）
-                    if (url === '/beakcortex/' || url.match(/^\/beakcortex\/canvas\//)) {
-                        item._resolvedUrl = '/beakcortex/canvas/' + slug;
+                    if (url === '/beakbroodnest/' || url.match(/^\/beakbroodnest\/canvas\//)) {
+                        item._resolvedUrl = '/beakbroodnest/canvas/' + slug;
                     }
                     // 專案入口
-                    else if (url.match(/^\/beakcortex\/project\//)) {
-                        item._resolvedUrl = '/beakcortex/project/' + slug;
+                    else if (url.match(/^\/beakbroodnest\/project\//)) {
+                        item._resolvedUrl = '/beakbroodnest/project/' + slug;
                     }
                 }
 
@@ -93,11 +93,11 @@ function navMenu() {
                 var item = this.items[i];
                 var checkUrl = item._resolvedUrl || item.url;
                 // 精確匹配或前綴匹配
-                if (path === checkUrl || (checkUrl !== '/beakcortex/' && path.startsWith(checkUrl))) {
+                if (path === checkUrl || (checkUrl !== '/beakbroodnest/' && path.startsWith(checkUrl))) {
                     item._isActive = true;
-                } else if (checkUrl === '/beakcortex/' && (path === '/beakcortex/' || path.match(/^\/beakcortex\/canvas\//))) {
+                } else if (checkUrl === '/beakbroodnest/' && (path === '/beakbroodnest/' || path.match(/^\/beakbroodnest\/canvas\//))) {
                     item._isActive = true;
-                } else if (checkUrl.match(/^\/beakcortex\/project\//) && path.match(/^\/beakcortex\/project\//)) {
+                } else if (checkUrl.match(/^\/beakbroodnest\/project\//) && path.match(/^\/beakbroodnest\/project\//)) {
                     item._isActive = true;
                 }
             }

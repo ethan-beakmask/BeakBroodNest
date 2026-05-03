@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex MCP Server -- AI 知識庫介面
+BeakBroodNest MCP Server -- AI 知識庫介面
 讓 Claude Code 直接操作知識原子，取代 MEMORY.md 的讀寫流程
 
 工具已拆分至 tools/ 子模組：
@@ -36,7 +36,7 @@ from ai_kb.tools.messaging import init_identity
 # ============================================================
 
 mcp = FastMCP(
-    "BeakCortex",
+    "BeakBroodNest",
     instructions="知識白板與 AI 共用知識庫 -- 結構化知識存取，取代 MEMORY.md",
 )
 
@@ -50,7 +50,7 @@ register_all(mcp)
 
 def create_argument_parser():
     parser = argparse.ArgumentParser(
-        description='BeakCortex MCP Server -- AI 知識庫介面',
+        description='BeakBroodNest MCP Server -- AI 知識庫介面',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
@@ -70,7 +70,7 @@ def main():
     parser = create_argument_parser()
 
     if len(sys.argv) == 1:
-        print('BeakCortex MCP Server -- AI 知識庫介面')
+        print('BeakBroodNest MCP Server -- AI 知識庫介面')
         print()
         print('此程式為 MCP (Model Context Protocol) 伺服器，')
         print('供 Claude Code 等 AI 工具透過 stdio 存取知識庫。')
@@ -123,15 +123,15 @@ def main():
         print('  note_inbox_read         標記訊息為已讀')
         print()
         print('身份識別（寄件人/收件人格式）:')
-        print('  project:beakcortex      專案主線 Claude')
+        print('  project:beakbroodnest      專案主線 Claude')
         print('  task:daily-review       排程任務身份')
         print('  user:ethan              人類')
         print()
         print('Claude Code 設定範例 (~/.claude/settings.json):')
         print('  "mcpServers": {')
-        print('    "beak_cortex": {')
-        print('      "command": "/opt/BeakCortex/venv/bin/python",')
-        print('      "args": ["/opt/BeakCortex/ai_kb/mcp_server.py", "--stdio"]')
+        print('    "beak_broodnest": {')
+        print('      "command": "/opt/BeakBroodNest/venv/bin/python",')
+        print('      "args": ["/opt/BeakBroodNest/ai_kb/mcp_server.py", "--stdio"]')
         print('    }')
         print('  }')
         print()

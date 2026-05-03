@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-一次性腳本：將 BeakCortex 公開前盤點清單灌入資料庫。
+一次性腳本：將 BeakBroodNest 公開前盤點清單灌入資料庫。
 
 建立「Cortex專案」白板，灌入 task 原子 + blocks 依賴關係。
 冪等：重複執行不會重複建立（以白板名稱 + 原子標題判斷）。
@@ -264,19 +264,19 @@ def seed(dry_run=False):
             if not existing_nav and canvas.id:
                 nav = NavMenu(
                     name='專案',
-                    url=f'/beakcortex/project/{canvas.slug}',
+                    url=f'/beakbroodnest/project/{canvas.slug}',
                     icon='',
                     sort_order=15,
                     is_active=True,
                 )
                 s.add(nav)
-                print(f'  建立導覽: "專案" -> /beakcortex/project/{canvas.slug}')
+                print(f'  建立導覽: "專案" -> /beakbroodnest/project/{canvas.slug}')
 
     print('Done.')
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='灌入 BeakCortex 公開前盤點清單')
+    parser = argparse.ArgumentParser(description='灌入 BeakBroodNest 公開前盤點清單')
     parser.add_argument('--dry-run', action='store_true', help='只印出，不寫入')
     args = parser.parse_args()
     seed(dry_run=args.dry_run)

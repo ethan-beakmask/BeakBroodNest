@@ -1,4 +1,4 @@
-#!/opt/BeakCortex/venv/bin/python
+#!/opt/BeakBroodNest/venv/bin/python
 """
 cc-list -- 列出所有支線 sessions
 
@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path('/opt/BeakCortex')
+ROOT = Path('/opt/BeakBroodNest')
 sys.path.insert(0, str(ROOT))
 
 from sqlalchemy import func, select  # noqa: E402

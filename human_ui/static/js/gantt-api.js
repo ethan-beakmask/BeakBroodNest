@@ -8,7 +8,7 @@ window.BeakGantt = window.BeakGantt || {};
 (function(BG) {
 'use strict';
 
-var BASE = '/beakcortex/gantt-mvp/api/gantt';
+var BASE = '/beakbroodnest/gantt-mvp/api/gantt';
 
 BG.Api = {
 

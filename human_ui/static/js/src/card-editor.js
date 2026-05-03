@@ -1,5 +1,5 @@
 /**
- * BeakCortex Card Editor -- Tiptap WYSIWYG Markdown 編輯器
+ * BeakBroodNest Card Editor -- Tiptap WYSIWYG Markdown 編輯器
  * 打包後掛載為 window.CardEditor 供 Alpine.js 呼叫
  */
 import { Editor, Extension } from '@tiptap/core'

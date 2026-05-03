@@ -3,7 +3,7 @@
 """一次性回填腳本：對所有 knowledge_atoms 計算 content_plain。
 
 執行：
-    /opt/BeakCortex/venv/bin/python /opt/BeakCortex/scripts/backfill_content_plain.py
+    /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/backfill_content_plain.py
 
 冪等：可重複執行，每次都會根據當下 content 重算。
 """

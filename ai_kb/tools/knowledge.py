@@ -16,7 +16,7 @@ from core import relations as rel_service
 from core import consistency as consistency_service
 from core import embeddings as embed_service
 
-logger = logging.getLogger('beak_cortex.mcp')
+logger = logging.getLogger('beak_broodnest.mcp')
 
 
 def register(mcp):

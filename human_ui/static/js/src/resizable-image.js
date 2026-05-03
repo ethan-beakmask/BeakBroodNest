@@ -1,5 +1,5 @@
 /**
- * BeakCortex ResizableImage -- Tiptap Image 擴充
+ * BeakBroodNest ResizableImage -- Tiptap Image 擴充
  *
  * 在 @tiptap/extension-image 之上加入：
  *   - width attr（CSS 字串如 "320px"），存入 content_json

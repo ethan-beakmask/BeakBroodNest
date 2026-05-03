@@ -1,5 +1,5 @@
 /**
- * BeakCortex Slash Command -- Tiptap Extension
+ * BeakBroodNest Slash Command -- Tiptap Extension
  *
  * 在行首輸入 ;; 時觸發下拉選單，列出所有 entry schemas。
  * 選擇後將當前行（paragraph）轉為 structuredEntry node。

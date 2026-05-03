@@ -13,7 +13,7 @@ from core import relations as rel_service
 from core import embeddings as embed_service
 
 bp = Blueprint('atoms', __name__)
-logger = logging.getLogger('beak_cortex')
+logger = logging.getLogger('beak_broodnest')
 
 
 @bp.route('/api/atoms', methods=['GET'])

@@ -1,5 +1,5 @@
 /**
- * BeakCortex Selection Toolbar -- Tiptap Extension
+ * BeakBroodNest Selection Toolbar -- Tiptap Extension
  *
  * 圈選多行文字後出現浮動工具列：
  *   [轉換為...v]  [合併]  [提升為原子]

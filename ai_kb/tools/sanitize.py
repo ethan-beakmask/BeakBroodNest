@@ -13,7 +13,7 @@ from core.models import (
     KnowledgeAtom, SensitiveTerm, SanitizeSession,
 )
 
-logger = logging.getLogger('beak_cortex.mcp.sanitize')
+logger = logging.getLogger('beak_broodnest.mcp.sanitize')
 
 # 敏感詞彙類別
 VALID_CATEGORIES = ('pii', 'infra', 'business', 'credential')

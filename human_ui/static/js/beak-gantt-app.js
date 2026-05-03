@@ -1,5 +1,5 @@
 /**
- * BeakGantt -- BeakCortex Project Dashboard 整合
+ * BeakGantt -- BeakBroodNest Project Dashboard 整合
  *
  * 從 /api/project/<slug>/beak-gantt 載入資料，
  * 拖拉變更自動寫回 DB，支援 undo 1 步。
@@ -54,9 +54,9 @@
         // Item 有 entry_id 時用 entry 路由，葉子 Card 用 atom_id 路由
         var url;
         if (entryId) {
-            url = '/beakcortex/api/project/' + SLUG + '/beak-gantt/entry/' + entryId;
+            url = '/beakbroodnest/api/project/' + SLUG + '/beak-gantt/entry/' + entryId;
         } else {
-            url = '/beakcortex/api/project/' + SLUG + '/beak-gantt/' + taskId;
+            url = '/beakbroodnest/api/project/' + SLUG + '/beak-gantt/' + taskId;
         }
         return fetch(url, {
             method: 'PATCH',
@@ -74,7 +74,7 @@
 
     function _ganttPoll() {
         if (!SLUG) return;
-        fetch('/beakcortex/api/canvases/' + SLUG + '/poll' +
+        fetch('/beakbroodnest/api/canvases/' + SLUG + '/poll' +
               (_lastGanttPollAt ? '?since=' + encodeURIComponent(_lastGanttPollAt) : ''))
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(data) {
@@ -96,7 +96,7 @@
     }
 
     function _loadData() {
-        fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt')
+        fetch('/beakbroodnest/api/project/' + SLUG + '/beak-gantt')
             .then(function(r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.json();
@@ -174,7 +174,7 @@
 
                 onTaskCreate: function(parentId) {
                     var today = new Date().toISOString().slice(0, 10);
-                    fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt', {
+                    fetch('/beakbroodnest/api/project/' + SLUG + '/beak-gantt', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ text: 'New Task', parent: parentId, start_date: today, duration: 3 }),
@@ -188,7 +188,7 @@
                 },
 
                 onLinkCreate: function(sourceId, targetId) {
-                    fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt/link', {
+                    fetch('/beakbroodnest/api/project/' + SLUG + '/beak-gantt/link', {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({source: sourceId, target: targetId}),
@@ -203,7 +203,7 @@
                 },
 
                 onLinkDelete: function(sourceId, targetId) {
-                    fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt/link', {
+                    fetch('/beakbroodnest/api/project/' + SLUG + '/beak-gantt/link', {
                         method: 'DELETE',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({source: sourceId, target: targetId}),
@@ -218,7 +218,7 @@
                 },
 
                 onTaskDelete: function(taskId, removedIds) {
-                    fetch('/beakcortex/api/project/' + SLUG + '/beak-gantt/' + taskId, {
+                    fetch('/beakbroodnest/api/project/' + SLUG + '/beak-gantt/' + taskId, {
                         method: 'DELETE',
                     })
                     .then(function(r) { return r.json(); })
@@ -307,7 +307,7 @@
 
     // ---- Color persistence (DB via API) ----
 
-    var _COLORS_API = '/beakcortex/api/beak-gantt/colors';
+    var _COLORS_API = '/beakbroodnest/api/beak-gantt/colors';
     var _cachedColors = null;
 
     function _loadColorsFromServer(cb) {

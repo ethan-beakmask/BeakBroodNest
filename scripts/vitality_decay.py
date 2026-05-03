@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BeakCortex Vitality Decay -- 知識原子活力衰減排程
+BeakBroodNest Vitality Decay -- 知識原子活力衰減排程
 
 根據 last_accessed_at 計算指數衰減，低於閾值自動轉 aging lifecycle。
 排除受保護的原子（human source + 里程碑/架構設計/路線圖 tag）。
@@ -170,7 +170,7 @@ def run_decay(
 
 def main():
     parser = argparse.ArgumentParser(
-        description='BeakCortex 知識原子活力衰減排程',
+        description='BeakBroodNest 知識原子活力衰減排程',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用範例:
