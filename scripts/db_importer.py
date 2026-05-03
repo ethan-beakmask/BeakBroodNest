@@ -61,8 +61,34 @@ RE_AGENT_PARENT_FROM_PATH = re.compile(
     re.IGNORECASE,
 )
 
+# sub-agent 路徑偵測（同上但額外捕捉 agent filename）
+RE_SUBAGENT_PATH = re.compile(
+    r'/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/subagents/([^/]+)\.jsonl$',
+    re.IGNORECASE,
+)
+
 # 從 Bash command 中提取檔案路徑的正則（簡單匹配）
 RE_FILE_PATH = re.compile(r'(?:^|\s)(/(?:opt|home|tmp|var|etc|usr|mnt)/[\w./_-]+)')
+
+
+def _infer_actor_id(jsonl_path: str) -> str:
+    """從 jsonl 路徑推斷 actor_id"""
+    if not jsonl_path:
+        return 'cc-main'
+    m = RE_SUBAGENT_PATH.search(jsonl_path)
+    if m:
+        agent_filename = m.group(2)
+        agent_part = 'agent:' + (agent_filename[len('agent-'):] if agent_filename.startswith('agent-') else agent_filename)
+        return 'cc-main:' + agent_part
+    return 'cc-main'
+
+
+_SPAN_KIND_MAP = {
+    'user': 'user_message',
+    'assistant': 'assistant_message',
+    'tool_use': 'tool_call',
+    'tool_result': 'tool_result',
+}
 
 
 # ============================================================
@@ -528,6 +554,10 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
     # path-based 主對話 FK（僅 sub-agent jsonl 會有值）
     parent_conv_id = _extract_parent_conv_id_from_path(jsonl_path)
 
+    # trace/span 欄位（Phase 1 migration 後填充）
+    conv_actor_id = _infer_actor_id(jsonl_path)
+    conv_trace_id = str(uuid_mod.uuid4())
+
     with conn.cursor() as cur:
         # 寫入 conversations
         cur.execute("""
@@ -556,6 +586,9 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
             if t['tool_params']:
                 tool_params_json = json.dumps(t['tool_params'], ensure_ascii=False)
 
+            span_kind = _SPAN_KIND_MAP.get(t['role'])
+            turn_actor_id = 'human' if t['role'] == 'user' else conv_actor_id
+
             try:
                 cur.execute("""
                     INSERT INTO conversation_turns
@@ -563,8 +596,10 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
                          content, tool_name, tool_use_id, tool_params, tool_is_error,
                          files_touched, has_thinking, thinking_text,
                          is_sidechain, parent_uuid, model,
-                         usage_input_tokens, usage_output_tokens)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         usage_input_tokens, usage_output_tokens,
+                         trace_id, parent_span_id, actor_id, span_kind)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s::uuid, %s::uuid, %s, %s)
                     ON CONFLICT (conversation_id, turn_seq) DO NOTHING
                 """, (
                     conv_id, project_path, t['turn_seq'], t['role'], t['timestamp'],
@@ -573,6 +608,7 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
                     t['files_touched'], t['has_thinking'], t['thinking_text'],
                     t['is_sidechain'], t_parent, t['model'],
                     t['usage_input'], t['usage_output'],
+                    conv_trace_id, t_parent, turn_actor_id, span_kind,
                 ))
                 inserted += 1
             except Exception as e:

@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/beakbroodnest/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/beakbroodnest/static/css/card-editor.css?v={{ cache_ver }}">
     <link rel="stylesheet" href="/beakbroodnest/static/css/observe.css?v={{ cache_ver }}">
+    <link rel="stylesheet" href="/beakbroodnest/static/vendor/beak-conversation-map.css?v={{ cache_ver }}">
     <script src="/beakbroodnest/static/js/card-editor.bundle.js?v={{ cache_ver }}"></script>
     <script defer src="/beakbroodnest/static/vendor/alpine.min.js"></script>
 </head>
@@ -111,6 +112,10 @@
             <li class="nav-item">
                 <a class="nav-link" :class="tab === 'backlog' ? 'active' : ''"
                    href="#" @click.prevent="switchTab('backlog')">Backlog</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" :class="tab === 'conversation_map' ? 'active' : ''"
+                   href="#" @click.prevent="switchTab('conversation_map')">對話拓樸</a>
             </li>
         </ul>
 
@@ -594,6 +599,95 @@
 
         </div><!-- backlog tab -->
 
+        <!-- ============================================================ -->
+        <!-- Tab: Conversation Map (對話拓樸) -->
+        <!-- ============================================================ -->
+        <div x-show="tab === 'conversation_map'">
+            <div x-data="beakCMApp()" x-init="init()">
+
+                <!-- 工具列 -->
+                <div class="card mb-3">
+                    <div class="card-body py-2">
+                        <div class="row g-2 align-items-center">
+                            <div class="col-auto">
+                                <label class="small text-secondary">專案路徑</label>
+                            </div>
+                            <div class="col-md-4">
+                                <input type="text" class="form-control form-control-sm"
+                                       x-model="projectPath" placeholder="留空=全部"
+                                       @keydown.enter="loadTraces()">
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-sm btn-outline-primary"
+                                        @click="loadTraces()" :disabled="loadingTraces">
+                                    <span x-show="!loadingTraces">重整</span>
+                                    <span x-show="loadingTraces">載入中…</span>
+                                </button>
+                            </div>
+                            <div class="col text-end">
+                                <span class="small text-secondary"
+                                      x-text="traces.length + ' 條 trace'"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 錯誤訊息 -->
+                <div class="alert alert-danger py-2 small" x-show="errorMsg" x-text="errorMsg"></div>
+
+                <div class="row g-3">
+                    <!-- 左：trace 清單 -->
+                    <div class="col-md-3">
+                        <div class="card" style="max-height:600px;overflow-y:auto;">
+                            <div class="card-header small fw-bold">Trace 清單</div>
+                            <div class="list-group list-group-flush">
+                                <template x-if="traces.length === 0 && !loadingTraces">
+                                    <div class="list-group-item text-secondary small">
+                                        尚無 trace 資料（需執行 migration + backfill）
+                                    </div>
+                                </template>
+                                <template x-for="tr in traces" :key="tr.trace_id">
+                                    <a href="#" class="list-group-item list-group-item-action py-2"
+                                       :class="selectedTraceId === tr.trace_id ? 'active' : ''"
+                                       @click.prevent="selectTrace(tr.trace_id)">
+                                        <div class="d-flex justify-content-between">
+                                            <span class="small fw-mono" x-text="shortTraceId(tr.trace_id)"></span>
+                                            <span class="badge bg-secondary" x-text="tr.turn_count + ' turns'"></span>
+                                        </div>
+                                        <div class="text-nowrap overflow-hidden small"
+                                             :class="selectedTraceId === tr.trace_id ? 'text-white-50' : 'text-secondary'"
+                                             x-text="formatTime(tr.last_ts)"></div>
+                                    </a>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右：因果鏈渲染 -->
+                    <div class="col-md-9">
+                        <div class="card">
+                            <div class="card-header small fw-bold d-flex justify-content-between">
+                                <span>Trace 因果鏈</span>
+                                <span x-show="loadingTrace" class="text-secondary small">載入中…</span>
+                                <span x-show="selectedTraceId && !loadingTrace" class="small text-secondary fw-mono"
+                                      x-text="selectedTraceId || ''"></span>
+                            </div>
+                            <div class="card-body p-0">
+                                <div id="beak-cm-container"
+                                     style="width:100%;height:560px;border:none;">
+                                    <div x-show="!selectedTraceId"
+                                         class="d-flex align-items-center justify-content-center h-100 text-secondary small">
+                                        點選左側 trace 以渲染因果鏈
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div><!-- conversation_map tab -->
+
     </div><!-- container -->
 
     <!-- ============================================================ -->
@@ -696,5 +790,7 @@
 
 <script src="/beakbroodnest/static/vendor/bootstrap-5.3.3-dist/js/bootstrap.bundle.min.js"></script>
 <script src="/beakbroodnest/static/js/observe.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/vendor/beak-conversation-map.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/beak-conversation-map-app.js?v={{ cache_ver }}"></script>
 </body>
 </html>

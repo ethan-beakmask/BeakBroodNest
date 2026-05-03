@@ -21,6 +21,7 @@ from .files import bp as files_bp
 from .exchange import bp as exchange_bp
 from .admin import bp as admin_bp
 from .preferences import bp as preferences_bp
+from .conversation_map import bp as conversation_map_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -43,4 +44,5 @@ ALL_BLUEPRINTS = [
     exchange_bp,
     admin_bp,
     preferences_bp,
+    conversation_map_bp,
 ]
