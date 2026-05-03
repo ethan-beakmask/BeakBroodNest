@@ -32,6 +32,14 @@
             "cron": "25 8 * * *",
             "enabled": true,
             "timeout_seconds": 10800
+        },
+        {
+            "name": "p1_scan_frequent",
+            "description": "P1 訊號掃描高頻版（每 10 分鐘，incremental 掃 p1_scanned_at IS NULL 的 turn）",
+            "command": ["{venv_python}", "{scripts_dir}/signal_scanner.py", "--db"],
+            "cron": "*/10 * * * *",
+            "enabled": true,
+            "timeout_seconds": 300
         }
     ]
 }
