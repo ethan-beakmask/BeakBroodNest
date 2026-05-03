@@ -262,15 +262,17 @@ def seed(dry_run=False):
                 .first()
             )
             if not existing_nav and canvas.id:
+                # url 故意不帶 slug，由後端依 session.last_canvas_slug 解析；
+                # 無 last 時呈現空狀態頁，讓用戶從下拉選單明確選取
                 nav = NavMenu(
                     name='專案',
-                    url=f'/beakbroodnest/project/{canvas.slug}',
+                    url='/beakbroodnest/project/',
                     icon='',
                     sort_order=15,
                     is_active=True,
                 )
                 s.add(nav)
-                print(f'  建立導覽: "專案" -> /beakbroodnest/project/{canvas.slug}')
+                print('  建立導覽: "專案" -> /beakbroodnest/project/')
 
     print('Done.')
 
