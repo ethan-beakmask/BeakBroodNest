@@ -3,7 +3,7 @@
 """Gantt API 整合測試
 
 測���對象：dev server http://127.0.0.1:5172
-前提：dev server 已啟動且 beak_broodnest_dev DB 有 Cortex 專案資料
+前提：dev server 已啟動且 beak_broodnest_dev DB 有 BeakBroodNest 專案資料
 """
 
 import json

@@ -341,7 +341,7 @@ def generate_auth_credentials(username=None, password=None):
             return None, None
 
         if not username:
-            username = 'cortex_' + secrets.token_hex(4)
+            username = 'broodnest_' + secrets.token_hex(4)
         if not password:
             alphabet = string.ascii_letters + string.digits
             password = ''.join(secrets.choice(alphabet) for _ in range(12))

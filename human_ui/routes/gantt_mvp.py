@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Gantt MVP: 免登入的甘特圖展示 + 拖拉回寫 API
 
-固定讀取 Cortex 專案 (slug=vRhORoxV) 的 task entries。
+固定讀取 BeakBroodNest 專案 (slug=vRhORoxV) 的 task entries。
 提供兩個 API：
   GET  /beakbroodnest/gantt-mvp/api/tasks  -> Frappe Gantt + Mermaid 資料
   PUT  /beakbroodnest/gantt-mvp/api/tasks/<entry_id> -> 拖拉後回寫日期
@@ -22,7 +22,7 @@ CANVAS_SLUG = 'vRhORoxV'
 
 
 def _fetch_tasks(s):
-    """從 DB 讀取 Cortex 專案的 task 資料，回傳結構化 list。"""
+    """從 DB 讀取 BeakBroodNest 專案的 task 資料，回傳結構化 list。"""
     canvas = s.query(Canvas).filter(Canvas.slug == CANVAS_SLUG).first()
     if not canvas:
         return None, 'canvas not found'

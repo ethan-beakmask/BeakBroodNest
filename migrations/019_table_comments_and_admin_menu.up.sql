@@ -51,7 +51,7 @@ COMMENT ON TABLE entry_field_values       IS 'Entry 欄位實際值（多型別�
 COMMENT ON TABLE entry_field_change_log   IS 'Entry 欄位變更歷史紀錄（誰在何時改了什麼）';
 
 -- ============================================================
--- 交換包（跨 Cortex 知識交換）
+-- 交換包（跨 BeakBroodNest 知識交換）
 -- ============================================================
 COMMENT ON TABLE exchange_packs           IS '交換包：可匯出/匯入的原子集合，用於跨環境同步';
 COMMENT ON TABLE exchange_pack_atoms      IS '交換包與原子的多對多關聯';

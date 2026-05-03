@@ -3,7 +3,7 @@
 """
 一次性腳本：將 BeakBroodNest 公開前盤點清單灌入資料庫。
 
-建立「Cortex專案」白板，灌入 task 原子 + blocks 依賴關係。
+建立「BeakBroodNest專案」白板，灌入 task 原子 + blocks 依賴關係。
 冪等：重複執行不會重複建立（以白板名稱 + 原子標題判斷）。
 
 用法:
@@ -29,7 +29,7 @@ from core.models import (
 # 盤點清單定義
 # ============================================================
 
-CANVAS_NAME = 'Cortex專案'
+CANVAS_NAME = 'BeakBroodNest專案'
 
 # category 選項（將寫入 task schema 的 category field）
 CATEGORIES = ['安全性', '文件', '測試', '功能', '復盤Pipeline', '基建']

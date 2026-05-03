@@ -15,7 +15,7 @@
 #   DB_NAME                資料庫名稱 (預設: beak_broodnest)
 #   DB_USER                資料庫使用者 (預設: beak_broodnest)
 #   DB_PASS                資料庫密碼 (預設: postgres123)
-#   CORTEX_PORT            外部存取 port (預設: 5170)
+#   BEAKBROODNEST_PORT            外部存取 port (預設: 5170)
 #   GITHUB_TOKEN           GitHub Personal Access Token (私有 repo 時需要)
 #   GITHUB_REPO            GitHub clone URL (預設: ethan-beakmask/BeakBroodNest)
 # =============================================================================
@@ -26,7 +26,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/BeakBroodNest}"
 DB_NAME="${DB_NAME:-beak_broodnest}"
 DB_USER="${DB_USER:-beak_broodnest}"
 DB_PASS="${DB_PASS:-postgres123}"
-CORTEX_PORT="${CORTEX_PORT:-5170}"
+BEAKBROODNEST_PORT="${BEAKBROODNEST_PORT:-5170}"
 GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethan-beakmask/BeakBroodNest.git}"
 SERVICE_NAME="beakbroodnest"
 HEALTH_TIMEOUT=30
@@ -61,8 +61,8 @@ check_ubuntu() {
 
 # Gunicorn 內部 port = 外部 port + 1
 resolve_ports() {
-    NGINX_PORT="$CORTEX_PORT"
-    APP_PORT=$((CORTEX_PORT + 1))
+    NGINX_PORT="$BEAKBROODNEST_PORT"
+    APP_PORT=$((BEAKBROODNEST_PORT + 1))
     HEALTH_URL="http://127.0.0.1:${APP_PORT}/beakbroodnest/health"
 }
 
@@ -112,7 +112,7 @@ case "${1:-}" in
         echo "環境變數:"
         echo "  INSTALL_DIR=$INSTALL_DIR"
         echo "  DB_NAME=$DB_NAME"
-        echo "  CORTEX_PORT=$CORTEX_PORT"
+        echo "  BEAKBROODNEST_PORT=$BEAKBROODNEST_PORT"
         exit 1
         ;;
 esac

@@ -63,13 +63,13 @@ if [ "$excluded" -eq 0 ]; then
     git checkout "$BRANCH" --quiet
     git branch -D "$TEMP_BRANCH" 2>/dev/null || true
     echo "  直接推送..."
-    BEAKCORTEX_GITHUB_PUSH_OK=1 git push "$REMOTE" "$BRANCH"
+    BEAKBROODNEST_GITHUB_PUSH_OK=1 git push "$REMOTE" "$BRANCH"
 else
     # 提交移除
     git commit -m "chore: exclude internal files from public repository" --quiet
 
-    # Force push 到 GitHub（pre-push hook 會檢查 BEAKCORTEX_GITHUB_PUSH_OK=1）
-    BEAKCORTEX_GITHUB_PUSH_OK=1 git push "$REMOTE" "$TEMP_BRANCH:$BRANCH" --force
+    # Force push 到 GitHub（pre-push hook 會檢查 BEAKBROODNEST_GITHUB_PUSH_OK=1）
+    BEAKBROODNEST_GITHUB_PUSH_OK=1 git push "$REMOTE" "$TEMP_BRANCH:$BRANCH" --force
 fi
 
 # 回到 master，清理
