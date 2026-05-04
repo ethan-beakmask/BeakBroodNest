@@ -598,7 +598,21 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
                 if m:
                     conv_actor_id = m.group(1).strip()
                 break
-    conv_trace_id = str(uuid_mod.uuid4())
+    # 增量匯入時沿用既有 trace_id，避免同一 conversation 被切成多段
+    # （ON CONFLICT DO NOTHING 只保護舊 turn，新 turn 若帶不同 trace_id 會造成 trace 分裂）
+    conv_trace_id = None
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT trace_id FROM conversation_turns "
+            "WHERE conversation_id = %s AND trace_id IS NOT NULL "
+            "ORDER BY timestamp ASC NULLS LAST, turn_seq ASC LIMIT 1",
+            (conv_id,),
+        )
+        row = cur.fetchone()
+        if row and row[0]:
+            conv_trace_id = str(row[0])
+    if not conv_trace_id:
+        conv_trace_id = str(uuid_mod.uuid4())
 
     with conn.cursor() as cur:
         # 寫入 conversations
