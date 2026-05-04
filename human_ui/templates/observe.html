@@ -34,57 +34,19 @@
 
     <div class="container-fluid py-3">
 
-        <!-- Stats Cards -->
-        <div class="row g-2 mb-3">
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value" x-text="stats.total_conversations || 0"></div>
-                        <div class="stat-label">對話數</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value" x-text="stats.total_turns || 0"></div>
-                        <div class="stat-label">Turns</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value text-warning" x-text="stats.total_signals || 0"></div>
-                        <div class="stat-label">訊號</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value text-info" x-text="stats.total_summarized || 0"></div>
-                        <div class="stat-label">已摘要</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value text-success" x-text="stats.total_pipeline_runs || 0"></div>
-                        <div class="stat-label">Pipeline 執行</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value" :class="stats.running_pipelines > 0 ? 'text-danger' : ''"
-                             x-text="stats.running_pipelines || 0"></div>
-                        <div class="stat-label">執行中</div>
-                    </div>
-                </div>
-            </div>
+        <!-- Stats Bar (扁平單列) -->
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-2 px-3 py-1 bg-white border rounded small">
+            <span class="text-secondary">對話數 <strong x-text="stats.total_conversations || 0"></strong></span>
+            <span class="text-secondary">|</span>
+            <span class="text-secondary">Turns <strong x-text="stats.total_turns || 0"></strong></span>
+            <span class="text-secondary">|</span>
+            <span class="text-warning">訊號 <strong x-text="stats.total_signals || 0"></strong></span>
+            <span class="text-secondary">|</span>
+            <span class="text-info">已摘要 <strong x-text="stats.total_summarized || 0"></strong></span>
+            <span class="text-secondary">|</span>
+            <span class="text-success">Pipeline <strong x-text="stats.total_pipeline_runs || 0"></strong></span>
+            <span class="text-secondary">|</span>
+            <span :class="stats.running_pipelines > 0 ? 'text-danger' : 'text-secondary'">執行中 <strong x-text="stats.running_pipelines || 0"></strong></span>
         </div>
 
         <!-- Tab Navigation -->
@@ -758,7 +720,7 @@
                                 </div>
                                 <!-- 右：Turn 詳情面板 (預設展開) -->
                                 <div class="cm-detail-panel d-flex flex-column"
-                                     style="flex:0 0 560px;height:560px;background:#fff;">
+                                     style="flex:0 0 560px;width:560px;max-width:560px;height:560px;background:#fff;overflow:hidden;">
                                     <!-- 詳情 header -->
                                     <div class="border-bottom px-2 py-1 d-flex justify-content-between align-items-start"
                                          style="flex:0 0 auto;background:#f8fafc;">
@@ -805,7 +767,7 @@
                                     </div>
                                     <!-- 詳情 body (可捲) -->
                                     <div class="px-2 py-2"
-                                         style="flex:1 1 auto;overflow:auto;min-height:0;">
+                                         style="flex:1 1 auto;overflow:auto;min-height:0;width:100%;box-sizing:border-box;">
                                         <template x-if="!selectedTurn">
                                             <div class="d-flex align-items-center justify-content-center h-100 text-secondary small">
                                                 點選左側因果鏈節點以查看內容
@@ -817,7 +779,7 @@
                                                     <details class="mb-2" open>
                                                         <summary class="small text-secondary">tool_params</summary>
                                                         <pre class="small mb-0"
-                                                             :style="'background:#f8fafc;padding:6px;border-radius:4px;overflow:auto;'
+                                                             :style="'background:#f8fafc;padding:6px;border-radius:4px;'
                                                                      + (wrapContent
                                                                         ? 'white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;'
                                                                         : 'white-space:pre;')"
@@ -825,7 +787,7 @@
                                                     </details>
                                                 </template>
                                                 <pre class="small mb-0"
-                                                     :style="'font-family:Consolas,\'Courier New\',monospace;overflow:auto;'
+                                                     :style="'font-family:Consolas,\'Courier New\',monospace;'
                                                              + (wrapContent
                                                                 ? 'white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;'
                                                                 : 'white-space:pre;')"

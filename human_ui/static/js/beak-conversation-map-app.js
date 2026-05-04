@@ -22,7 +22,7 @@
             traceSummary: null,
             // trace 清單 filter & pagination
             limit: 100,
-            filterWithAgent: false,
+            filterWithAgent: true,
             filterWithCcp: false,
             filterOnlyUnanswered: false,
             filterMinTurns: 0,

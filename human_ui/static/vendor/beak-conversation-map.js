@@ -598,18 +598,20 @@ var BeakConversationMapChart = (function() {
     P.drawTraceMode = function(turns, onNodeClick) {
         var svgNS = 'http://www.w3.org/2000/svg';
         this._onNodeClick = onNodeClick || null;
+        var _cmSelf = this;
+        this._selHalo = null;  // 目前選中的 halo 元素，跨 trace 渲染重置
 
         // Constants
         var NODE_W = 120, NODE_H = 32, SLOT_H = 52, BRANCH_W = 168;
         var PAD_X = 28, HEADER_H = 48;
 
         // ---- Step 1: resolve actor_id ----
-        // pre-migration: actor_id is null; derive from role so colours and columns work
+        // 優先使用資料庫的 actor_id；未填時才從 role 推斷（pre-migration 相容）
         function _resolveActor(t) {
+            if (t.actor_id) return t.actor_id;
             var r = t.role || '';
             if (r === 'user') return 'human';
             if (r === 'attachment') return 'hook';
-            if (t.actor_id) return t.actor_id;
             return 'cc-main';
         }
 
@@ -847,12 +849,33 @@ var BeakConversationMapChart = (function() {
             var nodeG = document.createElementNS(svgNS, 'g');
             nodeG.style.cursor = 'pointer';
             if (isSuper) { nodeG.setAttribute('opacity','0.4'); nodeG.setAttribute('filter','grayscale(1)'); }
-            (function(turnObj, self){
-                nodeG.addEventListener('click', function(ev){
+            (function(turnObj, ng, superFlag, px, py, svgNsLocal){
+                ng.addEventListener('click', function(ev){
                     ev.stopPropagation();
-                    if (self._onNodeClick) self._onNodeClick(turnObj);
+                    // 清除上一個選中 halo
+                    if (_cmSelf._selHalo && _cmSelf._selHalo.parentNode) {
+                        _cmSelf._selHalo.parentNode.removeChild(_cmSelf._selHalo);
+                    }
+                    _cmSelf._selHalo = null;
+                    // 加黃色外框 halo（superseded node 不加）
+                    if (!superFlag) {
+                        var halo = document.createElementNS(svgNsLocal, 'rect');
+                        halo.setAttribute('x', String(px - 4));
+                        halo.setAttribute('y', String(py - 4));
+                        halo.setAttribute('width', String(NODE_W + 8));
+                        halo.setAttribute('height', String(NODE_H + 8));
+                        halo.setAttribute('rx', '10');
+                        halo.setAttribute('ry', '10');
+                        halo.setAttribute('fill', 'none');
+                        halo.setAttribute('stroke', '#facc15');
+                        halo.setAttribute('stroke-width', '3');
+                        halo.setAttribute('pointer-events', 'none');
+                        ng.insertBefore(halo, ng.firstChild);
+                        _cmSelf._selHalo = halo;
+                    }
+                    if (_cmSelf._onNodeClick) _cmSelf._onNodeClick(turnObj);
                 });
-            })(t, this);
+            })(t, nodeG, isSuper, p.x, p.y, svgNS);
 
             var rect = document.createElementNS(svgNS, 'rect');
             rect.setAttribute('x', String(p.x)); rect.setAttribute('y', String(p.y));

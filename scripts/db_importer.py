@@ -633,7 +633,12 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
                 tool_params_json = _strip_nul(json.dumps(t['tool_params'], ensure_ascii=False))
 
             span_kind = _SPAN_KIND_MAP.get(t['role'])
-            turn_actor_id = 'human' if t['role'] == 'user' else conv_actor_id
+            if t['role'] == 'user':
+                # agent sidechain 對話（conv_actor_id 不是 cc-main）的 user message
+                # 是 cc-main dispatcher 發出的任務指令，不是人類輸入
+                turn_actor_id = 'human' if conv_actor_id == 'cc-main' else 'cc-main'
+            else:
+                turn_actor_id = conv_actor_id
 
             try:
                 cur.execute("""
