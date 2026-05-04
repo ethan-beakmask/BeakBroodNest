@@ -607,7 +607,14 @@
                                 <div class="form-check form-check-inline">
                                     <input class="form-check-input" type="checkbox" id="cm-fil-noans"
                                            x-model="filterOnlyUnanswered" @change="applyFilters()">
-                                    <label class="form-check-label small" for="cm-fil-noans">僅無 assistant 回應</label>
+                                    <label class="form-check-label small" for="cm-fil-noans"
+                                           title="trace 中無 assistant_message 也無 tool_call">僅真無回應</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="cm-fil-toolonly"
+                                           x-model="filterOnlyToolOnly" @change="applyFilters()">
+                                    <label class="form-check-label small" for="cm-fil-toolonly"
+                                           title="有 tool_call 但無 final assistant_message（agent 被中斷類）">僅 tool 中斷</label>
                                 </div>
                             </div>
                             <div class="col-auto">
@@ -659,9 +666,13 @@
                                                 <span class="badge me-1"
                                                       style="background:#7c3aed;color:#fff;">cc-p</span>
                                             </template>
-                                            <template x-if="tr.has_assistant === false">
+                                            <template x-if="tr.has_assistant === false && tr.has_tool_call">
                                                 <span class="badge bg-warning text-dark"
-                                                      title="無 assistant 回應(可能是 /model /exit 等指令)">無回應</span>
+                                                      title="有 tool_call 但無 final assistant_message（agent 中斷類）">僅 tool</span>
+                                            </template>
+                                            <template x-if="tr.has_assistant === false && !tr.has_tool_call">
+                                                <span class="badge bg-danger"
+                                                      title="trace 中無 assistant_message 也無 tool_call（可能是 /model /exit 等指令或孤兒 trace）">無回應</span>
                                             </template>
                                         </div>
                                     </a>

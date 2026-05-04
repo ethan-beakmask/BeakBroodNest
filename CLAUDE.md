@@ -96,6 +96,10 @@ orchestrator/       多 Agent 協作框架
   cli/              命令列工具（cc-spawn / cc-talk / cc-inbox-{put,get} / cc-list）
   hooks/            UserPromptSubmit hook（aside_router.py 等）
   workspaces/       支線 cwd（每支線一個子目錄，不入版控）
+  windows/          Windows 端 Go 程式 + relay_receiver.py（舊）
+    relay/          BeakBroodNest.exe 原始碼（Go，跑在 192.168.0.10:5200）
+                    對運行中的 cc 對話 paste 訊息=自我注入通道，見 #4159
+  notify_windows.py Ubuntu 端呼叫 Windows Relay 的 Python wrapper
 docs/               規劃文件
 ```
 

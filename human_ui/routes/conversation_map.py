@@ -59,7 +59,8 @@ def list_traces():
         limit            -- 上限 (預設 100)
         with_agent       -- '1' 僅含 agent (cc-main:agent:%)
         with_ccp         -- '1' 僅含 cc-p 子代理 (cc-p:%)
-        only_unanswered  -- '1' 僅顯示「無 assistant 回應」的 trace
+        only_unanswered  -- '1' 真正無任何 assistant 回應（無 assistant_message 且無 tool_call）
+        only_tool_only   -- '1' 僅 tool 互動但無 final assistant_message（agent 中斷類，#4158 盲點）
         min_turns        -- 最小 turn 數
     """
     project_path = request.args.get('project_path', '')
@@ -67,6 +68,7 @@ def list_traces():
     with_agent = request.args.get('with_agent', '') in ('1', 'true', 'yes')
     with_ccp = request.args.get('with_ccp', '') in ('1', 'true', 'yes')
     only_unanswered = request.args.get('only_unanswered', '') in ('1', 'true', 'yes')
+    only_tool_only = request.args.get('only_tool_only', '') in ('1', 'true', 'yes')
     min_turns = request.args.get('min_turns', 0, type=int)
 
     params = {'limit': limit}
@@ -84,6 +86,7 @@ def list_traces():
                 COUNT(DISTINCT actor_id) FILTER
                     (WHERE actor_id LIKE 'cc-main:agent:%')             AS agent_count,
                 BOOL_OR(span_kind = 'assistant_message')                 AS has_assistant,
+                BOOL_OR(span_kind = 'tool_call')                         AS has_tool_call,
                 BOOL_OR(actor_id LIKE 'cc-main:agent:%')                 AS has_agent,
                 BOOL_OR(actor_id LIKE 'cc-p:%')                          AS has_ccp
             FROM conversation_turns
@@ -100,7 +103,17 @@ def list_traces():
         if with_ccp:
             havings.append("BOOL_OR(actor_id LIKE 'cc-p:%')")
         if only_unanswered:
-            havings.append("NOT BOOL_OR(span_kind = 'assistant_message')")
+            # 真正無任何 assistant 痕跡（連 tool_call 都沒有）
+            havings.append(
+                "NOT BOOL_OR(span_kind = 'assistant_message') "
+                "AND NOT BOOL_OR(span_kind = 'tool_call')"
+            )
+        if only_tool_only:
+            # 有 tool_call 但無 final assistant_message，常見於 agent 被中斷
+            havings.append(
+                "NOT BOOL_OR(span_kind = 'assistant_message') "
+                "AND BOOL_OR(span_kind = 'tool_call')"
+            )
         if min_turns > 0:
             havings.append("COUNT(*) >= :min_turns")
             params['min_turns'] = min_turns
@@ -125,6 +138,7 @@ def list_traces():
             ARRAY[]::text[]         AS actors,
             0                       AS agent_count,
             BOOL_OR(role = 'assistant') AS has_assistant,
+            FALSE                   AS has_tool_call,
             FALSE                   AS has_agent,
             FALSE                   AS has_ccp
         FROM conversation_turns
@@ -140,8 +154,8 @@ def list_traces():
     if min_turns > 0:
         havings2.append("COUNT(*) >= :min_turns")
         params2['min_turns'] = min_turns
-    # with_agent / with_ccp 在 pre-migration 無法判斷 → 直接回空
-    if with_agent or with_ccp:
+    # with_agent / with_ccp / only_tool_only 在 pre-migration 無法判斷 → 直接回空
+    if with_agent or with_ccp or only_tool_only:
         return jsonify([])
     if havings2:
         sql2 += " HAVING " + " AND ".join(havings2)

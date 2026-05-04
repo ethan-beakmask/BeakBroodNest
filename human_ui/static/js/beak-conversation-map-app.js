@@ -25,6 +25,7 @@
             filterWithAgent: true,
             filterWithCcp: false,
             filterOnlyUnanswered: false,
+            filterOnlyToolOnly: false,
             filterMinTurns: 0,
 
             init: function() {
@@ -40,6 +41,7 @@
                 if (self.filterWithAgent) params.push('with_agent=1');
                 if (self.filterWithCcp) params.push('with_ccp=1');
                 if (self.filterOnlyUnanswered) params.push('only_unanswered=1');
+                if (self.filterOnlyToolOnly) params.push('only_tool_only=1');
                 if (self.filterMinTurns > 0) params.push('min_turns=' + self.filterMinTurns);
                 var url = '/beakbroodnest/api/conversation-map/traces?' + params.join('&');
                 fetch(url)
