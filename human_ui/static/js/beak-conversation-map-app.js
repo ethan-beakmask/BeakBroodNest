@@ -26,10 +26,25 @@
             filterWithCcp: false,
             filterOnlyUnanswered: false,
             filterOnlyToolOnly: false,
+            filterHideP2: true,
+            filterDateFrom: '',
+            filterDateTo: '',
             filterMinTurns: 0,
+            projectPaths: [],
 
             init: function() {
+                this.loadProjectPaths();
                 this.loadTraces();
+            },
+
+            loadProjectPaths: function() {
+                var self = this;
+                fetch('/beakbroodnest/api/conversation-map/project-paths')
+                    .then(function(r) { return r.ok ? r.json() : []; })
+                    .then(function(data) {
+                        self.projectPaths = Array.isArray(data) ? data : [];
+                    })
+                    .catch(function() { self.projectPaths = []; });
             },
 
             loadTraces: function(append) {
@@ -42,6 +57,9 @@
                 if (self.filterWithCcp) params.push('with_ccp=1');
                 if (self.filterOnlyUnanswered) params.push('only_unanswered=1');
                 if (self.filterOnlyToolOnly) params.push('only_tool_only=1');
+                if (self.filterHideP2) params.push('hide_p2_dispatcher=1');
+                if (self.filterDateFrom) params.push('date_from=' + encodeURIComponent(self.filterDateFrom));
+                if (self.filterDateTo) params.push('date_to=' + encodeURIComponent(self.filterDateTo));
                 if (self.filterMinTurns > 0) params.push('min_turns=' + self.filterMinTurns);
                 var url = '/beakbroodnest/api/conversation-map/traces?' + params.join('&');
                 fetch(url)

@@ -578,6 +578,14 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
         stats['skipped_reason'] = '無可匯入的 turn'
         return stats
 
+    # 過濾無 assistant 也無 tool 的空殼 trace（如 /exit transcript、P2 timeout 半成品）
+    # 這類 jsonl 純粹是 cc CLI 啟動殘留，不是真實對話樣本
+    has_assistant = any(t['role'] == 'assistant' for t in turns)
+    has_tool = any(t['role'] in ('tool_use', 'tool_result') for t in turns)
+    if not has_assistant and not has_tool:
+        stats['skipped_reason'] = '無 assistant/tool 互動（疑似 /exit 空殼或 P2 timeout 半成品）'
+        return stats
+
     # --- 寫入 DB ---
     # 驗證 parent_uuid 是否為合法 UUID
     parent_uuid_val = None

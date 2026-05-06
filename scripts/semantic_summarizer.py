@@ -117,6 +117,7 @@ confidence_note 說明「訊號為誤報」，confidence 設為 0.3 以下。
 """
 
 MAIN_PROMPT_TEMPLATE = """\
+[CC-LAUNCH-KIND=p2-dispatcher]
 請對以下 topic 產出結構化摘要。
 
 topic_id: {topic_id}
@@ -515,9 +516,24 @@ def run_claude_summarize(
     except FileNotFoundError:
         return None, 'claude CLI not found in PATH', None
 
+    def _detect_new_conv_uuid() -> Optional[str]:
+        # claude CLI 啟動後即建立 jsonl 並寫入 user_message，無論 timeout 或正常結束
+        # 都應掃描；timeout 情境下這個 jsonl 是半成品（沒 assistant），需要被 mark 為 pipeline
+        try:
+            after_files = set(project_dir.glob('*.jsonl'))
+            new_files = after_files - before_files
+            if new_files:
+                return new_files.pop().stem
+        except Exception:
+            pass
+        return None
+
+    timed_out = False
+    stdout, stderr = '', ''
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        timed_out = True
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
@@ -526,18 +542,11 @@ def run_claude_summarize(
             proc.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             pass
-        return None, f'claude -p timeout ({timeout}s)', None
 
-    # 找出新建的 jsonl → 取 UUID（stem）
-    new_conv_uuid: Optional[str] = None
-    try:
-        after_files = set(project_dir.glob('*.jsonl'))
-        new_files = after_files - before_files
-        if new_files:
-            new_conv_uuid = new_files.pop().stem
-    except Exception:
-        pass
+    new_conv_uuid = _detect_new_conv_uuid()
 
+    if timed_out:
+        return None, f'claude -p timeout ({timeout}s)', new_conv_uuid
     if proc.returncode != 0:
         return None, f'claude -p exit code {proc.returncode}: {(stderr or "")[:500]}', new_conv_uuid
     return stdout, None, new_conv_uuid

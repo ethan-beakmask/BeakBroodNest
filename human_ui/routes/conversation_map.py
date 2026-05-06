@@ -55,13 +55,16 @@ def list_traces():
     """列出 trace 清單（post-migration: 依 trace_id 分組；pre-migration: 依 conversation_id）
 
     Query params:
-        project_path     -- 過濾專案
-        limit            -- 上限 (預設 100)
-        with_agent       -- '1' 僅含 agent (cc-main:agent:%)
-        with_ccp         -- '1' 僅含 cc-p 子代理 (cc-p:%)
-        only_unanswered  -- '1' 真正無任何 assistant 回應（無 assistant_message 且無 tool_call）
-        only_tool_only   -- '1' 僅 tool 互動但無 final assistant_message（agent 中斷類，#4158 盲點）
-        min_turns        -- 最小 turn 數
+        project_path        -- 過濾專案
+        limit               -- 上限 (預設 100)
+        with_agent          -- '1' 僅含 agent (cc-main:agent:%)
+        with_ccp            -- '1' 僅含 cc-p 子代理 (cc-p:%)
+        only_unanswered     -- '1' 真正無任何 assistant 回應（無 assistant_message 且無 tool_call）
+        only_tool_only      -- '1' 僅 tool 互動但無 final assistant_message（agent 中斷類，#4158 盲點）
+        hide_p2_dispatcher  -- '1' 隱藏 P2 自 spawn 的摘要任務（actor_id 含 p2-dispatcher 或 prompt 含「請對以下 topic 產出結構化摘要」）
+        date_from           -- ISO 日期，篩選 last_ts >= date_from
+        date_to             -- ISO 日期，篩選 last_ts < date_to + 1 天
+        min_turns           -- 最小 turn 數
     """
     project_path = request.args.get('project_path', '')
     limit = request.args.get('limit', 100, type=int)
@@ -69,7 +72,17 @@ def list_traces():
     with_ccp = request.args.get('with_ccp', '') in ('1', 'true', 'yes')
     only_unanswered = request.args.get('only_unanswered', '') in ('1', 'true', 'yes')
     only_tool_only = request.args.get('only_tool_only', '') in ('1', 'true', 'yes')
+    hide_p2 = request.args.get('hide_p2_dispatcher', '') in ('1', 'true', 'yes')
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
     min_turns = request.args.get('min_turns', 0, type=int)
+
+    # 簡單格式驗證（YYYY-MM-DD），避免 SQL 注入；交由 PG 解析
+    _RE_DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+    if date_from and not _RE_DATE.match(date_from):
+        date_from = ''
+    if date_to and not _RE_DATE.match(date_to):
+        date_to = ''
 
     params = {'limit': limit}
 
@@ -88,13 +101,22 @@ def list_traces():
                 BOOL_OR(span_kind = 'assistant_message')                 AS has_assistant,
                 BOOL_OR(span_kind = 'tool_call')                         AS has_tool_call,
                 BOOL_OR(actor_id LIKE 'cc-main:agent:%')                 AS has_agent,
-                BOOL_OR(actor_id LIKE 'cc-p:%')                          AS has_ccp
+                BOOL_OR(actor_id LIKE 'cc-p:%')                          AS has_ccp,
+                BOOL_OR(actor_id LIKE 'p2-dispatcher%')                  AS has_p2,
+                BOOL_OR(content LIKE '請對以下 topic 產出結構化摘要%'
+                        OR content LIKE '[CC-LAUNCH-KIND=p2-dispatcher]%') AS p2_prompt_seen
             FROM conversation_turns
             WHERE trace_id IS NOT NULL
         """
         if project_path:
             sql += " AND project_path = :project_path"
             params['project_path'] = project_path
+        if date_from:
+            sql += " AND timestamp >= CAST(:date_from AS timestamptz)"
+            params['date_from'] = date_from
+        if date_to:
+            sql += " AND timestamp < CAST(:date_to AS timestamptz) + INTERVAL '1 day'"
+            params['date_to'] = date_to
         sql += " GROUP BY trace_id"
 
         havings = []
@@ -102,6 +124,13 @@ def list_traces():
             havings.append("BOOL_OR(actor_id LIKE 'cc-main:agent:%')")
         if with_ccp:
             havings.append("BOOL_OR(actor_id LIKE 'cc-p:%')")
+        if hide_p2:
+            # 新生 trace: actor_id=p2-dispatcher; 既存 trace: 用 prompt 開頭比對 fallback
+            havings.append(
+                "NOT BOOL_OR(actor_id LIKE 'p2-dispatcher%') "
+                "AND NOT BOOL_OR(content LIKE '請對以下 topic 產出結構化摘要%' "
+                "                OR content LIKE '[CC-LAUNCH-KIND=p2-dispatcher]%')"
+            )
         if only_unanswered:
             # 真正無任何 assistant 痕跡（連 tool_call 都沒有）
             havings.append(
@@ -162,6 +191,25 @@ def list_traces():
     sql2 += " ORDER BY MAX(timestamp) DESC LIMIT :limit"
     rows2 = _raw_query(sql2, params2)
     return jsonify(_serialize(rows2))
+
+
+# ============================================================
+# GET /api/conversation-map/project-paths
+# ============================================================
+
+@bp.route('/api/conversation-map/project-paths', methods=['GET'])
+def list_project_paths():
+    """回傳 distinct project_path 清單（含每個的 trace 數），給 UI 下拉選單用。"""
+    sql = """
+        SELECT project_path,
+               COUNT(DISTINCT trace_id) AS trace_count
+        FROM conversation_turns
+        WHERE trace_id IS NOT NULL AND project_path IS NOT NULL AND project_path <> ''
+        GROUP BY project_path
+        ORDER BY trace_count DESC, project_path ASC
+    """
+    rows = _raw_query(sql)
+    return jsonify(_serialize(rows))
 
 
 # ============================================================

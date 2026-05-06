@@ -581,9 +581,26 @@
                                 <label class="small text-secondary">專案路徑</label>
                             </div>
                             <div class="col-md-3">
-                                <input type="text" class="form-control form-control-sm"
-                                       x-model="projectPath" placeholder="留空=全部"
-                                       @keydown.enter="applyFilters()">
+                                <select class="form-select form-select-sm" x-model="projectPath"
+                                        @change="applyFilters()">
+                                    <option value="">全部</option>
+                                    <template x-for="p in projectPaths" :key="p.project_path">
+                                        <option :value="p.project_path"
+                                                x-text="p.project_path + ' (' + p.trace_count + ')'"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div class="col-auto">
+                                <label class="small text-secondary">日期</label>
+                            </div>
+                            <div class="col-auto">
+                                <input type="date" class="form-control form-control-sm" style="width:140px;"
+                                       x-model="filterDateFrom" @change="applyFilters()">
+                            </div>
+                            <div class="col-auto"><span class="small text-secondary">~</span></div>
+                            <div class="col-auto">
+                                <input type="date" class="form-control form-control-sm" style="width:140px;"
+                                       x-model="filterDateTo" @change="applyFilters()">
                             </div>
                             <div class="col-auto">
                                 <label class="small text-secondary">最少 turns</label>
@@ -593,6 +610,7 @@
                                        style="width:90px;" x-model.number="filterMinTurns"
                                        @change="applyFilters()">
                             </div>
+                            <div class="col-12"></div>
                             <div class="col-auto">
                                 <div class="form-check form-check-inline">
                                     <input class="form-check-input" type="checkbox" id="cm-fil-agent"
@@ -615,6 +633,12 @@
                                            x-model="filterOnlyToolOnly" @change="applyFilters()">
                                     <label class="form-check-label small" for="cm-fil-toolonly"
                                            title="有 tool_call 但無 final assistant_message（agent 被中斷類）">僅 tool 中斷</label>
+                                </div>
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" id="cm-fil-hidep2"
+                                           x-model="filterHideP2" @change="applyFilters()">
+                                    <label class="form-check-label small" for="cm-fil-hidep2"
+                                           title="排除 P2 摘要器自動 spawn 的子代理 trace（actor=p2-dispatcher 或 prompt 含『請對以下 topic』）">隱藏 P2 摘要</label>
                                 </div>
                             </div>
                             <div class="col-auto">
