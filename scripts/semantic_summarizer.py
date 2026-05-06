@@ -28,6 +28,7 @@ import sys
 import tempfile
 from collections import defaultdict
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # 從 db_importer 復用 DB 連線
@@ -136,8 +137,12 @@ def get_signal_turns(conn, conversation_id: str = None,
 
     skip_subagents=True 時排除 jsonl_path 在 /subagents/ 子目錄下的對話。
     since_days>0 時只取 conversations.last_timestamp 在近 N 天內的。
+    skip_analysis IS NOT NULL 的對話一律排除（pipeline/discard/no_analyze）。
     """
-    conditions = ["ct.p1_signals IS NOT NULL"]
+    conditions = [
+        "ct.p1_signals IS NOT NULL",
+        "ct.conversation_id NOT IN (SELECT id FROM conversations WHERE skip_analysis IS NOT NULL)",
+    ]
     params: list = []
 
     if conversation_id:
@@ -470,7 +475,7 @@ def run_claude_summarize(
     context_file: str,
     model: str = MODEL_DEFAULT,
     timeout: int = CLAUDE_TIMEOUT,
-) -> Tuple[Optional[str], Optional[str]]:
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     呼叫 claude -p 產生摘要。
 
@@ -479,8 +484,18 @@ def run_claude_summarize(
     會 fork 出 node child，subprocess.run 的 timeout 只會殺直接子行程)。
 
     Returns:
-        (output_text, error_message)
+        (output_text, error_message, new_conversation_uuid)
+        new_conversation_uuid 為此次 claude -p 產生的 session UUID（可能為 None）
     """
+    import glob as _glob
+
+    # 執行前快照 claude project 目錄，用來識別新建的 session jsonl
+    project_dir = Path.home() / '.claude' / 'projects' / '-opt-BeakBroodNest'
+    try:
+        before_files = set(project_dir.glob('*.jsonl'))
+    except Exception:
+        before_files = set()
+
     cmd = [
         'claude', '-p', main_prompt,
         '--append-system-prompt-file', context_file,
@@ -498,7 +513,7 @@ def run_claude_summarize(
             start_new_session=True,
         )
     except FileNotFoundError:
-        return None, 'claude CLI not found in PATH'
+        return None, 'claude CLI not found in PATH', None
 
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
@@ -511,11 +526,21 @@ def run_claude_summarize(
             proc.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             pass
-        return None, f'claude -p timeout ({timeout}s)'
+        return None, f'claude -p timeout ({timeout}s)', None
+
+    # 找出新建的 jsonl → 取 UUID（stem）
+    new_conv_uuid: Optional[str] = None
+    try:
+        after_files = set(project_dir.glob('*.jsonl'))
+        new_files = after_files - before_files
+        if new_files:
+            new_conv_uuid = new_files.pop().stem
+    except Exception:
+        pass
 
     if proc.returncode != 0:
-        return None, f'claude -p exit code {proc.returncode}: {(stderr or "")[:500]}'
-    return stdout, None
+        return None, f'claude -p exit code {proc.returncode}: {(stderr or "")[:500]}', new_conv_uuid
+    return stdout, None, new_conv_uuid
 
 
 def _extract_json_object(text: str) -> Optional[str]:
@@ -650,7 +675,7 @@ def summarize_topic(
     if verbose:
         print(f'[P2] {topic_id}: calling claude -p (model={model})', file=sys.stderr)
 
-    raw_output, error = run_claude_summarize(main_prompt, ctx_file, model)
+    raw_output, error, new_conv_uuid = run_claude_summarize(main_prompt, ctx_file, model)
 
     if error:
         _safe_unlink(ctx_file)
@@ -662,6 +687,7 @@ def summarize_topic(
             'error': error,
             'model': model,
             'raw_output': '',
+            'pipeline_conv_uuid': new_conv_uuid,
         }
 
     # 4. 驗證 JSON
@@ -672,7 +698,7 @@ def summarize_topic(
             print(f'[P2] {topic_id}: validation failed: {validation_error}, retrying',
                   file=sys.stderr)
         retry_model = MODEL_DEFAULT  # 強制升 sonnet
-        raw_output2, error2 = run_claude_summarize(main_prompt, ctx_file, retry_model)
+        raw_output2, error2, new_conv_uuid2 = run_claude_summarize(main_prompt, ctx_file, retry_model)
         if error2:
             _safe_unlink(ctx_file)
             kind = 'claude_timeout' if 'timeout' in error2 else 'claude_error'
@@ -684,10 +710,12 @@ def summarize_topic(
                 'first_error': validation_error,
                 'model': retry_model,
                 'raw_output': raw_output or '',
+                'pipeline_conv_uuid': new_conv_uuid2 or new_conv_uuid,
             }
         summary, validation_error = validate_summary(raw_output2)
         raw_output = raw_output2
         model = retry_model
+        new_conv_uuid = new_conv_uuid2 or new_conv_uuid
 
     if validation_error:
         _safe_unlink(ctx_file)
@@ -699,6 +727,7 @@ def summarize_topic(
             'error': validation_error,
             'raw_output': raw_output or '',
             'model': model,
+            'pipeline_conv_uuid': new_conv_uuid,
         }
 
     # 清理暫存檔
@@ -709,6 +738,7 @@ def summarize_topic(
         'status': 'ok',
         'summary': summary,
         'model': model,
+        'pipeline_conv_uuid': new_conv_uuid,
     }
 
 
@@ -746,6 +776,37 @@ def update_topic_results(
         """, (topic_id, now, turn_ids))
 
     conn.commit()
+
+
+def mark_pipeline_session(conn, conv_uuid: Optional[str]) -> None:
+    """將 P2 claude -p 自動產生的 session 標記為 pipeline，阻止被 P1/P2 再次分析。"""
+    if not conv_uuid:
+        return
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE conversations SET skip_analysis = 'pipeline'
+            WHERE id = %s AND skip_analysis IS NULL
+        """, (conv_uuid,))
+    conn.commit()
+
+
+def maybe_mark_discard(conn, conversation_id: str, threshold: int = 3) -> bool:
+    """同一 conversation 累積 p2_failures 達 threshold 次時標記為 discard。
+    回傳 True 表示已標記。"""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT COUNT(*) FROM p2_failures WHERE conversation_id = %s
+        """, (conversation_id,))
+        count = cur.fetchone()[0]
+    if count >= threshold:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE conversations SET skip_analysis = 'discard'
+                WHERE id = %s AND skip_analysis IS NULL
+            """, (conversation_id,))
+        conn.commit()
+        return True
+    return False
 
 
 def record_p2_failure(
@@ -879,6 +940,10 @@ def run_p2_pipeline(
             result = summarize_topic(conn, topic, dry_run=dry_run, verbose=verbose)
             results.append(result)
 
+            # 每次 claude -p 結束後，立即標記新建的 pipeline session，阻止 P1/P2 再掃
+            if not dry_run:
+                mark_pipeline_session(conn, result.get('pipeline_conv_uuid'))
+
             # 4. 依結果回寫 DB
             if result['status'] == 'ok' and not dry_run:
                 update_topic_results(conn, topic, result)
@@ -893,6 +958,10 @@ def run_p2_pipeline(
                       file=sys.stderr)
                 try:
                     record_p2_failure(conn, topic, result)
+                    discarded = maybe_mark_discard(conn, topic['conversation_id'])
+                    if discarded:
+                        print(f'[P2] {topic["topic_id"]}: conversation {topic["conversation_id"][:12]}... '
+                              f'累積失敗過多，標記 discard', file=sys.stderr)
                 except Exception as e:
                     print(f'[P2] {topic["topic_id"]}: 記錄 p2_failures 失敗: {e}',
                           file=sys.stderr)
@@ -903,6 +972,10 @@ def run_p2_pipeline(
                       f'{result.get("error", "?")}', file=sys.stderr)
                 try:
                     record_p2_failure(conn, topic, result)
+                    discarded = maybe_mark_discard(conn, topic['conversation_id'])
+                    if discarded:
+                        print(f'[P2] {topic["topic_id"]}: conversation {topic["conversation_id"][:12]}... '
+                              f'累積失敗過多，標記 discard', file=sys.stderr)
                 except Exception as e:
                     print(f'[P2] {topic["topic_id"]}: 記錄 p2_failures 失敗: {e}',
                           file=sys.stderr)
