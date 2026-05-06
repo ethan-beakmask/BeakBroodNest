@@ -20,6 +20,7 @@ function observeApp() {
         globalReviewStats: {},
         allMentions: [],
         mentionLimit: 30,
+        mentionTypeFilter: '',
 
         // Sort
         sortField: 'last_timestamp',
@@ -109,11 +110,15 @@ function observeApp() {
                 const globalData = await globalResp.json();
                 this.globalReviewStats = globalData.stats || globalData || {};
 
-                // 彙整所有用戶提及
+                // 彙整所有用戶提及（每筆補上 conversation_id 短碼）
                 this.allMentions = [];
                 for (const r of this.reviews) {
+                    const cid = r.conversation_id || '';
                     if (r.user_mentions) {
-                        this.allMentions.push(...r.user_mentions);
+                        for (const m of r.user_mentions) {
+                            if (!m.conversation_id) m.conversation_id = cid;
+                            this.allMentions.push(m);
+                        }
                     }
                 }
                 // 按時間排序（新到舊）
@@ -126,6 +131,21 @@ function observeApp() {
             } catch (e) {
                 console.error('fetchReviews error:', e);
             }
+        },
+
+        get filteredMentions() {
+            if (!this.mentionTypeFilter) return this.allMentions;
+            return this.allMentions.filter(m => m.mention_type === this.mentionTypeFilter);
+        },
+
+        mentionTypeCount(type) {
+            if (!type) return this.allMentions.length;
+            return this.allMentions.filter(m => m.mention_type === type).length;
+        },
+
+        setMentionFilter(type) {
+            this.mentionTypeFilter = type;
+            this.mentionLimit = 30;
         },
 
         totalMentions: 0,

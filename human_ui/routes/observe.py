@@ -153,10 +153,27 @@ def conversation_signals(conv_id):
 # P3 Review 結果 API
 # ============================================================
 
+_P2_PROMPT_PREFIXES = (
+    '請對以下 topic 產出結構化摘要',
+    '[CC-LAUNCH-KIND=p2-dispatcher]',
+)
+
+
+def _is_p2_dispatcher_mention(m):
+    """判定 mention 是否來自 P2 dispatcher 灌入的 prompt（regex 命中『請對以下 topic』）"""
+    text = (m.get('text') or '').lstrip()
+    return any(text.startswith(p) for p in _P2_PROMPT_PREFIXES)
+
+
 @bp.route('/api/observe/reviews', methods=['GET'])
 def reviews():
-    """列出 P3 復盤分析結果"""
+    """列出 P3 復盤分析結果。
+
+    Query params:
+        hide_p2_dispatcher  -- '1' 過濾 P2 摘要器灌入的「請對以下 topic」提及（預設啟用）
+    """
     import os, json as jsonlib
+    hide_p2 = request.args.get('hide_p2_dispatcher', '1') in ('1', 'true', 'yes')
     results_dir = '/opt/BeakBroodNest/data/reviews'
     items = []
     if os.path.isdir(results_dir):
@@ -167,6 +184,11 @@ def reviews():
             try:
                 with open(fpath, 'r', encoding='utf-8') as f:
                     data = jsonlib.load(f)
+                if hide_p2 and isinstance(data.get('user_mentions'), list):
+                    data['user_mentions'] = [
+                        m for m in data['user_mentions']
+                        if not _is_p2_dispatcher_mention(m)
+                    ]
                 items.append(data)
             except Exception:
                 continue

@@ -371,38 +371,58 @@
 
             <!-- 各對話的用戶提及 -->
             <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <span>用戶提及追蹤</span>
-                    <span class="badge bg-secondary" x-text="totalMentions + ' 條'"></span>
+                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                        <button class="btn btn-sm"
+                                :class="mentionTypeFilter === '' ? 'btn-primary' : 'btn-outline-secondary'"
+                                @click="setMentionFilter('')">
+                            全部 (<span x-text="mentionTypeCount('')"></span>)
+                        </button>
+                        <template x-for="t in ['todo','request','question','decision']" :key="t">
+                            <button class="btn btn-sm"
+                                    :class="mentionTypeFilter === t ? 'btn-primary' : 'btn-outline-secondary'"
+                                    :disabled="mentionTypeCount(t) === 0"
+                                    @click="setMentionFilter(t)">
+                                <span x-text="t"></span> (<span x-text="mentionTypeCount(t)"></span>)
+                            </button>
+                        </template>
+                    </div>
                 </div>
                 <div class="card-body p-0">
                     <table class="table table-sm table-hover mb-0">
                         <thead class="table-dark">
                             <tr>
-                                <th style="width: 100px;">類型</th>
-                                <th style="width: 120px;">時間</th>
+                                <th style="width: 90px;">類型</th>
+                                <th style="width: 130px;">時間</th>
+                                <th style="width: 90px;" title="conversation_id 短碼">對話</th>
                                 <th style="width: 60px;">Turn</th>
                                 <th>內容</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <template x-for="(m, idx) in allMentions.slice(0, mentionLimit)" :key="'m-' + idx">
+                            <template x-if="filteredMentions.length === 0">
+                                <tr><td colspan="5" class="text-center text-secondary py-3">無資料</td></tr>
+                            </template>
+                            <template x-for="(m, idx) in filteredMentions.slice(0, mentionLimit)" :key="'m-' + idx">
                                 <tr>
                                     <td>
                                         <span class="badge" :class="mentionBadge(m.mention_type)"
                                               x-text="m.mention_type"></span>
                                     </td>
                                     <td class="small text-nowrap" x-text="formatTime(m.timestamp)"></td>
+                                    <td class="small font-monospace" :title="m.conversation_id"
+                                        x-text="(m.conversation_id || '').slice(0,8)"></td>
                                     <td class="small" x-text="'T' + m.turn_seq"></td>
                                     <td class="small" x-text="m.text"></td>
                                 </tr>
                             </template>
                         </tbody>
                     </table>
-                    <div class="p-2 text-center" x-show="allMentions.length > mentionLimit">
+                    <div class="p-2 text-center" x-show="filteredMentions.length > mentionLimit">
                         <button class="btn btn-outline-secondary btn-sm"
                                 @click="mentionLimit += 30"
-                                x-text="'更多 (' + (allMentions.length - mentionLimit) + ' 條)'"></button>
+                                x-text="'更多 (' + (filteredMentions.length - mentionLimit) + ' 條)'"></button>
                     </div>
                 </div>
             </div>
@@ -662,7 +682,7 @@
                 <div class="row g-3 flex-md-nowrap">
                     <!-- 左：trace 清單 -->
                     <div class="col-md-3" style="flex:0 0 auto;max-width:none;width:calc(25% - 200px);min-width:160px;">
-                        <div class="card" style="max-height:600px;overflow-y:auto;">
+                        <div class="card" style="height:calc(100vh - 260px);overflow-y:auto;">
                             <div class="card-header small fw-bold">Trace 清單</div>
                             <div class="list-group list-group-flush">
                                 <template x-if="traces.length === 0 && !loadingTraces">
@@ -744,10 +764,10 @@
                                     <span class="badge bg-secondary ms-2">含 sidechain</span>
                                 </template>
                             </div>
-                            <div class="card-body p-0 d-flex" style="min-height:560px;">
+                            <div class="card-body p-0 d-flex" style="height:calc(100vh - 320px);min-height:400px;">
                                 <!-- 左：因果鏈 -->
                                 <div id="beak-cm-container"
-                                     style="flex:1 1 auto;min-width:280px;height:560px;border:none;border-right:1px solid #dee2e6;">
+                                     style="flex:1 1 auto;min-width:280px;height:100%;border:none;border-right:1px solid #dee2e6;">
                                     <div x-show="!selectedTraceId"
                                          class="d-flex align-items-center justify-content-center h-100 text-secondary small">
                                         點選左側 trace 以渲染因果鏈
@@ -755,7 +775,7 @@
                                 </div>
                                 <!-- 右：Turn 詳情面板 (預設展開) -->
                                 <div class="cm-detail-panel d-flex flex-column"
-                                     style="flex:0 0 560px;width:560px;max-width:560px;height:560px;background:#fff;overflow:hidden;">
+                                     style="flex:0 0 560px;width:560px;max-width:560px;height:100%;background:#fff;overflow:hidden;">
                                     <!-- 詳情 header -->
                                     <div class="border-bottom px-2 py-1 d-flex justify-content-between align-items-start"
                                          style="flex:0 0 auto;background:#f8fafc;">

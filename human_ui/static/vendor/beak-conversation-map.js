@@ -666,7 +666,9 @@ var BeakConversationMapChart = (function() {
         cs.background = '#f8fafc';
 
         var viewport = document.createElement('div');
-        viewport.style.cssText = 'width:100%;height:100%;overflow:auto;cursor:default;position:relative;';
+        // scrollbar-gutter:stable 永遠保留 scrollbar 寬度，避免 GNOME overlay scrollbar
+        // 一段時間自動隱藏時被 actor 標籤蓋住
+        viewport.style.cssText = 'width:100%;height:100%;overflow:auto;cursor:default;position:relative;scrollbar-gutter:stable;';
         this._container.appendChild(viewport);
 
         var svg = document.createElementNS(svgNS, 'svg');
@@ -679,7 +681,8 @@ var BeakConversationMapChart = (function() {
         var headerSvg = document.createElementNS(svgNS, 'svg');
         headerSvg.setAttribute('width', '100%');
         headerSvg.setAttribute('height', String(HEADER_H));
-        headerSvg.style.cssText = 'position:absolute;top:0;left:0;right:0;height:'+HEADER_H+'px;'
+        // right:14px 配合 viewport 的 scrollbar-gutter:stable，避免 actor 標籤蓋住右側 scrollbar 區
+        headerSvg.style.cssText = 'position:absolute;top:0;left:0;right:14px;height:'+HEADER_H+'px;'
             + 'background:rgba(248,250,252,0.96);backdrop-filter:blur(2px);'
             + 'border-bottom:1px solid #e5e7eb;z-index:5;pointer-events:none;display:block;';
         this._container.appendChild(headerSvg);

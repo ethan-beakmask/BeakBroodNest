@@ -221,7 +221,13 @@ def collect_user_mentions(conn, conversation_id: str = None) -> list:
     """
     cur = conn.cursor()
 
-    where = "WHERE role = 'user' AND content IS NOT NULL AND content != ''"
+    # 排除 P2 dispatcher 灌入的 user message（actor_id 標記 + prompt 前綴雙保險）
+    where = (
+        "WHERE role = 'user' AND content IS NOT NULL AND content != '' "
+        "AND (actor_id IS NULL OR actor_id NOT LIKE 'p2-dispatcher%') "
+        "AND content NOT LIKE '請對以下 topic 產出結構化摘要%' "
+        "AND content NOT LIKE '[CC-LAUNCH-KIND=p2-dispatcher]%'"
+    )
     params = []
     if conversation_id:
         where += " AND conversation_id = %s"
