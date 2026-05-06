@@ -107,8 +107,20 @@ function dashboard() {
 
         // Filter & Sort
         toggleFilter(status) {
-            this.filterStatus = this.filterStatus === status ? '' : status;
+            this.setFilter(this.filterStatus === status ? '' : status);
+        },
+
+        setFilter(status) {
+            // 切 filter 時清掉 detail，避免殘留：原 filter 選的那筆在新 filter 下可能不存在
+            this.expandedId = null;
+            this.detail = null;
+            this.filterStatus = status;
             this.fetchTasks();
+        },
+
+        closeDetail() {
+            this.expandedId = null;
+            this.detail = null;
         },
 
         sortBy(field) {

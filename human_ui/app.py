@@ -295,8 +295,8 @@ def card_test_page():
     return render_template('card_test.html')
 
 
-@app.route('/beakbroodnest/dashboard')
-def dashboard_page():
+@app.route('/beakbroodnest/orchestrator')
+def orchestrator_page():
     """Orchestrator 儀錶板"""
     return render_template('dashboard.html')
 

@@ -31,47 +31,37 @@
 
     <div class="container-fluid py-3">
 
-        <!-- Stats Cards -->
-        <div class="row g-2 mb-3">
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value" x-text="stats.total || 0"></div>
-                        <div class="stat-label">全部</div>
-                    </div>
-                </div>
-            </div>
-            <template x-for="s in statusDefs" :key="s.key">
-                <div class="col">
-                    <div class="card stat-card" :class="filterStatus === s.key ? 'border-primary' : ''"
-                         @click="toggleFilter(s.key)" role="button">
-                        <div class="card-body text-center py-2">
-                            <div class="stat-value" :style="'color:' + s.color"
-                                 x-text="(stats.by_status && stats.by_status[s.key]) || 0"></div>
-                            <div class="stat-label" x-text="s.label"></div>
-                        </div>
-                    </div>
-                </div>
+        <!-- Stats Bar (扁平單列) -->
+        <div class="d-flex flex-wrap align-items-center gap-3 mb-2 px-3 py-1 bg-white border rounded small">
+            <span class="text-secondary">全部 <strong x-text="stats.total || 0"></strong></span>
+            <template x-for="s in statusDefs" :key="'sb-' + s.key">
+                <span>
+                    <span class="text-secondary">|</span>
+                    <span class="ms-2" :style="'color:' + s.color"
+                          x-text="s.label"></span>
+                    <strong class="ms-1"
+                            x-text="(stats.by_status && stats.by_status[s.key]) || 0"></strong>
+                </span>
             </template>
-            <div class="col">
-                <div class="card stat-card">
-                    <div class="card-body text-center py-2">
-                        <div class="stat-value" x-text="stats.active_session_count || 0"></div>
-                        <div class="stat-label">活躍 Session</div>
-                    </div>
-                </div>
-            </div>
+            <span class="text-secondary">|</span>
+            <span class="text-secondary">活躍 Session <strong x-text="stats.active_session_count || 0"></strong></span>
         </div>
 
         <!-- Filter bar -->
-        <div class="d-flex align-items-center gap-2 mb-2">
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
             <span class="text-secondary small">篩選:</span>
             <button class="btn btn-sm" :class="filterStatus ? 'btn-outline-primary' : 'btn-primary'"
-                    @click="filterStatus = ''; fetchTasks()">全部</button>
+                    @click="setFilter('')">
+                全部 (<span x-text="stats.total || 0"></span>)
+            </button>
             <template x-for="s in statusDefs" :key="'f-' + s.key">
                 <button class="btn btn-sm"
                         :class="filterStatus === s.key ? 'btn-primary' : 'btn-outline-secondary'"
-                        @click="toggleFilter(s.key)" x-text="s.label"></button>
+                        :disabled="((stats.by_status && stats.by_status[s.key]) || 0) === 0"
+                        @click="setFilter(s.key)">
+                    <span x-text="s.label"></span>
+                    (<span x-text="(stats.by_status && stats.by_status[s.key]) || 0"></span>)
+                </button>
             </template>
             <div class="ms-auto text-secondary small">
                 <span x-text="'共 ' + taskTotal + ' 筆'"></span>
@@ -79,122 +69,122 @@
             </div>
         </div>
 
-        <!-- Tasks Table -->
-        <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
-                <thead class="table-dark">
-                    <tr>
-                        <th style="width:50px">#</th>
-                        <th style="width:90px" role="button" @click="sortBy('status')">
-                            狀態 <span x-text="sortIcon('status')"></span>
-                        </th>
-                        <th>標題</th>
-                        <th style="width:80px">Model</th>
-                        <th style="width:100px" role="button" @click="sortBy('created_at')">
-                            建立 <span x-text="sortIcon('created_at')"></span>
-                        </th>
-                        <th style="width:80px">耗時</th>
-                        <th style="width:180px">Session</th>
-                        <th style="width:60px">Reports</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <template x-if="tasks.length === 0">
-                        <tr><td colspan="8" class="text-center text-secondary py-4">無任務資料</td></tr>
-                    </template>
-                    <template x-for="t in sortedTasks" :key="t.id">
-                        <tr :class="{'table-active': expandedId === t.id}" @click="toggleExpand(t.id)" role="button">
-                            <td x-text="t.id"></td>
-                            <td>
-                                <span class="badge" :class="statusClass(t.status)" x-text="t.status"></span>
-                            </td>
-                            <td>
-                                <span x-text="t.title"></span>
-                            </td>
-                            <td><code x-text="t.model"></code></td>
-                            <td class="small text-secondary" x-text="fmtTime(t.created_at)"></td>
-                            <td class="small" x-text="elapsed(t)"></td>
-                            <td class="small text-truncate" style="max-width:180px"
-                                x-text="t.session_id || '-'" :title="t.session_id"></td>
-                            <td class="text-center">
-                                <span class="badge bg-secondary" x-text="t._report_count ?? '?'"></span>
-                            </td>
-                        </tr>
-                    </template>
-                </tbody>
-            </table>
-        </div>
+        <!-- 左右 Layout: 左清單 / 右詳情 -->
+        <div class="row g-3 flex-md-nowrap">
 
-        <!-- Expanded Detail -->
-        <template x-if="expandedId && detail">
-            <div class="card mt-2 border-primary">
-                <div class="card-header bg-light d-flex justify-content-between align-items-center">
-                    <span>
-                        任務 #<span x-text="detail.id"></span>
-                        <span class="badge ms-2" :class="statusClass(detail.status)" x-text="detail.status"></span>
-                    </span>
-                    <button class="btn btn-sm btn-outline-secondary" @click="expandedId = null; detail = null;">關閉</button>
-                </div>
-                <div class="card-body">
-                    <div class="row mb-2">
-                        <div class="col-md-6">
-                            <table class="table table-sm table-borderless mb-0">
-                                <tr><th class="text-secondary" style="width:100px">Worker ID</th><td><code x-text="detail.worker_id"></code></td></tr>
-                                <tr><th class="text-secondary">Model</th><td x-text="detail.model"></td></tr>
-                                <tr><th class="text-secondary">Working Dir</th><td><code x-text="detail.working_dir"></code></td></tr>
-                                <tr><th class="text-secondary">Session ID</th><td class="text-break"><code x-text="detail.session_id || '-'"></code></td></tr>
-                            </table>
-                        </div>
-                        <div class="col-md-6">
-                            <table class="table table-sm table-borderless mb-0">
-                                <tr><th class="text-secondary" style="width:100px">tmux Session</th><td><code x-text="detail.tmux_session || '-'"></code></td></tr>
-                                <tr><th class="text-secondary">tmux Pane</th><td><code x-text="detail.tmux_pane || '-'"></code></td></tr>
-                                <tr><th class="text-secondary">Main Pane</th><td><code x-text="detail.main_pane || '-'"></code></td></tr>
-                                <tr><th class="text-secondary">Timeout</th><td x-text="detail.timeout_seconds + 's'"></td></tr>
-                            </table>
-                        </div>
+            <!-- 左：Tasks Table -->
+            <div class="col-md-5">
+                <div class="card" style="height:calc(100vh - 170px); overflow-y:auto;">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-dark sticky-top">
+                                <tr>
+                                    <th style="width:50px">#</th>
+                                    <th style="width:90px" role="button" @click="sortBy('status')">
+                                        狀態 <span x-text="sortIcon('status')"></span>
+                                    </th>
+                                    <th>標題</th>
+                                    <th style="width:90px" role="button" @click="sortBy('created_at')">
+                                        建立 <span x-text="sortIcon('created_at')"></span>
+                                    </th>
+                                    <th style="width:50px" class="text-center">R</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-if="tasks.length === 0">
+                                    <tr><td colspan="5" class="text-center text-secondary py-4">無任務資料</td></tr>
+                                </template>
+                                <template x-for="t in sortedTasks" :key="t.id">
+                                    <tr :class="{'table-active': expandedId === t.id}" @click="toggleExpand(t.id)" role="button">
+                                        <td x-text="t.id"></td>
+                                        <td>
+                                            <span class="badge" :class="statusClass(t.status)" x-text="t.status"></span>
+                                        </td>
+                                        <td class="text-truncate" style="max-width:0;" :title="t.title">
+                                            <span x-text="t.title"></span>
+                                        </td>
+                                        <td class="small text-secondary" x-text="fmtTime(t.created_at)"></td>
+                                        <td class="text-center">
+                                            <span class="badge bg-secondary" x-text="t._report_count ?? '?'"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
                     </div>
-
-                    <!-- Instruction -->
-                    <div class="mb-3">
-                        <h6 class="text-secondary">指令</h6>
-                        <pre class="bg-light p-2 rounded small" style="max-height:200px; overflow-y:auto; white-space:pre-wrap;"
-                             x-text="detail.instruction"></pre>
-                    </div>
-
-                    <!-- Reports -->
-                    <template x-if="detail.reports && detail.reports.length > 0">
-                        <div>
-                            <h6 class="text-secondary">Reports (<span x-text="detail.reports.length"></span>)</h6>
-                            <template x-for="r in detail.reports" :key="r.id">
-                                <div class="card mb-2">
-                                    <div class="card-header py-1 px-2 small d-flex justify-content-between">
-                                        <span>
-                                            Report #<span x-text="r.id"></span>
-                                            <span class="badge"
-                                                  :class="{'bg-warning text-dark': r.review_status === 'pending',
-                                                           'bg-success': r.review_status === 'approved',
-                                                           'bg-danger': r.review_status === 'rejected',
-                                                           'bg-info': r.review_status === 'promoted'}"
-                                                  x-text="r.review_status"></span>
-                                            <span class="text-secondary ms-1" x-text="'exit=' + (r.exit_code ?? '?')"></span>
-                                        </span>
-                                        <span class="text-secondary" x-text="fmtTime(r.created_at)"></span>
-                                    </div>
-                                    <div class="card-body py-2 px-2">
-                                        <pre class="mb-0 small" style="max-height:300px; overflow-y:auto; white-space:pre-wrap;"
-                                             x-text="r.content || '(empty)'"></pre>
-                                    </div>
-                                </div>
-                            </template>
-                        </div>
-                    </template>
-                    <template x-if="!detail.reports || detail.reports.length === 0">
-                        <p class="text-secondary small">無 Report 資料</p>
-                    </template>
                 </div>
             </div>
-        </template>
+
+            <!-- 右：Detail -->
+            <div class="col-md-7">
+                <template x-if="!expandedId">
+                    <div class="card" style="height:calc(100vh - 170px);">
+                        <div class="card-body d-flex align-items-center justify-content-center text-secondary">
+                            點選左側任務查看詳情
+                        </div>
+                    </div>
+                </template>
+                <template x-if="expandedId && detail">
+                    <div class="card border-primary" style="height:calc(100vh - 170px); overflow-y:auto;">
+                        <div class="card-header bg-light sticky-top d-flex justify-content-between align-items-center">
+                            <span>
+                                任務 #<span x-text="detail.id"></span>
+                                <span class="badge ms-2" :class="statusClass(detail.status)" x-text="detail.status"></span>
+                                <code class="small ms-2" x-text="detail.model"></code>
+                                <span class="small text-secondary ms-2" x-text="elapsed(detail)"></span>
+                            </span>
+                            <button class="btn btn-sm btn-outline-secondary" @click="closeDetail()">關閉</button>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm table-borderless mb-2 small">
+                                <tr><th class="text-secondary" style="width:100px">Worker ID</th><td><code x-text="detail.worker_id"></code></td></tr>
+                                <tr><th class="text-secondary">Working Dir</th><td><code x-text="detail.working_dir"></code></td></tr>
+                                <tr><th class="text-secondary">Session ID</th><td class="text-break"><code x-text="detail.session_id || '-'"></code></td></tr>
+                                <tr><th class="text-secondary">tmux</th><td><code x-text="(detail.tmux_session || '-') + ' / ' + (detail.tmux_pane || '-')"></code></td></tr>
+                                <tr><th class="text-secondary">Timeout</th><td x-text="detail.timeout_seconds + 's'"></td></tr>
+                            </table>
+
+                            <div class="mb-3">
+                                <h6 class="text-secondary small">指令</h6>
+                                <pre class="bg-light p-2 rounded small" style="max-height:160px; overflow-y:auto; white-space:pre-wrap;"
+                                     x-text="detail.instruction"></pre>
+                            </div>
+
+                            <template x-if="detail.reports && detail.reports.length > 0">
+                                <div>
+                                    <h6 class="text-secondary small">Reports (<span x-text="detail.reports.length"></span>)</h6>
+                                    <template x-for="r in detail.reports" :key="r.id">
+                                        <div class="card mb-2">
+                                            <div class="card-header py-1 px-2 small d-flex justify-content-between">
+                                                <span>
+                                                    Report #<span x-text="r.id"></span>
+                                                    <span class="badge"
+                                                          :class="{'bg-warning text-dark': r.review_status === 'pending',
+                                                                   'bg-success': r.review_status === 'approved',
+                                                                   'bg-danger': r.review_status === 'rejected',
+                                                                   'bg-info': r.review_status === 'promoted'}"
+                                                          x-text="r.review_status"></span>
+                                                    <span class="text-secondary ms-1" x-text="'exit=' + (r.exit_code ?? '?')"></span>
+                                                </span>
+                                                <span class="text-secondary" x-text="fmtTime(r.created_at)"></span>
+                                            </div>
+                                            <div class="card-body py-2 px-2">
+                                                <pre class="mb-0 small" style="max-height:300px; overflow-y:auto; white-space:pre-wrap;"
+                                                     x-text="r.content || '(empty)'"></pre>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                            <template x-if="!detail.reports || detail.reports.length === 0">
+                                <p class="text-secondary small">無 Report 資料</p>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+        </div>
 
     </div>
 </div>
