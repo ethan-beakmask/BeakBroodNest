@@ -144,6 +144,8 @@ import { Markdown } from 'tiptap-markdown'
 import { StructuredEntry, jumpOutOfBlock } from './structured-entry.js'
 import { SlashCommand } from './slash-command.js'
 import { SelectionToolbar } from './selection-toolbar.js'
+import { PasteTextTable } from './paste-text-table.js'
+import { openSectionNav } from './section-nav.js'
 
 class CardEditor {
     constructor() {
@@ -198,6 +200,7 @@ class CardEditor {
                 SlashCommand,
                 SelectionToolbar,
                 ListHotkeys,
+                PasteTextTable,
             ],
             editorProps: {
                 attributes: {
@@ -317,6 +320,7 @@ class CardEditor {
             case 'addColAfter': chain.addColumnAfter().run(); break
             case 'addColBefore': chain.addColumnBefore().run(); break
             case 'deleteCol': chain.deleteColumn().run(); break
+            case 'sectionNav': openSectionNav(this.editor); break
         }
     }
 

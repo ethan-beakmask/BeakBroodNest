@@ -2172,6 +2172,29 @@ input[type="checkbox"].se-field-input {
    Toolbar 表格按鈕分區色彩 (粉紅刪除 / 淺綠新增)
    ============================================================ */
 /* 上排 -- 表格刪除類(粉紅) */
+.ce-pane-toolbar .tb-heading-zone {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    background: #eff6ff;
+    padding: 2px 4px;
+    border-radius: 3px;
+    border: 1px solid #bfdbfe;
+}
+.ce-pane-toolbar .tb-heading {
+    background: transparent;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+.ce-pane-toolbar .tb-heading:hover:not(:disabled) {
+    background: #dbeafe;
+}
+.ce-pane-toolbar .tb-heading-nav {
+    border-left: 1px solid #bfdbfe;
+    margin-left: 2px;
+    padding-left: 6px;
+}
+
 .ce-pane-toolbar .tb-table-del-zone {
     display: inline-flex;
     align-items: center;

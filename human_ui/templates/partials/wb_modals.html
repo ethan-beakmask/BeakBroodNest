@@ -879,10 +879,13 @@
                             <button @click="ceCmd('strike', ed.id)" title="刪除線"><s>S</s></button>
                             <button @click="ceCmd('code', ed.id)" title="行內程式碼">&lt;&gt;</button>
                             <span class="tb-sep"></span>
-                            <button @click="ceCmd('h1', ed.id)" title="H1">H1</button>
-                            <button @click="ceCmd('h2', ed.id)" title="H2">H2</button>
-                            <button @click="ceCmd('h3', ed.id)" title="H3">H3</button>
-                            <button @click="ceCmd('h4', ed.id)" title="H4">H4</button>
+                            <span class="tb-heading-zone">
+                                <button class="tb-heading" @click="ceCmd('h1', ed.id)" title="H1">H1</button>
+                                <button class="tb-heading" @click="ceCmd('h2', ed.id)" title="H2">H2</button>
+                                <button class="tb-heading" @click="ceCmd('h3', ed.id)" title="H3">H3</button>
+                                <button class="tb-heading" @click="ceCmd('h4', ed.id)" title="H4">H4</button>
+                                <button class="tb-heading tb-heading-nav" @click="ceCmd('sectionNav', ed.id)" title="章節導覽（列出所有 H1~H4 標題並可點擊跳轉）">節</button>
+                            </span>
                             <span class="tb-sep"></span>
                             <button @click="ceCmd('bulletList', ed.id)" title="清單 (Ctrl+Shift+6,三層自動 •/◦/▪)">&bull;</button>
                             <button @click="ceCmd('orderedList', ed.id)" title="編號 (Ctrl+Shift+7,三層自動 1./a./i.)">1.</button>
