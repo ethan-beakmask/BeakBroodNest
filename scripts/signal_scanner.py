@@ -1209,12 +1209,11 @@ def main() -> int:
                 print('[INFO] 沒有需要掃描的對話', file=sys.stderr)
                 return 0
 
-            # 輸出 JSON
-            output_path = args.output
-            if not output_path:
-                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-                output_path = f'signals_batch_{ts}.json'
-            write_output(results, output_path)
+            # 輸出 JSON：僅在明確指定 --output 時才落地。
+            # --db 模式下結果已寫入 p1_signals 表，預設產出 JSON 會在 cron 環境
+            # 累積到 $HOME（每 10 分鐘一檔）。需備援檔請自行帶 --output。
+            if args.output:
+                write_output(results, args.output)
             print_db_summary(results)
 
         return 0
