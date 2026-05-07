@@ -6,7 +6,7 @@ BeakBroodNest 復盤系統 - 對話轉換器 (P0 階段)
 將 Claude Code JSONL 對話記錄轉為結構化 Markdown，
 供後續訊號掃描及語意摘要處理。
 
-改造自公司版 parse_claude_conversation.py，針對復盤需求做七項修正：
+改造自 Ethan 實驗室版 parse_claude_conversation.py，針對復盤需求做七項修正：
   1. thinking 區塊完整輸出（支援 full/summary/none）
   2. Agent 支線分離（isSidechain / parentUuid）
   3. tool_result 角色修正（顯示為「工具回傳」）
@@ -105,7 +105,7 @@ def extract_cwd_from_jsonl(jsonl_file: str) -> Optional[str]:
 def get_project_path_from_file(file_path: str) -> str:
     """從 JSONL 檔案路徑取得專案路徑（優先從 JSONL 內容讀取 cwd）
 
-    公司版用字串替換反推路徑，但 Claude Code 的編碼規則不可逆
+    Ethan 實驗室版用字串替換反推路徑，但 Claude Code 的編碼規則不可逆
     （例如 -opt-BeakNote-temp -> /opt/BeakNote/temp，而非 /opt/BeakNote-temp）。
     正確做法是從 JSONL 的 cwd 欄位讀取。
     """

@@ -935,7 +935,7 @@ class SensitiveTerm(Base):
     )  # pii, infra, business, credential
     pattern: Mapped[str] = mapped_column(
         Text, nullable=False
-    )  # 實際敏感字串，如 "10.34.14.148"
+    )  # 實際敏感字串，如 "10.0.0.1"
     placeholder_prefix: Mapped[str] = mapped_column(
         String(100), nullable=False
     )  # 替換前綴，如 "INTERNAL_HOST"
