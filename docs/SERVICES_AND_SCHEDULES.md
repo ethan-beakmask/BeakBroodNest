@@ -63,7 +63,18 @@ upstream / proxy_pass 名稱也使用 `${SERVICE_NAME}`，避免同機多實例�
 
 ## 5. crontab 條目（/etc/crontab）
 
-`install.sh` **不會自動加 cron 條目**。下表為目前正式環境實際運行中的條目，需要自行加入 `/etc/crontab` 才會生效：
+`install.sh` 會在全新安裝最後一步**互動詢問是否啟用排程任務**（預設 Y），同意後自動 append 5 條條目，並包覆於 `# BEGIN BeakBroodNest <SERVICE_NAME>` / `# END ...` 標記之間方便日後移除。
+
+非互動安裝可用環境變數控制：
+
+```bash
+sudo INSTALL_CRON=yes bash install.sh   # 強制啟用，不問
+sudo INSTALL_CRON=no  bash install.sh   # 跳過排程
+```
+
+若 `/etc/crontab` 中已含 BEGIN marker 或 INSTALL_DIR 字串（涵蓋手動寫入的舊版安裝），會跳過避免重複。
+
+下表為實際寫入的條目（路徑會用 `INSTALL_DIR`、`SERVICE_NAME`、`CRON_USER` 替換）：
 
 | 條目 | 頻率 | 用途 |
 |---|---|---|
@@ -73,18 +84,19 @@ upstream / proxy_pass 名稱也使用 `${SERVICE_NAME}`，避免同機多實例�
 | `scripts/session_watchdog.py --check --alert` | `* * * * *` | 對話卡住偵測 |
 | `scripts/db_importer.py -convertall` | `*/10 * * * *` | JSONL 對話增量匯入 PostgreSQL |
 
-範例（安裝完成後手動加入 `/etc/crontab`，路徑換成你的 `INSTALL_DIR`）：
+範例（install.sh 自動寫入的格式，`SERVICE_NAME` / `INSTALL_DIR` / `CRON_USER` 為實際值）：
 
 ```cron
-# BeakBroodNest 排程
-* * * * * ethan flock -n /tmp/beak-monitor.lock /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/orchestrator/monitor.py --start >> /opt/tmp/BeakBroodNest-orchestrator-monitor.log 2>&1
-*/5 * * * * ethan /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/scheduler.py --tick >> /opt/tmp/scripts-scheduler.log 2>&1
-* * * * * ethan cd /opt/BeakBroodNest && flock -n /tmp/beak-embed.lock venv/bin/python scripts/embed_worker.py >> /opt/tmp/scripts-embed_worker.log 2>&1
-* * * * * ethan /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/session_watchdog.py --check --alert >> /opt/tmp/BeakBroodNest-session_watchdog.log 2>&1
-*/10 * * * * ethan flock -n /tmp/beak-db-importer.lock /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/db_importer.py -convertall >> /opt/tmp/BeakBroodNest-scripts-db_importer.log 2>&1
+# BEGIN BeakBroodNest beakbroodnest
+* * * * * ethan flock -n /tmp/beakbroodnest-monitor.lock /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/orchestrator/monitor.py --start >> /opt/tmp/beakbroodnest-orchestrator-monitor.log 2>&1
+*/5 * * * * ethan /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/scheduler.py --tick >> /opt/tmp/beakbroodnest-scheduler.log 2>&1
+* * * * * ethan cd /opt/BeakBroodNest && flock -n /tmp/beakbroodnest-embed.lock venv/bin/python scripts/embed_worker.py >> /opt/tmp/beakbroodnest-embed_worker.log 2>&1
+* * * * * ethan /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/session_watchdog.py --check --alert >> /opt/tmp/beakbroodnest-session_watchdog.log 2>&1
+*/10 * * * * ethan flock -n /tmp/beakbroodnest-db-importer.lock /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/db_importer.py -convertall >> /opt/tmp/beakbroodnest-db_importer.log 2>&1
+# END BeakBroodNest beakbroodnest
 ```
 
-> 同機跑多份實例時，`/tmp/beak-*.lock` 會互相阻擋。請為每份實例使用不同的 lock 路徑。
+> lock 路徑與 log 檔名都帶 `SERVICE_NAME` 前綴，所以同機跑多份實例不會互相阻擋。
 
 ## 6. scripts/scheduler.py 派發的子任務
 

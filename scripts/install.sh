@@ -18,6 +18,8 @@
 #   BEAKBROODNEST_PORT     外部存取 port (預設: 5170)
 #   SERVICE_NAME           systemd / nginx site / log 檔前綴 (預設: beakbroodnest)
 #                          同機部署多份時必須改，避免互相覆蓋
+#   INSTALL_CRON           是否寫入 5 條排程到 /etc/crontab
+#                          yes/no/(空)；空值時互動詢問（非互動環境預設 yes）
 #   GITHUB_TOKEN           GitHub Personal Access Token (私有 repo 時需要)
 #   GITHUB_REPO            GitHub clone URL (預設: ethan-beakmask/BeakBroodNest)
 # =============================================================================
@@ -611,6 +613,53 @@ log_info "Nginx 設定完成 (${SERVER_IP}:${NGINX_PORT} -> 127.0.0.1:${APP_PORT
 
 # 確保 log 目錄存在
 mkdir -p /opt/tmp
+
+# === 排程任務 ===
+# 偵測 INSTALL_DIR 擁有者作為 cron 執行帳號（通常是 ethan / 部署用帳號）
+CRON_USER=$(stat -c '%U' "$INSTALL_DIR" 2>/dev/null)
+CRON_USER="${CRON_USER:-root}"
+
+# 已安裝過則跳過（用 BEGIN marker 或 INSTALL_DIR 偵測，後者涵蓋 marker 出現前的舊安裝）
+CRON_BEGIN_MARKER="# BEGIN BeakBroodNest ${SERVICE_NAME}"
+CRON_END_MARKER="# END BeakBroodNest ${SERVICE_NAME}"
+
+if grep -qF "$CRON_BEGIN_MARKER" /etc/crontab 2>/dev/null; then
+    log_info "排程任務已存在於 /etc/crontab（marker: ${SERVICE_NAME}），跳過"
+elif grep -qF "$INSTALL_DIR/" /etc/crontab 2>/dev/null; then
+    log_info "排程任務疑似已存在於 /etc/crontab（含 $INSTALL_DIR 路徑），跳過避免重複"
+else
+    # 決定是否啟用：環境變數 INSTALL_CRON > 互動詢問 > 預設 yes（非互動環境）
+    if [ -n "${INSTALL_CRON:-}" ]; then
+        case "$INSTALL_CRON" in yes|y|Y|true|1) ENABLE_CRON=y ;; *) ENABLE_CRON=n ;; esac
+    elif [ -t 0 ]; then
+        read -p "  啟用排程任務（recommended，含 P1 訊號掃描、JSONL 匯入等）(Y/n): " ENABLE_CRON
+        ENABLE_CRON="${ENABLE_CRON:-y}"
+    else
+        ENABLE_CRON=y
+    fi
+
+    case "$ENABLE_CRON" in
+        y|Y|yes)
+            log_info "寫入 5 條 cron 條目到 /etc/crontab（user=${CRON_USER}）..."
+            cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d_%H%M%S)"
+            cat >> /etc/crontab << CRONEOF
+
+${CRON_BEGIN_MARKER}
+# BeakBroodNest 排程任務（由 install.sh 自動產生，移除請連同 END marker 一併刪除）
+* * * * * ${CRON_USER} flock -n /tmp/${SERVICE_NAME}-monitor.lock ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/orchestrator/monitor.py --start >> /opt/tmp/${SERVICE_NAME}-orchestrator-monitor.log 2>&1
+*/5 * * * * ${CRON_USER} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/scheduler.py --tick >> /opt/tmp/${SERVICE_NAME}-scheduler.log 2>&1
+* * * * * ${CRON_USER} cd ${INSTALL_DIR} && flock -n /tmp/${SERVICE_NAME}-embed.lock venv/bin/python scripts/embed_worker.py >> /opt/tmp/${SERVICE_NAME}-embed_worker.log 2>&1
+* * * * * ${CRON_USER} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/session_watchdog.py --check --alert >> /opt/tmp/${SERVICE_NAME}-session_watchdog.log 2>&1
+*/10 * * * * ${CRON_USER} flock -n /tmp/${SERVICE_NAME}-db-importer.lock ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/db_importer.py -convertall >> /opt/tmp/${SERVICE_NAME}-db_importer.log 2>&1
+${CRON_END_MARKER}
+CRONEOF
+            log_info "  排程已寫入；下個整點開始啟動（如要立即測試：sudo bash -c 'tail -f /opt/tmp/${SERVICE_NAME}-*.log'）"
+            ;;
+        *)
+            log_info "略過排程任務設定（要啟用請見 docs/SERVICES_AND_SCHEDULES.md）"
+            ;;
+    esac
+fi
 
 # === 啟動服務 ===
 log_info "啟動 BeakBroodNest..."
