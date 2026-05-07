@@ -89,7 +89,10 @@ sudo INSTALL_DIR=/opt/BeakBroodNest \
 | `DB_USER` | `beak_broodnest` | 資料庫使用者 |
 | `DB_PASS` | `postgres123` | **強烈建議改成自己的密碼** |
 | `BEAKBROODNEST_PORT` | `5170` | 對外 nginx port |
+| `SERVICE_NAME` | `beakbroodnest` | systemd / nginx site / log 檔前綴；同機跑多份必須改 |
 | `GITHUB_REPO` | `https://github.com/ethan-beakmask/BeakBroodNest.git` | clone 來源 |
+
+> 安裝後會建立的 systemd service、Nginx site、log 路徑、以及需要手動加入 `/etc/crontab` 的 5 條排程，集中列於 [`docs/SERVICES_AND_SCHEDULES.md`](docs/SERVICES_AND_SCHEDULES.md)。
 
 腳本子命令：
 

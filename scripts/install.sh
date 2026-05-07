@@ -15,7 +15,9 @@
 #   DB_NAME                資料庫名稱 (預設: beak_broodnest)
 #   DB_USER                資料庫使用者 (預設: beak_broodnest)
 #   DB_PASS                資料庫密碼 (預設: postgres123)
-#   BEAKBROODNEST_PORT            外部存取 port (預設: 5170)
+#   BEAKBROODNEST_PORT     外部存取 port (預設: 5170)
+#   SERVICE_NAME           systemd / nginx site / log 檔前綴 (預設: beakbroodnest)
+#                          同機部署多份時必須改，避免互相覆蓋
 #   GITHUB_TOKEN           GitHub Personal Access Token (私有 repo 時需要)
 #   GITHUB_REPO            GitHub clone URL (預設: ethan-beakmask/BeakBroodNest)
 # =============================================================================
@@ -28,7 +30,7 @@ DB_USER="${DB_USER:-beak_broodnest}"
 DB_PASS="${DB_PASS:-postgres123}"
 BEAKBROODNEST_PORT="${BEAKBROODNEST_PORT:-5170}"
 GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethan-beakmask/BeakBroodNest.git}"
-SERVICE_NAME="beakbroodnest"
+SERVICE_NAME="${SERVICE_NAME:-beakbroodnest}"
 HEALTH_TIMEOUT=30
 
 # === 顏色 ===
@@ -542,8 +544,8 @@ ExecStart=$INSTALL_DIR/venv/bin/gunicorn \
     --workers 2 \
     --threads 2 \
     --timeout 120 \
-    --access-logfile /opt/tmp/beakbroodnest-gunicorn-access.log \
-    --error-logfile /opt/tmp/beakbroodnest-gunicorn-error.log \
+    --access-logfile /opt/tmp/${SERVICE_NAME}-gunicorn-access.log \
+    --error-logfile /opt/tmp/${SERVICE_NAME}-gunicorn-error.log \
     "human_ui.app:app"
 Restart=on-failure
 RestartSec=5
@@ -564,9 +566,9 @@ SERVER_IP=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '/src/ {print $7; exit}')
 SERVER_IP="${SERVER_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
 
 cat > "/etc/nginx/sites-available/$SERVICE_NAME" << NGXEOF
-# === BeakBroodNest 知識庫 ===
+# === BeakBroodNest 知識庫 (${SERVICE_NAME}) ===
 
-upstream beakbroodnest {
+upstream ${SERVICE_NAME} {
     server 127.0.0.1:${APP_PORT};
 }
 
@@ -574,7 +576,7 @@ server {
     listen ${SERVER_IP}:${NGINX_PORT};
 
     location / {
-        proxy_pass http://beakbroodnest;
+        proxy_pass http://${SERVICE_NAME};
         proxy_http_version 1.1;
         proxy_set_header Host \$http_host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -586,7 +588,7 @@ server {
     }
 
     location /beakbroodnest/health {
-        proxy_pass http://beakbroodnest;
+        proxy_pass http://${SERVICE_NAME};
         access_log off;
     }
 }
