@@ -248,10 +248,10 @@ if [ "$ACTION" = "update" ]; then
     git reset --hard origin/master
     log_info "更新至: $(git log --oneline -1)"
 
-    # [2] 更新 Python 依賴
+    # [2] 更新 Python 依賴（強制 HOME=/root 讓 pip cache 落到 root，避免 sudo -E 帶入用戶 HOME 導致 cache 被禁用）
     log_step "2/3" "更新 Python 依賴..."
-    "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
-    "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
+    HOME=/root "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
+    HOME=/root "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
 
     # [3] 重啟服務
     log_step "3/3" "重啟服務..."
@@ -428,8 +428,11 @@ log_step "4/7" "建立 Python 虛擬環境..."
 if [ ! -d "$INSTALL_DIR/venv" ]; then
     python3 -m venv "$INSTALL_DIR/venv"
 fi
-"$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
-"$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
+# 強制 HOME=/root 讓 pip cache 落到 /root/.cache/pip。
+# 之前 sudo -E 帶入用戶 HOME 但 root 無寫權，pip 會 disable cache，
+# 每次重裝都得重新下載 ~2GB 的 torch/transformers wheel。
+HOME=/root "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
+HOME=/root "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
 log_info "Python 環境就緒"
 
 
