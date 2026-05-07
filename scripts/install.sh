@@ -475,6 +475,9 @@ log_step "6/7" "初始化資料庫..."
 import sys
 sys.path.insert(0, '$INSTALL_DIR')
 from core.db import init_engine, create_all_tables
+# 載入所有 ORM 類別讓它們註冊到 Base.metadata（單純 import 即可）
+from core import models  # noqa: F401
+from orchestrator import models as _om  # noqa: F401
 init_engine('$INSTALL_DIR/config.ini')
 create_all_tables()
 print('  資料表建立完成')
