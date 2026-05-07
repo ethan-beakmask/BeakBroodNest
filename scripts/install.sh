@@ -483,6 +483,14 @@ create_all_tables()
 print('  資料表建立完成')
 "
 
+# 載入基線 seed（主選單、relation_type_registry、atom_schemas、tag_categories、pending_outputs view）
+if [ -f "$INSTALL_DIR/scripts/seed_baseline.sql" ]; then
+    PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h 127.0.0.1 \
+        -f "$INSTALL_DIR/scripts/seed_baseline.sql" -v ON_ERROR_STOP=1 -q \
+        && log_info "  基線 seed 載入完成（主選單、因果鍊類型等）" \
+        || log_warn "  基線 seed 載入失敗（系統可能缺主選單，請手動執行 seed_baseline.sql）"
+fi
+
 atom_count=$(get_atom_count)
 log_info "資料庫就緒 (知識原子: $atom_count)"
 
