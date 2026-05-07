@@ -94,6 +94,12 @@ sudo INSTALL_DIR=/opt/BeakBroodNest \
 
 > 安裝後會建立的 systemd service、Nginx site、log 路徑、以及需要手動加入 `/etc/crontab` 的 5 條排程，集中列於 [`docs/SERVICES_AND_SCHEDULES.md`](docs/SERVICES_AND_SCHEDULES.md)。
 
+**安裝過程會互動詢問 Web UI 登入帳號與密碼**（密碼至少 8 字元，沒有出廠預設值）。安裝完成後若需重設：
+
+```bash
+cd /opt/BeakBroodNest && venv/bin/python human_ui/app.py --reset-auth
+```
+
 腳本子命令：
 
 ```bash
