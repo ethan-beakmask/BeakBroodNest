@@ -337,6 +337,20 @@ log_info "系統依賴就緒"
 # === [2/7] PostgreSQL ===
 log_step "2/7" "設定 PostgreSQL..."
 
+# 偵測 PostgreSQL 主版本，安裝對應的 pgvector 擴充套件
+PG_MAJOR=$(sudo -u postgres psql -tAc "SHOW server_version_num" 2>/dev/null | awk '{print int($1/10000)}')
+if [ -n "$PG_MAJOR" ]; then
+    PGVECTOR_PKG="postgresql-${PG_MAJOR}-pgvector"
+    if ! dpkg -l "$PGVECTOR_PKG" 2>/dev/null | grep -q "^ii"; then
+        log_info "安裝 $PGVECTOR_PKG ..."
+        apt-get install -y -q "$PGVECTOR_PKG" || log_warn "$PGVECTOR_PKG 安裝失敗，語意搜尋將不可用"
+    else
+        log_info "$PGVECTOR_PKG 已安裝"
+    fi
+else
+    log_warn "無法偵測 PostgreSQL 版本，請手動安裝對應的 pgvector 套件"
+fi
+
 sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || true
 sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || true
 
@@ -348,6 +362,14 @@ else
     sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
     log_info "資料庫 $DB_NAME 已建立"
 fi
+
+# 啟用必要的 PostgreSQL extensions（vector 必須，pg_trgm 用於關鍵字搜尋）
+sudo -u postgres psql -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null \
+    && log_info "extension vector 已啟用" \
+    || log_warn "extension vector 啟用失敗（請確認 $PGVECTOR_PKG 已正確安裝）"
+sudo -u postgres psql -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" >/dev/null 2>&1 \
+    && log_info "extension pg_trgm 已啟用" \
+    || log_warn "extension pg_trgm 啟用失敗"
 
 
 # === [3/7] 取得程式碼 ===

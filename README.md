@@ -58,35 +58,81 @@
 
 ### 前置條件
 
+- Ubuntu 22.04 / 24.04 LTS（其他 Debian 系也可，但腳本針對 Ubuntu 設計）
 - Python 3.10+
-- PostgreSQL 12+ 並啟用 `pgvector` extension
-- nginx（正式環境，可選）
+- PostgreSQL 12+ 並啟用 `pgvector` 與 `pg_trgm` extension
+- nginx（正式環境，由 install.sh 自動安裝；手動安裝為可選）
 
-### 安裝
+### 一鍵安裝（推薦）
+
+`scripts/install.sh` 會自動處理 apt 套件、PostgreSQL 設定（含 pgvector）、venv、systemd service、nginx site config。
 
 ```bash
-git clone https://github.com/ethan-beakmask/BeakBroodNest.git
-cd BeakBroodNest
+# 直接從 GitHub 拉腳本執行
+curl -fsSL https://raw.githubusercontent.com/ethan-beakmask/BeakBroodNest/master/scripts/install.sh -o install.sh
+sudo bash install.sh
+```
 
-# Python 環境
+預設值可用環境變數覆蓋：
+
+```bash
+sudo INSTALL_DIR=/opt/BeakBroodNest \
+     DB_PASS='<your_strong_password>' \
+     BEAKBROODNEST_PORT=5170 \
+     bash install.sh
+```
+
+| 環境變數 | 預設值 | 說明 |
+| --- | --- | --- |
+| `INSTALL_DIR` | `/opt/BeakBroodNest` | 安裝目錄 |
+| `DB_NAME` | `beak_broodnest` | 資料庫名稱 |
+| `DB_USER` | `beak_broodnest` | 資料庫使用者 |
+| `DB_PASS` | `postgres123` | **強烈建議改成自己的密碼** |
+| `BEAKBROODNEST_PORT` | `5170` | 對外 nginx port |
+| `GITHUB_REPO` | `https://github.com/ethan-beakmask/BeakBroodNest.git` | clone 來源 |
+
+腳本子命令：
+
+```bash
+sudo bash install.sh --update     # 更新到最新版（保留資料）
+sudo bash install.sh --status     # 查看服務狀態
+sudo bash install.sh --start      # 啟動
+sudo bash install.sh --stop       # 停止
+```
+
+### 手動安裝
+
+如想完全自己掌控流程，可走以下步驟：
+
+```bash
+# 1. 系統套件（PG 主版本以你環境為準，這裡示範 16）
+sudo apt-get install -y python3 python3-venv python3-pip \
+    postgresql postgresql-contrib postgresql-16-pgvector \
+    nginx git curl
+
+# 2. clone
+git clone https://github.com/ethan-beakmask/BeakBroodNest.git /opt/BeakBroodNest
+cd /opt/BeakBroodNest
+
+# 3. Python 環境
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-```
 
-### 資料庫初始化
-
-```bash
+# 4. 資料庫
 sudo -u postgres psql <<EOF
 CREATE USER beak_broodnest WITH PASSWORD '<your_password>';
 CREATE DATABASE beak_broodnest OWNER beak_broodnest;
 \c beak_broodnest
 CREATE EXTENSION vector;
+CREATE EXTENSION pg_trgm;
 EOF
 
+# 5. 設定檔
 cp config.ini.example config.ini
 # 編輯 config.ini 填入 DB 帳密
 
+# 6. 初始化 schema 與種子資料
 python human_ui/app.py --init-db --seed
 ```
 
