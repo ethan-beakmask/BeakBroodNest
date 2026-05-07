@@ -1,3 +1,6 @@
+# torch CPU-only wheel index（避免下載 ~2GB GPU 版本）
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
