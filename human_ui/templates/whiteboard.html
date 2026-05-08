@@ -53,7 +53,7 @@
         <!-- 白板主區域 -->
         <div class="wb-viewport"
              x-ref="viewport"
-             :class="{ 'connect-mode': mode === 'connect', 'conn-dragging': isConnDragging, 'panning': isPanning, 'box-selecting': isBoxSelecting }"
+             :class="{ 'connect-mode': mode === 'connect', 'conn-dragging': isConnDragging, 'panning': isPanning, 'box-selecting': isBoxSelecting, 'wb-grid-show': isObjectDragging && showDragGrid }"
              @mousedown="onViewportMouseDown($event)"
              @mousemove="onViewportMouseMove($event)"
              @mouseup="onViewportMouseUp($event)"
@@ -64,7 +64,7 @@
             {% include 'partials/wb_toolbar.html' %}
 
             <!-- 畫布 -->
-            <div class="wb-canvas" :class="{ 'wb-thumb-show-title': showThumbnailTitle, 'wb-grid-show': isObjectDragging }" x-ref="canvas" @contextmenu.prevent>
+            <div class="wb-canvas" :class="{ 'wb-thumb-show-title': showThumbnailTitle }" x-ref="canvas" @contextmenu.prevent>
                 <svg class="wb-connections" x-ref="connSvg"></svg>
                 <!-- 連線預覽 -->
                 <svg class="wb-connections wb-preview-layer" x-ref="previewSvg">

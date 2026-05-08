@@ -263,6 +263,9 @@ function whiteboardApp(canvasId) {
         // false (預設) = hover 0.5s 後浮現；true = 一律顯示
         showThumbnailTitle: false,
 
+        // 拖曳物件時是否顯示格線底（吸附功能不受此開關影響）
+        showDragGrid: true,
+
         // -- Config --
         atomTypeConfig: {
             A: { label: '萬用', bg: '#f3f4f6', color: '#6b7280', border: '#9ca3af' },
@@ -429,6 +432,9 @@ function whiteboardApp(canvasId) {
                     }
                     if (settings.showThumbnailTitle !== undefined) {
                         this.showThumbnailTitle = !!settings.showThumbnailTitle;
+                    }
+                    if (settings.showDragGrid !== undefined) {
+                        this.showDragGrid = !!settings.showDragGrid;
                     }
                 } catch (e) { /* ignore parse errors */ }
             }
@@ -665,6 +671,12 @@ function whiteboardApp(canvasId) {
         updateTransform() {
             const c = this.$refs.canvas;
             if (c) c.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+            const v = this.$refs.viewport;
+            if (v) {
+                const s = 10 * this.zoom;
+                v.style.backgroundSize = `${s}px ${s}px`;
+                v.style.backgroundPosition = `${this.panX}px ${this.panY}px`;
+            }
             this.renderMinimap();
         },
 
@@ -913,6 +925,15 @@ function whiteboardApp(canvasId) {
             var settings;
             try { settings = JSON.parse((this.canvas && this.canvas.settings) || '{}'); } catch (e) { settings = {}; }
             settings.showThumbnailTitle = this.showThumbnailTitle;
+            API.updateCanvas(this.canvasId, { settings: JSON.stringify(settings) });
+        },
+
+        toggleShowDragGrid() {
+            this.showDragGrid = !this.showDragGrid;
+            if (this.isSnapshot) return;
+            var settings;
+            try { settings = JSON.parse((this.canvas && this.canvas.settings) || '{}'); } catch (e) { settings = {}; }
+            settings.showDragGrid = this.showDragGrid;
             API.updateCanvas(this.canvasId, { settings: JSON.stringify(settings) });
         },
 
