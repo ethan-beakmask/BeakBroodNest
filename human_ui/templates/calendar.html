@@ -135,7 +135,68 @@
         .cal-day-table .ev-tag { font-size:10px; padding:1px 6px; border-radius:10px;
             white-space:nowrap; margin-right:6px; }
         .cal-empty { color:#adb5bd; font-size:13px; padding:8px; }
+
+        /* Drag & Drop */
+        .cal-event { -webkit-user-drag:element; }
+        .cal-event.is-dragging { opacity:0.4; }
+        .cal-day.is-drop-target { background:#fef3c7 !important; box-shadow:inset 0 0 0 2px #f59e0b; }
+
+        /* Quick Edit Modal */
+        .ce-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9000;
+            display:flex; align-items:center; justify-content:center; }
+        .ce-modal { background:#fff; border-radius:6px; width:480px; max-width:92vw;
+            max-height:90vh; overflow:auto; box-shadow:0 12px 40px rgba(0,0,0,0.25); }
+        .ce-head { padding:10px 14px; border-bottom:1px solid #dee2e6;
+            display:flex; align-items:center; justify-content:space-between; }
+        .ce-head h6 { margin:0; font-size:14px; font-weight:600; }
+        .ce-x { border:none; background:transparent; font-size:18px; cursor:pointer; color:#6c757d;
+            line-height:1; padding:2px 6px; }
+        .ce-x:hover { color:#000; }
+        .ce-body { padding:14px; font-size:13px; }
+        .ce-row { display:grid; grid-template-columns:80px 1fr; align-items:center;
+            gap:8px; margin-bottom:10px; }
+        .ce-row label { color:#495057; font-weight:600; font-size:12px; }
+        .ce-row input, .ce-row select { width:100%; font-size:13px; padding:4px 8px;
+            border:1px solid #ced4da; border-radius:3px; background:#fff; }
+        .ce-row input:focus, .ce-row select:focus { outline:1px solid #3b82f6; border-color:#3b82f6; }
+        .ce-meta { font-size:11px; color:#6c757d; margin-bottom:8px; }
+        .ce-foot { padding:10px 14px; border-top:1px solid #dee2e6;
+            display:flex; gap:8px; justify-content:flex-end; }
+        .ce-btn { padding:5px 14px; font-size:13px; border-radius:3px;
+            border:1px solid #adb5bd; background:#fff; cursor:pointer; }
+        .ce-btn:hover { background:#f1f3f5; }
+        .ce-btn.primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+        .ce-btn.primary:hover { background:#2563eb; }
+        .ce-btn.link { border:none; background:transparent; color:#3b82f6;
+            padding:5px 6px; margin-right:auto; }
+        .ce-btn.link:hover { text-decoration:underline; background:transparent; }
+        .ce-err { color:#dc2626; font-size:12px; margin-top:6px; }
+        .ce-row textarea { width:100%; font-size:13px; padding:4px 8px;
+            border:1px solid #ced4da; border-radius:3px; background:#fff;
+            resize:vertical; min-height:48px; font-family:inherit; }
+        .ce-row textarea:focus { outline:1px solid #3b82f6; border-color:#3b82f6; }
+
+        /* 圖示：卡片 (atom) / Tiptap entry */
+        .ic { display:inline-block; width:12px; height:12px; vertical-align:-2px;
+            margin-right:3px; flex-shrink:0; }
+        .ic-card { color:#9ca3af; }
+        .ic-task { color:#3b82f6; }
+        .cal-event .ic { width:11px; height:11px; vertical-align:-1px; margin-right:2px; }
+        .ce-meta .ic { width:13px; height:13px; vertical-align:-2px; margin-right:4px; }
+        .ce-row > label .ic { margin-right:3px; }
     </style>
+
+    <!-- 共用 SVG 圖示（symbol 定義一次，<use> 取用） -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="ic-card" viewBox="0 0 16 16">
+            <path fill="currentColor" d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3Zm1 0v10h10V3H3Z"/>
+            <path fill="currentColor" d="M4 5h8v1H4V5Zm0 2.5h8v1H4v-1ZM4 10h5v1H4v-1Z"/>
+        </symbol>
+        <symbol id="ic-task" viewBox="0 0 16 16">
+            <path fill="currentColor" d="M2.5 3A1.5 1.5 0 0 0 1 4.5v8A1.5 1.5 0 0 0 2.5 14h11a1.5 1.5 0 0 0 1.5-1.5v-8A1.5 1.5 0 0 0 13.5 3h-11Zm0 1h11a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-8a.5.5 0 0 1 .5-.5Z"/>
+            <path fill="currentColor" d="m10.97 6.53-3.5 3.5a.5.5 0 0 1-.71 0l-1.75-1.75a.5.5 0 1 1 .71-.71l1.395 1.396 3.144-3.146a.5.5 0 0 1 .711.71Z"/>
+        </symbol>
+    </svg>
 </head>
 <body>
 
@@ -291,16 +352,25 @@
                     <template x-for="(cell, ci) in week" :key="'mc-'+wi+'-'+ci">
                         <div class="cal-day"
                              :class="cell.classes"
+                             :data-iso="cell.iso"
                              @click="selectDay(cell.year, cell.month, cell.day)"
-                             @dblclick="setView('day')">
+                             @dblclick="setView('day')"
+                             @dragover.prevent="onDayDragOver($event, cell.iso)"
+                             @dragleave="onDayDragLeave($event)"
+                             @drop.prevent="onDayDrop($event, cell.iso)">
                             <div><span class="cal-day-num" x-text="cell.day"></span></div>
                             <div class="cal-day-events">
                                 <template x-for="ev in cell.events.slice(0, cell.expanded ? cell.events.length : 3)" :key="'me-'+ev.entry_id">
                                     <div class="cal-event"
                                          :class="eventClass(ev)"
-                                         :title="ev.title + ' [' + ev.canvas_name + ']'"
-                                         @click.stop @dblclick.stop="openEntry(ev)"
-                                         x-text="truncate(ev.title, 10)"></div>
+                                         :title="ev.title + '（'+ (ev.atom_title || '無卡片名') +'）'"
+                                         draggable="true"
+                                         @dragstart="onEventDragStart($event, ev)"
+                                         @dragend="onEventDragEnd($event)"
+                                         @click.stop @dblclick.stop="openEditor(ev)">
+                                        <svg class="ic ic-task"><use href="#ic-task"></use></svg>
+                                        <span x-text="truncate(ev.title, 10)"></span>
+                                    </div>
                                 </template>
                                 <div class="cal-more" x-show="!cell.expanded && cell.events.length > 3"
                                      @click.stop="cell.expanded = true"
@@ -324,11 +394,16 @@
                 </thead>
                 <tbody>
                     <template x-for="ev in dayEvents()" :key="'de-'+ev.entry_id">
-                        <tr @dblclick="openEntry(ev)">
+                        <tr @dblclick="openEditor(ev)">
                             <td class="col-time" x-text="formatTime(ev.datetime)"></td>
                             <td>
                                 <span class="ev-tag" :class="eventClass(ev)" x-text="ev.canvas_name"></span>
+                                <svg class="ic ic-task"><use href="#ic-task"></use></svg>
                                 <span x-text="ev.title"></span>
+                                <span x-show="ev.atom_title" style="font-size:11px;color:#6c757d;margin-left:8px;">
+                                    <svg class="ic ic-card"><use href="#ic-card"></use></svg>
+                                    <span x-text="ev.atom_title"></span>
+                                </span>
                                 <span x-show="ev.status" style="font-size:11px; color:#6c757d; margin-left:6px;"
                                       x-text="ev.status ? '[' + ev.status + ']' : ''"></span>
                             </td>
@@ -340,12 +415,80 @@
                 當日無排定事件
             </div>
             <div style="font-size:11px; color:#6c757d; margin-top:8px;">
-                提示：雙擊一列 → 在新分頁打開該卡片所屬白板並開啟編輯器
+                提示：雙擊一列 → 開啟快速編輯；月視圖可拖拉事件改日期
             </div>
         </div>
 
         </main>
         </div><!-- /cal-layout -->
+
+        <!-- Quick Edit Modal -->
+        <template x-if="editor.open">
+            <div class="ce-overlay">
+                <div class="ce-modal" @click.stop>
+                    <div class="ce-head">
+                        <h6>
+                            <svg class="ic ic-task"><use href="#ic-task"></use></svg>
+                            行事曆事項編輯
+                        </h6>
+                        <button class="ce-x" @click="closeEditor()" title="關閉">×</button>
+                    </div>
+                    <div class="ce-body">
+                        <div class="ce-meta">
+                            白板：<span x-text="editor.canvas_name"></span>
+                            <span x-show="editor.is_project" style="color:#3b82f6;">·專案</span>
+                        </div>
+                        <div class="ce-meta" x-show="editor.atom_title">
+                            <svg class="ic ic-card"><use href="#ic-card"></use></svg>
+                            所屬卡片：<span x-text="editor.atom_title" style="color:#495057;"></span>
+                            <span style="color:#adb5bd;">（卡片名稱不在此編輯，請點下方「在白板開啟」）</span>
+                        </div>
+                        <div class="ce-row" style="align-items:flex-start;">
+                            <label>
+                                <svg class="ic ic-task"><use href="#ic-task"></use></svg>
+                                事項
+                            </label>
+                            <textarea x-model="editor.raw_text" rows="2"
+                                      placeholder="此 task 的說明文字（entry.raw_text）"></textarea>
+                        </div>
+                        <div class="ce-row">
+                            <label>預計開始</label>
+                            <input type="datetime-local" x-model="editor.planned_start">
+                        </div>
+                        <div class="ce-row">
+                            <label>預計結束</label>
+                            <input type="datetime-local" x-model="editor.planned_end">
+                        </div>
+                        <div class="ce-row">
+                            <label>狀態</label>
+                            <select x-model="editor.status">
+                                <option value="">（未設定）</option>
+                                <option value="pending">pending</option>
+                                <option value="in_progress">in_progress</option>
+                                <option value="done">done</option>
+                            </select>
+                        </div>
+                        <div class="ce-row">
+                            <label>緊急度</label>
+                            <select x-model="editor.urgency">
+                                <option value="">（未設定）</option>
+                                <option value="H">H</option>
+                                <option value="M">M</option>
+                                <option value="L">L</option>
+                            </select>
+                        </div>
+                        <div class="ce-err" x-show="editor.error" x-text="editor.error"></div>
+                    </div>
+                    <div class="ce-foot">
+                        <button class="ce-btn link" @click="openInWhiteboard(editor)">在白板開啟完整編輯器 →</button>
+                        <button class="ce-btn" @click="closeEditor()">取消</button>
+                        <button class="ce-btn primary" :disabled="editor.saving"
+                                @click="saveEditor()"
+                                x-text="editor.saving ? '儲存中…' : '儲存'"></button>
+                    </div>
+                </div>
+            </div>
+        </template>
 
     </div>
 </div>
@@ -362,6 +505,24 @@ function calendarApp() {
         includeFree: true,
         events: [],
         loadingMsg: '',
+        dragState: null,        // { entry_id, origIso, origTime }
+        editor: {
+            open: false,
+            saving: false,
+            error: '',
+            entry_id: null,
+            atom_id: null,
+            canvas_slug: '',
+            canvas_name: '',
+            is_project: false,
+            atom_title: '',
+            raw_text: '',
+            origRawText: '',
+            planned_start: '',
+            planned_end: '',
+            status: '',
+            urgency: '',
+        },
 
         get projectCanvases() {
             return this.canvases.filter(c => c.is_project);
@@ -637,10 +798,160 @@ function calendarApp() {
             const base = ev.is_project ? 'ev-project' : 'ev-free';
             return base + (ev.status === 'done' ? ' ev-done' : '');
         },
-        openEntry(ev) {
+        openInWhiteboard(ev) {
             const url = '/beakbroodnest/canvas/' + encodeURIComponent(ev.canvas_slug)
                       + '?open=' + encodeURIComponent(ev.atom_id);
             window.open(url, '_blank');
+        },
+
+        // ============================================================
+        // Drag & Drop（月視圖）
+        // ============================================================
+        onEventDragStart(e, ev) {
+            this.dragState = {
+                entry_id: ev.entry_id,
+                origIso: ev.date,
+                origTime: this._extractTime(ev.datetime),
+            };
+            try { e.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+            try { e.dataTransfer.setData('text/plain', String(ev.entry_id)); } catch (_) {}
+            e.target.classList.add('is-dragging');
+        },
+        onEventDragEnd(e) {
+            e.target.classList.remove('is-dragging');
+            // 清掉殘留的 drop-target highlight
+            document.querySelectorAll('.cal-day.is-drop-target')
+                .forEach(el => el.classList.remove('is-drop-target'));
+            this.dragState = null;
+        },
+        onDayDragOver(e, iso) {
+            if (!this.dragState) return;
+            try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+            e.currentTarget.classList.add('is-drop-target');
+        },
+        onDayDragLeave(e) {
+            e.currentTarget.classList.remove('is-drop-target');
+        },
+        async onDayDrop(e, iso) {
+            e.currentTarget.classList.remove('is-drop-target');
+            const ds = this.dragState;
+            this.dragState = null;
+            if (!ds || !iso || iso === ds.origIso) return;
+            const newDt = iso + 'T' + (ds.origTime || '00:00');
+            await this._patchEntryDatetime(ds.entry_id, 'planned_start', newDt, ds.origIso);
+        },
+        async _patchEntryDatetime(entry_id, fieldName, newDtStr, origIso) {
+            this.loadingMsg = '更新中…';
+            try {
+                const r = await fetch('/beakbroodnest/api/entries/' + entry_id, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ field_values: { [fieldName]: newDtStr } }),
+                });
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    throw new Error(err.error || ('HTTP ' + r.status));
+                }
+                // 樂觀更新本地 events，避免重抓造成閃動
+                const newIso = newDtStr.split('T')[0];
+                this.events = this.events.map(ev => {
+                    if (ev.entry_id !== entry_id) return ev;
+                    return { ...ev, date: newIso, datetime: newDtStr };
+                });
+                this.loadingMsg = '已更新';
+                setTimeout(() => { this.loadingMsg = ''; }, 1200);
+            } catch (err) {
+                console.error(err);
+                this.loadingMsg = '更新失敗：' + err.message;
+                // 失敗時重抓以還原
+                this.reload();
+            }
+        },
+        _extractTime(iso) {
+            if (!iso) return '00:00';
+            const m = String(iso).match(/T(\d{2}):(\d{2})/);
+            return m ? (m[1] + ':' + m[2]) : '00:00';
+        },
+
+        // ============================================================
+        // Quick Edit Modal
+        // ============================================================
+        openEditor(ev) {
+            const dtToLocal = (s) => {
+                if (!s) return '';
+                const m = String(s).match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/);
+                return m ? (m[1] + 'T' + m[2]) : '';
+            };
+            const rt = ev.raw_text || ev.title || '';
+            this.editor = {
+                open: true,
+                saving: false,
+                error: '',
+                entry_id: ev.entry_id,
+                atom_id: ev.atom_id,
+                canvas_slug: ev.canvas_slug,
+                canvas_name: ev.canvas_name,
+                is_project: ev.is_project,
+                atom_title: ev.atom_title || '',
+                raw_text: rt,
+                origRawText: rt,
+                planned_start: dtToLocal(ev.datetime),
+                planned_end: dtToLocal(ev.planned_end),
+                status: ev.status || '',
+                urgency: ev.urgency || '',
+            };
+        },
+        closeEditor() {
+            this.editor.open = false;
+            this.editor.error = '';
+        },
+        async saveEditor() {
+            const ed = this.editor;
+            ed.error = '';
+            ed.saving = true;
+            try {
+                // 一次 PUT entry 把 raw_text + field_values 都更新
+                const fv = {
+                    planned_start: ed.planned_start ? ed.planned_start + ':00' : '',
+                    planned_end:   ed.planned_end   ? ed.planned_end   + ':00' : '',
+                    status: ed.status,
+                    urgency: ed.urgency,
+                };
+                const body = { field_values: fv };
+                if (ed.raw_text !== ed.origRawText) {
+                    body.raw_text = ed.raw_text;
+                }
+                const r = await fetch('/beakbroodnest/api/entries/' + ed.entry_id, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                if (!r.ok) {
+                    const e = await r.json().catch(() => ({}));
+                    throw new Error(e.error || 'HTTP ' + r.status);
+                }
+                // 樂觀更新本地 events
+                const newTitle = (ed.raw_text || '').trim().slice(0, 80) || ed.atom_title;
+                this.events = this.events.map(ev => {
+                    if (ev.entry_id !== ed.entry_id) return ev;
+                    const newDt = fv.planned_start || ev.datetime;
+                    const newDate = newDt ? newDt.split('T')[0] : ev.date;
+                    return { ...ev,
+                        title: newTitle,
+                        raw_text: ed.raw_text,
+                        datetime: newDt,
+                        date: newDate,
+                        status: ed.status,
+                        urgency: ed.urgency,
+                        planned_end: fv.planned_end,
+                    };
+                });
+                ed.saving = false;
+                this.closeEditor();
+            } catch (err) {
+                ed.error = err.message;
+                ed.saving = false;
+            }
         },
 
         // ============================================================

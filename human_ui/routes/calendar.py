@@ -127,6 +127,17 @@ def calendar_events():
         for fv in fv_rows:
             entry_start.setdefault(fv.entry_id, fv.value_datetime)
 
+        # 取 schema 資訊（icon/code/name），給前端做圖示識別
+        from core.models import EntrySchema
+        schema_map = {}
+        schema_ids = list({e.schema_id for e in entries if e.schema_id})
+        if schema_ids:
+            for sc in s.query(EntrySchema).filter(EntrySchema.id.in_(schema_ids)).all():
+                schema_map[sc.id] = {
+                    'code': sc.code, 'name': sc.name,
+                    'icon': sc.icon or '', 'color': sc.color or '',
+                }
+
         # 取 status / urgency / planned_end 補資訊
         info_field_names = {'status', 'urgency', 'planned_end'}
         info_field_ids = [
@@ -167,14 +178,22 @@ def calendar_events():
                 continue
 
             info = entry_info.get(entry.id, {})
-            title = entry.atom.title if entry.atom else ''
-            if not title:
-                title = (entry.summary or entry.raw_text or '')[:60]
+            atom_title = entry.atom.title if entry.atom else ''
+            # 行事曆事件的主要識別文字 = task entry 自身的 raw_text；
+            # 沒填 raw_text 才退回 summary / atom.title。
+            entry_text = (entry.raw_text or '').strip() or (entry.summary or '').strip()
+            title = entry_text[:80] if entry_text else atom_title
+            schema_info = schema_map.get(entry.schema_id) or {}
 
             events.append({
                 'entry_id': entry.id,
                 'atom_id': entry.atom_id,
                 'title': title,
+                'raw_text': entry.raw_text or '',
+                'atom_title': atom_title,
+                'schema_code': schema_info.get('code', ''),
+                'schema_icon': schema_info.get('icon', ''),
+                'schema_color': schema_info.get('color', ''),
                 'date': start_dt.date().isoformat(),
                 'datetime': start_dt.isoformat(),
                 'canvas_slug': canvas.slug,
