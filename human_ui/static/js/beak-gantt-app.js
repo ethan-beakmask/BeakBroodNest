@@ -330,13 +330,14 @@
 
     function _applyColorsToGantt(colors) {
         if (!_gantt || !colors) return;
-        _gantt._opts.summaryBarColor = colors.summaryBarColor;
-        _gantt._opts.noBarBgColor = colors.noBarBgColor;
-        _gantt._opts.outlineColors = {
-            card: colors.outlineCard,
-            taskColors: colors.taskColors.slice(),
-        };
-        _gantt.render();
+        _gantt.setColors({
+            summaryBarColor: colors.summaryBarColor,
+            noBarBgColor: colors.noBarBgColor,
+            outlineColors: {
+                card: colors.outlineCard,
+                taskColors: colors.taskColors.slice(),
+            },
+        });
     }
 
     function _populatePanel(colors) {

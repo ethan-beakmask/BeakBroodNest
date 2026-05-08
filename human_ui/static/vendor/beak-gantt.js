@@ -591,6 +591,26 @@ var BeakGanttChart = (function() {
     P.collapseAll = function(){for(var i=0;i<this._flatList.length;i++){if(this._flatList[i]._hasChildren)this._flatList[i]._expanded=false;}this.render();};
     P.getTask = function(id){return this._tasks.find(function(t){return t.id===id;})||null;};
     P.updateCustomData = function(d){this._opts.customData=d;this._renderGrid();this._syncH();};
+    P.setColors = function(c){
+        if(!c)return;
+        if(c.summaryBarColor)this._opts.summaryBarColor=c.summaryBarColor;
+        if(c.noBarBgColor)this._opts.noBarBgColor=c.noBarBgColor;
+        if(c.outlineColors){
+            if(c.outlineColors.card)this._opts.outlineColors.card=c.outlineColors.card;
+            if(c.outlineColors.taskColors)this._opts.outlineColors.taskColors=c.outlineColors.taskColors.slice();
+        }
+        this.render();
+    };
+    P.getColors = function(){
+        return{
+            summaryBarColor:this._opts.summaryBarColor,
+            noBarBgColor:this._opts.noBarBgColor,
+            outlineColors:{
+                card:this._opts.outlineColors.card,
+                taskColors:this._opts.outlineColors.taskColors.slice()
+            }
+        };
+    };
 
     return{create:function(c,o){return new G(c,o);}};
 })();
