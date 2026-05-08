@@ -672,7 +672,8 @@ function whiteboardConnectionsMixin() {
                     self.showConnTypeChangeModal(connId, connRelType);
                 });
                 svg.appendChild(path);
-                var labelText = conn.label || (isEntryConn ? '' : (self.relationLabelMap[conn.relation_type] || ''));
+                var noDefaultLabel = isEntryConn || conn.relation_type === 'references' || conn.relation_type === 'freeform';
+                var labelText = conn.label || (noDefaultLabel ? '' : (self.relationLabelMap[conn.relation_type] || ''));
                 if (labelText) {
                     var tRatio = pairInfo.total > 1 ? (pairInfo.index + 1) / (pairInfo.total + 1) : 0.5;
                     var lx = ep.sx + (ep.tx - ep.sx) * tRatio;

@@ -108,6 +108,64 @@ function whiteboardBatchMixin() {
             this.showToast(ids.length + ' 張卡片' + (adding ? '加入' : '移除') + '標籤 ' + tagName, 'success', 2000);
         },
 
+        // 圈選統一尺寸：開啟挑選基準模式
+        startPickSizeTarget() {
+            if (this.selectedAtomIds.length < 2) return;
+            this.pickSizeTargetMode = true;
+            this.showToast('請點選圈選範圍內一張卡片作為基準尺寸（Esc 取消）', 'info', 4000);
+        },
+
+        cancelPickSizeTarget() {
+            if (this.pickSizeTargetMode) {
+                this.pickSizeTargetMode = false;
+                this.showToast('已取消統一尺寸', 'info', 1500);
+            }
+        },
+
+        async applyUniformSize(targetCa) {
+            if (!this.pickSizeTargetMode) return;
+            if (!targetCa || !this.selectedAtomIds.includes(targetCa.atom_id)) {
+                this.showToast('基準必須是圈選內的卡片', 'error', 2000);
+                return;
+            }
+            var self = this;
+            var el = document.getElementById('card-' + targetCa.atom_id);
+            var w = (el && el.offsetWidth) || targetCa.width || 265;
+            var h = (el && el.offsetHeight) || targetCa.height || 125;
+            var targets = this.atoms.filter(function(ca) {
+                return self.selectedAtomIds.includes(ca.atom_id) && ca.atom_id !== targetCa.atom_id;
+            });
+            if (targets.length === 0) { this.pickSizeTargetMode = false; return; }
+            var oldSizes = targets.map(function(ca) {
+                return { id: ca.id, atom_id: ca.atom_id, width: ca.width, height: ca.height };
+            });
+            this.pushUndo({
+                type: 'batch_uniform_size', desc: '統一尺寸 ' + targets.length + ' 張',
+                undo: async function() {
+                    for (var i = 0; i < oldSizes.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === oldSizes[i].atom_id; });
+                        if (ca) { ca.width = oldSizes[i].width; ca.height = oldSizes[i].height; }
+                        await API.updateCanvasAtom(oldSizes[i].id, { width: oldSizes[i].width, height: oldSizes[i].height });
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+                redo: async function() {
+                    for (var i = 0; i < targets.length; i++) {
+                        targets[i].width = w; targets[i].height = h;
+                        await API.updateCanvasAtom(targets[i].id, { width: w, height: h });
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+            });
+            for (var i = 0; i < targets.length; i++) {
+                targets[i].width = w; targets[i].height = h;
+                await API.updateCanvasAtom(targets[i].id, { width: w, height: h });
+            }
+            this.pickSizeTargetMode = false;
+            this.$nextTick(function() { self.renderConnections(); });
+            this.showToast('已套用基準尺寸到 ' + targets.length + ' 張卡片', 'success', 2000);
+        },
+
         // Connection Inline Edit
         startEditConnection(connId, screenX, screenY) {
             var conn = this.connections.find(function(c) { return c.id === connId; });

@@ -83,6 +83,7 @@ function whiteboardUndoMixin() {
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
             if (e.target.isContentEditable) return;
 
+            if (e.key === 'Escape' && this.pickSizeTargetMode) { e.preventDefault(); this.cancelPickSizeTarget(); return; }
             if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); this.deleteSelected(); return; }
         },
 

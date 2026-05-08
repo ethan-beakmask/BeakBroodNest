@@ -104,6 +104,12 @@
                     <option value="terminal">terminal 終結</option>
                 </select>
                 <button class="wb-batch-select" @click="batchTagActiveTab=0; showBatchTagModal=true">標籤...</button>
+                <button class="wb-batch-select"
+                        :class="{ active: pickSizeTargetMode }"
+                        :style="pickSizeTargetMode ? 'background:var(--accent);color:#fff;' : ''"
+                        @click="pickSizeTargetMode ? cancelPickSizeTarget() : startPickSizeTarget()"
+                        title="圈選後點擊此按鈕，再點一張作為基準，將所有圈選卡片設為同尺寸"
+                        x-text="pickSizeTargetMode ? '取消挑選' : '統一尺寸'"></button>
                 <button class="wb-batch-select" @click="createGroupFromSelection()">群組</button>
                 <button class="wb-batch-select" @click="openSelectedInEditor()">編輯</button>
                 <button class="wb-batch-select" @click="openExchangeModal()" title="寄存到交換包">交換</button>

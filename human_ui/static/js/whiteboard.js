@@ -49,6 +49,9 @@ function whiteboardApp(canvasId) {
         mode: 'select',
         connSourceAtomId: null,
 
+        // 圈選統一尺寸：等待用戶點選基準卡片
+        pickSizeTargetMode: false,
+
         // Selection
         selectedAtomId: null,
         showPanel: false,
@@ -710,6 +713,11 @@ function whiteboardApp(canvasId) {
         // ============================================
         onCardMouseDown(e, ca) {
             if (e.button !== 0 || this.mode === 'connect') return;
+            if (this.pickSizeTargetMode) {
+                e.stopPropagation(); e.preventDefault();
+                this.applyUniformSize(ca);
+                return;
+            }
             e.stopPropagation(); this.startCardDrag(e, ca, e.clientX, e.clientY);
         },
 
@@ -728,6 +736,11 @@ function whiteboardApp(canvasId) {
 
         onCardBodyMouseDown(e, ca) {
             if (e.button !== 0 || this.mode === 'connect') return;
+            if (this.pickSizeTargetMode) {
+                e.stopPropagation(); e.preventDefault();
+                this.applyUniformSize(ca);
+                return;
+            }
             if (this.editingAtomId === ca.atom_id) return;
             e.stopPropagation();
             this.bodyDragPending = true; this.bodyDragStartX = e.clientX; this.bodyDragStartY = e.clientY; this.bodyDragCa = ca;
@@ -767,10 +780,12 @@ function whiteboardApp(canvasId) {
 
         onCardClick(ca) {
             if (this._justDragged) { this._justDragged = false; return; }
+            if (this.pickSizeTargetMode) return;
             this.selectedAtomIds = []; this.selectCard(ca.atom_id);
         },
 
         async onCardDblClick(ca) {
+            if (this.pickSizeTargetMode) return;
             this.selectedAtomIds = [];
             this.selectedAtomId = ca.atom_id;
             await this.loadAtomDetails(ca.atom_id);
