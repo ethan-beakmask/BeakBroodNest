@@ -166,6 +166,93 @@ function whiteboardBatchMixin() {
             this.showToast('已套用基準尺寸到 ' + targets.length + ' 張卡片', 'success', 2000);
         },
 
+        // 圈選對齊：開啟挑選基準模式
+        alignTypeLabels: { left: '齊左', center: '齊中', right: '齊右', top: '齊上', middle: '齊腰', bottom: '齊下' },
+
+        startPickAlign(alignType) {
+            if (this.selectedAtomIds.length < 2) return;
+            if (!this.alignTypeLabels[alignType]) return;
+            this.pendingAlignType = alignType;
+            this.pickAlignTargetMode = true;
+            this.showToast('請點選圈選範圍內一張卡片作為「' + this.alignTypeLabels[alignType] + '」基準（Esc 取消）', 'info', 4000);
+        },
+
+        cancelPickAlign() {
+            if (this.pickAlignTargetMode) {
+                this.pickAlignTargetMode = false;
+                this.pendingAlignType = null;
+                this.showToast('已取消對齊', 'info', 1500);
+            }
+        },
+
+        async applyAlign(targetCa) {
+            if (!this.pickAlignTargetMode) return;
+            if (!targetCa || !this.selectedAtomIds.includes(targetCa.atom_id)) {
+                this.showToast('基準必須是圈選內的卡片', 'error', 2000);
+                return;
+            }
+            var self = this;
+            var alignType = this.pendingAlignType;
+            var label = this.alignTypeLabels[alignType] || alignType;
+            var tEl = document.getElementById('card-' + targetCa.atom_id);
+            var tw = (tEl && tEl.offsetWidth) || targetCa.width || 265;
+            var th = (tEl && tEl.offsetHeight) || targetCa.height || 125;
+            var tLeft = targetCa.pos_x, tTop = targetCa.pos_y;
+            var tCenterX = tLeft + tw / 2, tCenterY = tTop + th / 2;
+            var tRight = tLeft + tw, tBottom = tTop + th;
+
+            var targets = this.atoms.filter(function(ca) {
+                return self.selectedAtomIds.includes(ca.atom_id) && ca.atom_id !== targetCa.atom_id;
+            });
+            if (targets.length === 0) { this.cancelPickAlign(); return; }
+
+            var oldPos = targets.map(function(ca) {
+                return { id: ca.id, atom_id: ca.atom_id, pos_x: ca.pos_x, pos_y: ca.pos_y };
+            });
+            var newPos = targets.map(function(ca) {
+                var el = document.getElementById('card-' + ca.atom_id);
+                var w = (el && el.offsetWidth) || ca.width || 265;
+                var h = (el && el.offsetHeight) || ca.height || 125;
+                var nx = ca.pos_x, ny = ca.pos_y;
+                if (alignType === 'left')        nx = tLeft;
+                else if (alignType === 'center') nx = Math.round(tCenterX - w / 2);
+                else if (alignType === 'right')  nx = tRight - w;
+                else if (alignType === 'top')    ny = tTop;
+                else if (alignType === 'middle') ny = Math.round(tCenterY - h / 2);
+                else if (alignType === 'bottom') ny = tBottom - h;
+                return { id: ca.id, atom_id: ca.atom_id, pos_x: nx, pos_y: ny };
+            });
+
+            this.pushUndo({
+                type: 'batch_align', desc: label + ' ' + targets.length + ' 張',
+                undo: async function() {
+                    for (var i = 0; i < oldPos.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === oldPos[i].atom_id; });
+                        if (ca) { ca.pos_x = oldPos[i].pos_x; ca.pos_y = oldPos[i].pos_y; }
+                        await API.updateCanvasAtom(oldPos[i].id, { pos_x: oldPos[i].pos_x, pos_y: oldPos[i].pos_y });
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+                redo: async function() {
+                    for (var i = 0; i < newPos.length; i++) {
+                        var ca = self.atoms.find(function(a) { return a.atom_id === newPos[i].atom_id; });
+                        if (ca) { ca.pos_x = newPos[i].pos_x; ca.pos_y = newPos[i].pos_y; }
+                        await API.updateCanvasAtom(newPos[i].id, { pos_x: newPos[i].pos_x, pos_y: newPos[i].pos_y });
+                    }
+                    self.$nextTick(function() { self.renderConnections(); });
+                },
+            });
+            for (var i = 0; i < newPos.length; i++) {
+                var ca = this.atoms.find(function(a) { return a.atom_id === newPos[i].atom_id; });
+                if (ca) { ca.pos_x = newPos[i].pos_x; ca.pos_y = newPos[i].pos_y; }
+                await API.updateCanvasAtom(newPos[i].id, { pos_x: newPos[i].pos_x, pos_y: newPos[i].pos_y });
+            }
+            this.pickAlignTargetMode = false;
+            this.pendingAlignType = null;
+            this.$nextTick(function() { self.renderConnections(); });
+            this.showToast('已套用「' + label + '」到 ' + targets.length + ' 張卡片', 'success', 2000);
+        },
+
         // Connection Inline Edit
         startEditConnection(connId, screenX, screenY) {
             var conn = this.connections.find(function(c) { return c.id === connId; });

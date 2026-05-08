@@ -52,6 +52,10 @@ function whiteboardApp(canvasId) {
         // 圈選統一尺寸：等待用戶點選基準卡片
         pickSizeTargetMode: false,
 
+        // 圈選對齊：等待用戶點選基準卡片，pendingAlignType ∈ left/center/right/top/middle/bottom
+        pickAlignTargetMode: false,
+        pendingAlignType: null,
+
         // Selection
         selectedAtomId: null,
         showPanel: false,
@@ -730,6 +734,11 @@ function whiteboardApp(canvasId) {
                 this.applyUniformSize(ca);
                 return;
             }
+            if (this.pickAlignTargetMode) {
+                e.stopPropagation(); e.preventDefault();
+                this.applyAlign(ca);
+                return;
+            }
             e.stopPropagation(); this.startCardDrag(e, ca, e.clientX, e.clientY);
         },
 
@@ -751,6 +760,11 @@ function whiteboardApp(canvasId) {
             if (this.pickSizeTargetMode) {
                 e.stopPropagation(); e.preventDefault();
                 this.applyUniformSize(ca);
+                return;
+            }
+            if (this.pickAlignTargetMode) {
+                e.stopPropagation(); e.preventDefault();
+                this.applyAlign(ca);
                 return;
             }
             if (this.editingAtomId === ca.atom_id) return;
@@ -792,12 +806,12 @@ function whiteboardApp(canvasId) {
 
         onCardClick(ca) {
             if (this._justDragged) { this._justDragged = false; return; }
-            if (this.pickSizeTargetMode) return;
+            if (this.pickSizeTargetMode || this.pickAlignTargetMode) return;
             this.selectedAtomIds = []; this.selectCard(ca.atom_id);
         },
 
         async onCardDblClick(ca) {
-            if (this.pickSizeTargetMode) return;
+            if (this.pickSizeTargetMode || this.pickAlignTargetMode) return;
             this.selectedAtomIds = [];
             this.selectedAtomId = ca.atom_id;
             await this.loadAtomDetails(ca.atom_id);
