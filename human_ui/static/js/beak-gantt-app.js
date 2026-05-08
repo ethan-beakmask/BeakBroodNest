@@ -306,26 +306,76 @@
     };
 
     // ---- Color persistence (DB via API) ----
+    //
+    // load 順序: project → user_default → 套件預設
+    //   GET /api/project/{slug}/beak-gantt/colors  已在後端解析 fallback，回 {colors, source}
+    //   PUT /api/project/{slug}/beak-gantt/colors  套用到此專案
+    //   DELETE 同上                                還原為個人預設
+    //   GET/PUT /api/beak-gantt/colors/default     個人預設
 
-    var _COLORS_API = '/beakbroodnest/api/beak-gantt/colors';
+    var _COLORS_DEFAULT_API = '/beakbroodnest/api/beak-gantt/colors/default';
+    function _projectColorsApi() {
+        return '/beakbroodnest/api/project/' + SLUG + '/beak-gantt/colors';
+    }
     var _cachedColors = null;
+    var _cachedSource = null;  // 'project' | 'user' | 'fallback'
 
     function _loadColorsFromServer(cb) {
-        fetch(_COLORS_API)
+        // 走 project 端點，後端會解析 fallback
+        var url = SLUG ? _projectColorsApi() : _COLORS_DEFAULT_API;
+        fetch(url)
             .then(function(r) { return r.json(); })
-            .then(function(data) { _cachedColors = data; if (cb) cb(data); })
-            .catch(function() { if (cb) cb(null); });
+            .then(function(data) {
+                if (data && data.colors) {
+                    _cachedColors = data.colors;
+                    _cachedSource = data.source || null;
+                    if (cb) cb(data.colors, data.source);
+                } else {
+                    if (cb) cb(null, null);
+                }
+            })
+            .catch(function() { if (cb) cb(null, null); });
     }
 
-    function _saveColorsToServer(colors, cb) {
-        fetch(_COLORS_API, {
+    function _saveColorsToProject(colors, cb) {
+        if (!SLUG) { if (cb) cb(false); return; }
+        fetch(_projectColorsApi(), {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(colors),
         })
         .then(function(r) { return r.json(); })
-        .then(function(resp) { if (cb) cb(resp.ok); })
+        .then(function(resp) { if (cb) cb(!!resp.ok); })
         .catch(function() { if (cb) cb(false); });
+    }
+
+    function _saveColorsToDefault(colors, cb) {
+        fetch(_COLORS_DEFAULT_API, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(colors),
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(resp) { if (cb) cb(!!resp.ok); })
+        .catch(function() { if (cb) cb(false); });
+    }
+
+    function _deleteProjectColors(cb) {
+        if (!SLUG) { if (cb) cb(false); return; }
+        fetch(_projectColorsApi(), { method: 'DELETE' })
+            .then(function(r) { return r.json(); })
+            .then(function(resp) { if (cb) cb(!!resp.ok); })
+            .catch(function() { if (cb) cb(false); });
+    }
+
+    function _updateSourceBadge() {
+        var el = document.getElementById('bk-clr-source');
+        if (!el) return;
+        var label = '';
+        if (_cachedSource === 'project') label = '目前：此專案配色';
+        else if (_cachedSource === 'user') label = '目前：個人預設';
+        else if (_cachedSource === 'fallback') label = '目前：套件預設';
+        el.textContent = label;
     }
 
     function _applyColorsToGantt(colors) {
@@ -373,34 +423,64 @@
         } else {
             if (_cachedColors) {
                 _populatePanel(_cachedColors);
+                _updateSourceBadge();
                 panel.style.display = '';
             } else {
                 _loadColorsFromServer(function(colors) {
                     if (colors) _populatePanel(colors);
+                    _updateSourceBadge();
                     panel.style.display = '';
                 });
             }
         }
     };
 
-    window.applyGanttColors = function() {
+    // 套用到此專案：寫入 project，立即生效
+    window.applyGanttColorsToProject = function() {
         var colors = _readPanel();
         _cachedColors = colors;
         _applyColorsToGantt(colors);
-        _saveColorsToServer(colors, function(ok) {
-            _toast(ok ? '配色已儲存' : '儲存失敗', !ok);
+        _saveColorsToProject(colors, function(ok) {
+            if (ok) {
+                _cachedSource = 'project';
+                _updateSourceBadge();
+                _toast('已套用到此專案');
+            } else {
+                _toast('儲存失敗', true);
+            }
         });
     };
 
-    window.resetGanttColors = function() {
-        _loadColorsFromServer(function(defaults) {
-            // 從 API 取得預設值（後端定義的 _DEFAULT_GANTT_COLORS）
-            // 清除 DB 中的自訂值 -> 存回預設
-            if (!defaults) return;
-            _cachedColors = defaults;
-            _populatePanel(defaults);
-            _applyColorsToGantt(defaults);
-            _toast('已還原預設配色');
+    // 儲存成我的預設：寫入個人預設（不影響當前 project 是否有覆寫）
+    window.saveGanttColorsAsDefault = function() {
+        var colors = _readPanel();
+        _cachedColors = colors;
+        _applyColorsToGantt(colors);
+        _saveColorsToDefault(colors, function(ok) {
+            if (ok) {
+                // 若當前無 project 覆寫，source 應變成 user
+                if (_cachedSource !== 'project') {
+                    _cachedSource = 'user';
+                    _updateSourceBadge();
+                }
+                _toast('已儲存成個人預設');
+            } else {
+                _toast('儲存失敗', true);
+            }
+        });
+    };
+
+    // 還原為預設：刪除 project 覆寫，重新 load 取個人預設或套件預設
+    window.resetGanttColorsToDefault = function() {
+        _deleteProjectColors(function(ok) {
+            if (!ok) { _toast('還原失敗', true); return; }
+            _loadColorsFromServer(function(colors, source) {
+                if (!colors) return;
+                _populatePanel(colors);
+                _applyColorsToGantt(colors);
+                _updateSourceBadge();
+                _toast(source === 'user' ? '已還原為個人預設' : '已還原為套件預設');
+            });
         });
     };
 

@@ -269,9 +269,11 @@
                     <label style="white-space:nowrap;"><input type="checkbox" id="bk-clr-ol-t3-on"> 啟用</label>
                 </div>
             </div>
-            <div style="display:flex; gap:6px;">
-                <button class="btn btn-sm btn-primary" style="flex:1; font-size:11px;" onclick="applyGanttColors()">套用</button>
-                <button class="btn btn-sm btn-outline-secondary" style="font-size:11px;" onclick="resetGanttColors()">還原預設</button>
+            <div id="bk-clr-source" style="margin-bottom:8px; font-size:11px; color:#666; min-height:14px;"></div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+                <button class="btn btn-sm btn-primary" style="font-size:11px;" onclick="applyGanttColorsToProject()">套用到此專案</button>
+                <button class="btn btn-sm btn-outline-secondary" style="font-size:11px;" onclick="saveGanttColorsAsDefault()">儲存成我的預設</button>
+                <button class="btn btn-sm btn-outline-secondary" style="font-size:11px;" onclick="resetGanttColorsToDefault()">還原為預設</button>
             </div>
         </div>
 

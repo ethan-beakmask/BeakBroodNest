@@ -28,7 +28,8 @@ from core.db import session_scope
 from core.models import (
     KnowledgeAtom, Canvas, CanvasAtom, CanvasConnection,
     UnifiedRelation, AtomEntry, EntrySchema, EntrySchemaField,
-    EntryFieldValue, SystemConfig,
+    EntryFieldValue,
+    GanttColorsDefault, GanttColorsProject,
 )
 
 bp = Blueprint('beak_gantt', __name__)
@@ -669,7 +670,10 @@ def delete_beak_gantt_link(slug):
 
 
 # ============================================================
-#  Gantt 配色設定（per-user, 存 system_config）
+#  Gantt 配色設定
+#  - 個人預設: GanttColorsDefault(username PK)
+#  - 專案配色: GanttColorsProject(canvas_id PK)
+#  - load 順序: project → user_default → 套件預設（前端 fallback）
 # ============================================================
 
 _DEFAULT_GANTT_COLORS = {
@@ -680,50 +684,106 @@ _DEFAULT_GANTT_COLORS = {
 }
 
 
-def _gantt_colors_key():
-    username = session.get('username', 'default')
-    return 'gantt_colors_' + username
-
-
-@bp.route('/api/beak-gantt/colors')
-def get_gantt_colors():
-    """取得當前用戶的 Gantt 配色設定。"""
-    with session_scope() as s:
-        row = s.query(SystemConfig).filter(
-            SystemConfig.key == _gantt_colors_key()
-        ).first()
-        if row and row.value:
-            try:
-                return jsonify(json.loads(row.value))
-            except (json.JSONDecodeError, TypeError):
-                pass
-        return jsonify(_DEFAULT_GANTT_COLORS)
-
-
-@bp.route('/api/beak-gantt/colors', methods=['PUT'])
-def put_gantt_colors():
-    """儲存當前用戶的 Gantt 配色設定。"""
-    body = request.get_json()
-    if not body:
-        return jsonify({'error': 'need JSON body'}), 400
-
-    # 驗證必要欄位
-    colors = {
+def _validate_colors(body):
+    """從 request body 萃取並驗證 colors 欄位，缺欄位以套件預設補。"""
+    if not isinstance(body, dict):
+        return None
+    return {
         'summaryBarColor': body.get('summaryBarColor', _DEFAULT_GANTT_COLORS['summaryBarColor']),
         'noBarBgColor': body.get('noBarBgColor', _DEFAULT_GANTT_COLORS['noBarBgColor']),
         'outlineCard': body.get('outlineCard', _DEFAULT_GANTT_COLORS['outlineCard']),
         'taskColors': body.get('taskColors', _DEFAULT_GANTT_COLORS['taskColors']),
     }
 
-    key = _gantt_colors_key()
+
+def _current_username():
+    return session.get('username', 'default')
+
+
+# ---- 個人預設 ----
+
+@bp.route('/api/beak-gantt/colors/default')
+def get_gantt_colors_default():
+    """取得當前用戶的個人預設 Gantt 配色，無設定則回套件預設。"""
+    username = _current_username()
     with session_scope() as s:
-        row = s.query(SystemConfig).filter(SystemConfig.key == key).first()
+        row = s.query(GanttColorsDefault).filter_by(username=username).first()
+        if row and row.colors:
+            return jsonify({'colors': row.colors, 'source': 'user'})
+    return jsonify({'colors': _DEFAULT_GANTT_COLORS, 'source': 'fallback'})
+
+
+@bp.route('/api/beak-gantt/colors/default', methods=['PUT'])
+def put_gantt_colors_default():
+    """儲存當前用戶的個人預設 Gantt 配色。"""
+    colors = _validate_colors(request.get_json(silent=True))
+    if colors is None:
+        return jsonify({'error': 'need JSON body'}), 400
+
+    username = _current_username()
+    with session_scope() as s:
+        row = s.query(GanttColorsDefault).filter_by(username=username).first()
         if row:
-            row.value = json.dumps(colors)
+            row.colors = colors
         else:
-            s.add(SystemConfig(key=key, value=json.dumps(colors),
-                               description='Gantt color preferences'))
+            s.add(GanttColorsDefault(username=username, colors=colors))
         s.flush()
+    return jsonify({'ok': True})
+
+
+# ---- 專案配色 ----
+
+@bp.route('/api/project/<slug>/beak-gantt/colors')
+def get_gantt_colors_project(slug):
+    """取得專案配色（已解析 fallback：project → user_default → 套件預設）。
+
+    回傳 source 標示實際命中層級，供 UI 顯示徽章用。
+    """
+    username = _current_username()
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
+        if not canvas:
+            return jsonify({'error': 'project not found'}), 404
+        proj = s.query(GanttColorsProject).filter_by(canvas_id=canvas.id).first()
+        if proj and proj.colors:
+            return jsonify({'colors': proj.colors, 'source': 'project'})
+        user = s.query(GanttColorsDefault).filter_by(username=username).first()
+        if user and user.colors:
+            return jsonify({'colors': user.colors, 'source': 'user'})
+    return jsonify({'colors': _DEFAULT_GANTT_COLORS, 'source': 'fallback'})
+
+
+@bp.route('/api/project/<slug>/beak-gantt/colors', methods=['PUT'])
+def put_gantt_colors_project(slug):
+    """儲存專案配色覆寫。"""
+    colors = _validate_colors(request.get_json(silent=True))
+    if colors is None:
+        return jsonify({'error': 'need JSON body'}), 400
+
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
+        if not canvas:
+            return jsonify({'error': 'project not found'}), 404
+        row = s.query(GanttColorsProject).filter_by(canvas_id=canvas.id).first()
+        if row:
+            row.colors = colors
+        else:
+            s.add(GanttColorsProject(canvas_id=canvas.id, colors=colors))
+        s.flush()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/project/<slug>/beak-gantt/colors', methods=['DELETE'])
+def delete_gantt_colors_project(slug):
+    """移除專案配色覆寫，後續 GET 將 fallback 至個人預設。"""
+    with session_scope() as s:
+        canvas = s.query(Canvas).filter(Canvas.slug == slug).first()
+        if not canvas:
+            return jsonify({'error': 'project not found'}), 404
+        row = s.query(GanttColorsProject).filter_by(canvas_id=canvas.id).first()
+        if row:
+            s.delete(row)
+            s.flush()
     return jsonify({'ok': True})
 
 

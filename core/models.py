@@ -1600,3 +1600,33 @@ class UserPreference(Base):
             'value': self.value,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class GanttColorsDefault(Base):
+    """每個登入帳號的 beak-gantt 個人預設配色。"""
+    __tablename__ = 'gantt_colors_default'
+
+    username: Mapped[str] = mapped_column(String(100), primary_key=True)
+    colors: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now,
+        onupdate=datetime.datetime.now, nullable=False
+    )
+
+
+class GanttColorsProject(Base):
+    """每個 project（canvas with is_project=true）的 beak-gantt 配色覆寫。
+
+    canvas 刪除時級聯刪除；無覆寫時 fallback 到個人預設。
+    """
+    __tablename__ = 'gantt_colors_project'
+
+    canvas_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='CASCADE'),
+        primary_key=True
+    )
+    colors: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now,
+        onupdate=datetime.datetime.now, nullable=False
+    )

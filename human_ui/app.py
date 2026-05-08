@@ -502,6 +502,53 @@ def ensure_canvas_slugs():
         if nulls:
             logger.info(f'Migration: 已為 {len(nulls)} 個 canvas 產生 slug')
 
+    # gantt 配色：建立新表 + 從 system_config 搬遷個人預設
+    _ensure_gantt_colors_tables()
+
+
+def _ensure_gantt_colors_tables():
+    """Migration: 建立 gantt_colors_default / gantt_colors_project 兩張表，
+    並把 system_config 中 key='gantt_colors_<username>' 的舊資料搬到 gantt_colors_default。
+    冪等：已搬過的不重複處理。
+    """
+    import json as _json
+    from sqlalchemy import text, inspect as sa_inspect
+    from core.models import GanttColorsDefault, SystemConfig
+
+    engine = get_engine()
+    # create_all 只會建立缺少的表
+    from core.db import Base
+    Base.metadata.create_all(engine, tables=[
+        GanttColorsDefault.__table__,
+        # GanttColorsProject 也一併建立
+        __import__('core.models', fromlist=['GanttColorsProject']).GanttColorsProject.__table__,
+    ])
+
+    # 從 system_config 搬遷舊個人預設
+    with session_scope() as s:
+        rows = s.query(SystemConfig).filter(
+            SystemConfig.key.like('gantt_colors_%')
+        ).all()
+        moved = 0
+        for row in rows:
+            username = row.key[len('gantt_colors_'):]
+            if not username:
+                continue
+            try:
+                colors = _json.loads(row.value) if row.value else None
+            except (ValueError, TypeError):
+                continue
+            if not colors:
+                continue
+            existing = s.query(GanttColorsDefault).filter_by(username=username).first()
+            if existing:
+                continue  # 已搬過
+            s.add(GanttColorsDefault(username=username, colors=colors))
+            s.delete(row)
+            moved += 1
+        if moved:
+            logger.info(f'Migration: 已從 system_config 搬遷 {moved} 筆 gantt 個人預設配色')
+
 
 def ensure_entry_schemas():
     """確保系統預設 Entry Schema 存在（冪等，不重複建立）。"""
