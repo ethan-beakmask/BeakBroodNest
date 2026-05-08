@@ -346,6 +346,13 @@ function whiteboardApp(canvasId) {
                 this.renderMinimap();
                 // 啟動遠端變更偵測
                 this.startPolling();
+                // ?open=<atom_id> 自動開啟卡片編輯器（行事曆等外部頁面跳轉用）
+                try {
+                    var openId = parseInt(urlParams.get('open'), 10);
+                    if (!isNaN(openId) && typeof self0.openCardEditor === 'function') {
+                        self0.openCardEditor(openId);
+                    }
+                } catch (e) { console.warn('open param failed', e); }
             });
             const self = this;
             // 用穩定的 bound handler 註冊，addEventListener 以 (event, handler, capture) 三元組去重，

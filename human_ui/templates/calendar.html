@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>行事曆 - BeakBroodNest</title>
+    <link rel="icon" href="/beakbroodnest/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/beakbroodnest/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <script defer src="/beakbroodnest/static/vendor/alpine.min.js"></script>
+    <style>
+        body { background:#f8f9fa; }
+
+        /* 主版型：左側欄 + 右主區 */
+        .cal-layout { display:grid; grid-template-columns:240px 1fr; gap:10px; }
+        @media (max-width: 900px) { .cal-layout { grid-template-columns:1fr; } }
+
+        .cal-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+            background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            padding:8px 12px; margin-bottom:10px; }
+        .cal-view-pill { padding:4px 12px; font-size:13px; cursor:pointer;
+            border:1px solid #adb5bd; border-radius:4px; color:#495057;
+            background:#fff; user-select:none; }
+        .cal-view-pill.active { background:#3b82f6; color:#fff; border-color:#3b82f6; }
+        .cal-nav-btn { padding:2px 10px; font-size:14px; cursor:pointer;
+            border:1px solid #adb5bd; background:#fff; border-radius:4px; }
+        .cal-nav-btn:hover { background:#f1f3f5; }
+        .cal-title { font-size:16px; font-weight:600; min-width:140px; text-align:center; }
+
+        /* 左側篩選（直排） */
+        .cal-side { background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            padding:10px; font-size:12px; align-self:start; position:sticky; top:8px; }
+        .cal-side-group { margin-bottom:14px; }
+        .cal-side-group:last-child { margin-bottom:0; }
+        .cal-side-group .grp-title { font-weight:600; color:#6c757d; font-size:11px;
+            text-transform:uppercase; letter-spacing:0.3px; margin-bottom:4px;
+            display:flex; justify-content:space-between; align-items:center; }
+        .cal-side-group .grp-title a { font-size:11px; text-transform:none; }
+        .cal-side-group label { display:block; font-size:12px; line-height:1.7;
+            cursor:pointer; user-select:none; }
+        .cal-side-list { max-height:240px; overflow-y:auto;
+            border:1px solid #e9ecef; border-radius:3px; padding:4px 8px; background:#fafafa; }
+
+        /* Month grid - 固定格子尺寸 */
+        .cal-month { background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            overflow:auto; }
+        .cal-month-head, .cal-month-row { display:grid;
+            grid-template-columns:repeat(7, minmax(140px, 1fr)); }
+        .cal-month-head > div { padding:6px 8px; font-size:12px; font-weight:600;
+            color:#495057; background:#f1f3f5; text-align:center;
+            border-right:1px solid #e9ecef; }
+        .cal-month-head > div:last-child { border-right:none; }
+        .cal-day { height:120px; border-right:1px solid #e9ecef;
+            border-top:1px solid #e9ecef; padding:4px 6px; cursor:pointer;
+            position:relative; background:#fff; overflow:hidden;
+            display:flex; flex-direction:column; }
+        .cal-day:last-child { border-right:none; }
+        .cal-day.is-other { background:#fafafa; color:#adb5bd; }
+        .cal-day.is-today { box-shadow:inset 0 0 0 2px #f59e0b; }
+        .cal-day.is-today .cal-day-num { background:#3b82f6; color:#fff;
+            border-radius:50%; width:22px; height:22px; display:inline-flex;
+            align-items:center; justify-content:center; font-weight:700; }
+        .cal-day.is-selected { box-shadow:inset 0 0 0 2px #f59e0b; }
+        .cal-day-num { font-size:12px; color:#495057; }
+        .cal-day-events { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+        .cal-event { font-size:11px; padding:1px 4px; margin-top:2px; border-radius:2px;
+            cursor:pointer; line-height:1.3;
+            word-break:break-all; overflow-wrap:anywhere;
+            display:-webkit-box; -webkit-box-orient:vertical;
+            -webkit-line-clamp:2; overflow:hidden; }
+        .cal-event.ev-project { background:#dbeafe; color:#1e3a8a; border-left:3px solid #3b82f6; }
+        .cal-event.ev-free { background:#f3f4f6; color:#374151; border-left:3px solid #9ca3af; }
+        .cal-event.ev-done { opacity:0.55; text-decoration:line-through; }
+        .cal-event:hover { filter:brightness(0.95); }
+        .cal-more { font-size:10px; color:#6c757d; cursor:pointer; margin-top:2px; }
+
+        /* Year horizontal grid - 12 rows × 42 day cols */
+        .cal-yearh { background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            padding:8px; overflow-x:auto; }
+        .cal-yearh-grid { display:grid;
+            grid-template-columns:60px repeat(42, minmax(22px, 1fr));
+            gap:1px; font-size:11px; min-width:1000px; }
+        .cal-yearh-grid .yh-h { color:#6c757d; text-align:center; padding:2px 0;
+            font-weight:600; }
+        .cal-yearh-grid .yh-h.wknd { background:#fef3c7; }
+        .cal-yearh-grid .yh-month-label { font-weight:600; color:#495057;
+            padding:4px 6px; cursor:pointer; align-self:center; }
+        .cal-yearh-grid .yh-month-label:hover { color:#3b82f6; }
+        .cal-yearh-cell { aspect-ratio:1/1; display:flex; align-items:center;
+            justify-content:center; cursor:pointer; border-radius:2px;
+            color:#495057; min-height:22px; }
+        .cal-yearh-cell.pad { cursor:default; }
+        .cal-yearh-cell.wknd { background:#fef3c7; }
+        .cal-yearh-cell:hover:not(.pad) { outline:1px solid #3b82f6; }
+        .cal-yearh-cell.has-1 { background:#dbeafe; }
+        .cal-yearh-cell.has-2 { background:#93c5fd; }
+        .cal-yearh-cell.has-3 { background:#3b82f6; color:#fff; }
+        .cal-yearh-cell.has-4 { background:#1d4ed8; color:#fff; }
+        .cal-yearh-cell.has-1.wknd, .cal-yearh-cell.has-2.wknd { background:#bcd6f0; }
+        .cal-yearh-cell.is-today { box-shadow:inset 0 0 0 2px #f59e0b; font-weight:700; }
+
+        /* Year grid - 3 欄 4 列 */
+        .cal-year { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+        .cal-year-month { background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            padding:8px; }
+        .cal-year-title { font-size:13px; font-weight:600; margin-bottom:4px;
+            color:#495057; cursor:pointer; }
+        .cal-year-title:hover { color:#3b82f6; }
+        .cal-year-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:1px;
+            font-size:11px; }
+        .cal-year-grid > .h { color:#6c757d; text-align:center; padding:2px 0; }
+        .cal-year-cell { aspect-ratio:1/1; display:flex; align-items:center;
+            justify-content:center; cursor:pointer; border-radius:2px;
+            color:#495057; }
+        .cal-year-cell:hover { outline:1px solid #3b82f6; }
+        .cal-year-cell.has-1 { background:#dbeafe; }
+        .cal-year-cell.has-2 { background:#93c5fd; }
+        .cal-year-cell.has-3 { background:#3b82f6; color:#fff; }
+        .cal-year-cell.has-4 { background:#1d4ed8; color:#fff; }
+        .cal-year-cell.is-other { color:#cfd4da; }
+        .cal-year-cell.is-today { box-shadow:inset 0 0 0 2px #f59e0b; font-weight:700; }
+
+        /* Day view - 兩欄表格（時間 | 標題） */
+        .cal-day-view { background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            padding:16px; }
+        .cal-day-view h5 { margin:0 0 12px 0; font-size:16px; }
+        .cal-day-table { width:100%; border-collapse:collapse; }
+        .cal-day-table th { font-size:11px; font-weight:600; color:#6c757d;
+            text-align:left; padding:6px 10px; border-bottom:1px solid #dee2e6;
+            background:#f8f9fa; }
+        .cal-day-table th.col-time { width:80px; }
+        .cal-day-table td { padding:8px 10px; border-bottom:1px solid #e9ecef;
+            font-size:13px; vertical-align:middle; cursor:pointer; }
+        .cal-day-table tr:hover td { background:#f8f9fa; }
+        .cal-day-table .col-time { font-family:monospace; color:#495057; }
+        .cal-day-table .ev-tag { font-size:10px; padding:1px 6px; border-radius:10px;
+            white-space:nowrap; margin-right:6px; }
+        .cal-empty { color:#adb5bd; font-size:13px; padding:8px; }
+    </style>
+</head>
+<body>
+
+<div x-data="calendarApp()" x-init="init()">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-light bg-white border-bottom">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center gap-3">
+                <a class="navbar-brand mb-0" href="/beakbroodnest/"
+                   style="font-weight:700;font-size:15px;color:#3b82f6;letter-spacing:-0.3px;">BeakBroodNest</a>
+                {% include 'partials/nav_menu.html' %}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted" style="font-size:12px;" x-text="loadingMsg"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-2">
+
+        <!-- Toolbar -->
+        <div class="cal-toolbar">
+            <div>
+                <span class="cal-view-pill" :class="view==='yearh' ? 'active':''" @click="setView('yearh')">年(橫)</span>
+                <span class="cal-view-pill" :class="view==='year' ? 'active':''" @click="setView('year')">年</span>
+                <span class="cal-view-pill" :class="view==='month' ? 'active':''" @click="setView('month')">月</span>
+                <span class="cal-view-pill" :class="view==='day' ? 'active':''" @click="setView('day')">日</span>
+            </div>
+            <div class="d-flex align-items-center gap-1">
+                <button class="cal-nav-btn" @click="navigate(-1)">&lt;</button>
+                <button class="cal-nav-btn" @click="goToday()">今天</button>
+                <button class="cal-nav-btn" @click="navigate(1)">&gt;</button>
+            </div>
+            <div class="cal-title" x-text="titleText"></div>
+            <div class="ms-auto" style="font-size:11px;color:#6c757d;">
+                <span x-text="'共 '+events.length+' 筆事件'"></span>
+            </div>
+        </div>
+
+        <div class="cal-layout">
+
+        <!-- 左側篩選欄（直排） -->
+        <aside class="cal-side">
+            <div class="cal-side-group">
+                <div class="grp-title">類別</div>
+                <label><input type="checkbox" x-model="includeProject" @change="reload()"> 專案白板</label>
+                <label><input type="checkbox" x-model="includeFree" @change="reload()"> 自由白板</label>
+            </div>
+
+            <div class="cal-side-group">
+                <div class="grp-title">
+                    <span>專案白板</span>
+                    <span>
+                        <a href="#" @click.prevent="selectAll('project', true)">全</a> /
+                        <a href="#" @click.prevent="selectAll('project', false)">無</a>
+                    </span>
+                </div>
+                <div class="cal-side-list">
+                    <template x-for="c in projectCanvases" :key="c.slug">
+                        <label>
+                            <input type="checkbox" :value="c.slug"
+                                   x-model="selectedSlugs" @change="reload()">
+                            <span x-text="c.name"></span>
+                        </label>
+                    </template>
+                    <div class="cal-empty" x-show="projectCanvases.length===0">（無）</div>
+                </div>
+            </div>
+
+            <div class="cal-side-group">
+                <div class="grp-title">
+                    <span>自由白板</span>
+                    <span>
+                        <a href="#" @click.prevent="selectAll('free', true)">全</a> /
+                        <a href="#" @click.prevent="selectAll('free', false)">無</a>
+                    </span>
+                </div>
+                <div class="cal-side-list">
+                    <template x-for="c in freeCanvases" :key="c.slug">
+                        <label>
+                            <input type="checkbox" :value="c.slug"
+                                   x-model="selectedSlugs" @change="reload()">
+                            <span x-text="c.name"></span>
+                        </label>
+                    </template>
+                    <div class="cal-empty" x-show="freeCanvases.length===0">（無）</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 右側主視圖 -->
+        <main>
+
+        <!-- Year (Horizontal) View -->
+        <div x-show="view==='yearh'" class="cal-yearh">
+            <div class="cal-yearh-grid">
+                <!-- Header row -->
+                <div></div>
+                <template x-for="i in 42" :key="'yhh-'+i">
+                    <div class="yh-h" :class="((i-1)%7===0 || (i-1)%7===6) ? 'wknd' : ''"
+                         x-text="['日','一','二','三','四','五','六'][(i-1)%7]"></div>
+                </template>
+                <!-- Body rows: each <div style=display:contents> 內含 1 label + 42 cells -->
+                <template x-for="row in yearHRows()" :key="'yhr-'+row.monthIdx">
+                    <div style="display:contents;">
+                        <div class="yh-month-label"
+                             @click="jumpToMonth(row.monthIdx)"
+                             x-text="(row.monthIdx + 1) + ' 月'"></div>
+                        <template x-for="(cell, ci) in row.cells" :key="'yhc-'+row.monthIdx+'-'+ci">
+                            <div class="cal-yearh-cell"
+                                 :class="cell.classes"
+                                 :title="cell.title"
+                                 @click="cell.day && jumpToDay(cell.year, cell.month, cell.day)"
+                                 x-text="cell.day || ''"></div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Year View -->
+        <div x-show="view==='year'" class="cal-year">
+            <template x-for="m in 12" :key="'y-m-'+m">
+                <div class="cal-year-month">
+                    <div class="cal-year-title" @click="jumpToMonth(m-1)"
+                         x-text="(m)+' 月'"></div>
+                    <div class="cal-year-grid">
+                        <template x-for="h in ['日','一','二','三','四','五','六']" :key="'h-'+m+'-'+h">
+                            <div class="h" x-text="h"></div>
+                        </template>
+                        <template x-for="cell in yearMonthCells(m-1)" :key="'c-'+m+'-'+cell.key">
+                            <div class="cal-year-cell"
+                                 :class="cell.classes"
+                                 :title="cell.title"
+                                 @click="cell.day && jumpToDay(cell.year, cell.month, cell.day)"
+                                 x-text="cell.day || ''"></div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Month View -->
+        <div x-show="view==='month'" class="cal-month">
+            <div class="cal-month-head">
+                <template x-for="h in ['日','一','二','三','四','五','六']" :key="'mh-'+h">
+                    <div x-text="h"></div>
+                </template>
+            </div>
+            <template x-for="(week, wi) in monthWeeks()" :key="'mw-'+wi">
+                <div class="cal-month-row">
+                    <template x-for="(cell, ci) in week" :key="'mc-'+wi+'-'+ci">
+                        <div class="cal-day"
+                             :class="cell.classes"
+                             @click="selectDay(cell.year, cell.month, cell.day)"
+                             @dblclick="setView('day')">
+                            <div><span class="cal-day-num" x-text="cell.day"></span></div>
+                            <div class="cal-day-events">
+                                <template x-for="ev in cell.events.slice(0, cell.expanded ? cell.events.length : 3)" :key="'me-'+ev.entry_id">
+                                    <div class="cal-event"
+                                         :class="eventClass(ev)"
+                                         :title="ev.title + ' [' + ev.canvas_name + ']'"
+                                         @click.stop @dblclick.stop="openEntry(ev)"
+                                         x-text="truncate(ev.title, 10)"></div>
+                                </template>
+                                <div class="cal-more" x-show="!cell.expanded && cell.events.length > 3"
+                                     @click.stop="cell.expanded = true"
+                                     x-text="'+' + (cell.events.length - 3) + ' more'"></div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </template>
+        </div>
+
+        <!-- Day View -->
+        <div x-show="view==='day'" class="cal-day-view">
+            <h5 x-text="dayViewTitle"></h5>
+            <table class="cal-day-table" x-show="dayEvents().length > 0">
+                <thead>
+                    <tr>
+                        <th class="col-time">時間</th>
+                        <th>標題</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="ev in dayEvents()" :key="'de-'+ev.entry_id">
+                        <tr @dblclick="openEntry(ev)">
+                            <td class="col-time" x-text="formatTime(ev.datetime)"></td>
+                            <td>
+                                <span class="ev-tag" :class="eventClass(ev)" x-text="ev.canvas_name"></span>
+                                <span x-text="ev.title"></span>
+                                <span x-show="ev.status" style="font-size:11px; color:#6c757d; margin-left:6px;"
+                                      x-text="ev.status ? '[' + ev.status + ']' : ''"></span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <div class="cal-empty" x-show="dayEvents().length === 0">
+                當日無排定事件
+            </div>
+            <div style="font-size:11px; color:#6c757d; margin-top:8px;">
+                提示：雙擊一列 → 在新分頁打開該卡片所屬白板並開啟編輯器
+            </div>
+        </div>
+
+        </main>
+        </div><!-- /cal-layout -->
+
+    </div>
+</div>
+
+<script>
+function calendarApp() {
+    return {
+        view: 'month',
+        cursor: new Date(),     // 當前焦點日期（month/day 視角主軸）
+        selectedDate: null,     // 月視圖選中
+        canvases: [],
+        selectedSlugs: [],
+        includeProject: true,
+        includeFree: true,
+        events: [],
+        loadingMsg: '',
+
+        get projectCanvases() {
+            return this.canvases.filter(c => c.is_project);
+        },
+        get freeCanvases() {
+            return this.canvases.filter(c => !c.is_project);
+        },
+        get titleText() {
+            const d = this.cursor;
+            if (this.view === 'year' || this.view === 'yearh') return d.getFullYear() + ' 年';
+            if (this.view === 'month') return d.getFullYear() + ' 年 ' + (d.getMonth() + 1) + ' 月';
+            return d.getFullYear() + '/' + this._pad(d.getMonth() + 1) + '/' + this._pad(d.getDate());
+        },
+        get dayViewTitle() {
+            const d = this.cursor;
+            return d.getFullYear() + '/' + this._pad(d.getMonth() + 1) + '/' + this._pad(d.getDate())
+                + '（' + ['日','一','二','三','四','五','六'][d.getDay()] + '）';
+        },
+
+        async init() {
+            await this.loadCanvases();
+            await this.reload();
+        },
+        async loadCanvases() {
+            try {
+                const r = await fetch('/beakbroodnest/calendar/api/canvases');
+                this.canvases = await r.json();
+                // 預設全選
+                this.selectedSlugs = this.canvases.map(c => c.slug);
+            } catch (e) { console.error(e); }
+        },
+        async reload() {
+            const range = this._currentRange();
+            const params = new URLSearchParams({
+                from: range.from,
+                to: range.to,
+                include_project: this.includeProject ? '1' : '0',
+                include_free: this.includeFree ? '1' : '0',
+            });
+            if (this.selectedSlugs.length > 0
+                && this.selectedSlugs.length < this.canvases.length) {
+                params.set('canvas_slugs', this.selectedSlugs.join(','));
+            }
+            this.loadingMsg = '載入中…';
+            try {
+                const r = await fetch('/beakbroodnest/calendar/api/events?' + params.toString());
+                const data = await r.json();
+                this.events = data.events || [];
+                this.loadingMsg = '';
+            } catch (e) {
+                console.error(e);
+                this.loadingMsg = '載入失敗';
+            }
+        },
+        _currentRange() {
+            const d = this.cursor;
+            if (this.view === 'year' || this.view === 'yearh') {
+                return {
+                    from: d.getFullYear() + '-01-01',
+                    to: d.getFullYear() + '-12-31',
+                };
+            }
+            if (this.view === 'day') {
+                const s = this._isoDate(d);
+                return { from: s, to: s };
+            }
+            // month: 當月第一天到最後一天（為了月視圖跨週也涵蓋，前後 padding 一週）
+            const first = new Date(d.getFullYear(), d.getMonth(), 1);
+            const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            const padFrom = new Date(first); padFrom.setDate(padFrom.getDate() - first.getDay());
+            const padTo = new Date(last); padTo.setDate(padTo.getDate() + (6 - last.getDay()));
+            return { from: this._isoDate(padFrom), to: this._isoDate(padTo) };
+        },
+
+        setView(v) {
+            this.view = v;
+            this.reload();
+        },
+        navigate(dir) {
+            const d = new Date(this.cursor);
+            if (this.view === 'year' || this.view === 'yearh') d.setFullYear(d.getFullYear() + dir);
+            else if (this.view === 'month') d.setMonth(d.getMonth() + dir);
+            else d.setDate(d.getDate() + dir);
+            this.cursor = d;
+            this.reload();
+        },
+        goToday() {
+            this.cursor = new Date();
+            this.reload();
+        },
+        selectAll(kind, val) {
+            const list = kind === 'project' ? this.projectCanvases : this.freeCanvases;
+            const slugs = list.map(c => c.slug);
+            if (val) {
+                const set = new Set(this.selectedSlugs);
+                slugs.forEach(s => set.add(s));
+                this.selectedSlugs = [...set];
+            } else {
+                this.selectedSlugs = this.selectedSlugs.filter(s => !slugs.includes(s));
+            }
+            this.reload();
+        },
+        jumpToMonth(monthIdx) {
+            const d = new Date(this.cursor.getFullYear(), monthIdx, 1);
+            this.cursor = d;
+            this.setView('month');
+        },
+        jumpToDay(year, month, day) {
+            this.cursor = new Date(year, month, day);
+            this.setView('day');
+        },
+
+        // ============================================================
+        // Month view helpers
+        // ============================================================
+        monthWeeks() {
+            const d = this.cursor;
+            const first = new Date(d.getFullYear(), d.getMonth(), 1);
+            const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+            const start = new Date(first); start.setDate(start.getDate() - first.getDay());
+            const end = new Date(last); end.setDate(end.getDate() + (6 - last.getDay()));
+            const today = new Date(); today.setHours(0,0,0,0);
+            const weeks = [];
+            const cur = new Date(start);
+            const eventByDate = this._eventByDate();
+            while (cur <= end) {
+                const week = [];
+                for (let i = 0; i < 7; i++) {
+                    const isOther = cur.getMonth() !== d.getMonth();
+                    const iso = this._isoDate(cur);
+                    const isToday = cur.getTime() === today.getTime();
+                    const isSelected = this.selectedDate === iso;
+                    week.push({
+                        year: cur.getFullYear(),
+                        month: cur.getMonth(),
+                        day: cur.getDate(),
+                        iso,
+                        events: eventByDate[iso] || [],
+                        expanded: false,
+                        classes: {
+                            'is-other': isOther,
+                            'is-today': isToday,
+                            'is-selected': isSelected,
+                        },
+                    });
+                    cur.setDate(cur.getDate() + 1);
+                }
+                weeks.push(week);
+            }
+            return weeks;
+        },
+        _eventByDate() {
+            const map = {};
+            for (const ev of this.events) {
+                if (!map[ev.date]) map[ev.date] = [];
+                map[ev.date].push(ev);
+            }
+            return map;
+        },
+        selectDay(year, month, day) {
+            this.cursor = new Date(year, month, day);
+            this.selectedDate = this._isoDate(this.cursor);
+        },
+
+        // ============================================================
+        // Year (Horizontal) view helpers
+        // ============================================================
+        yearHRows() {
+            const year = this.cursor.getFullYear();
+            const today = new Date(); today.setHours(0,0,0,0);
+            const eventByDate = this._eventByDate();
+            const rows = [];
+            for (let m = 0; m < 12; m++) {
+                const first = new Date(year, m, 1);
+                const last = new Date(year, m + 1, 0);
+                const startWeekday = first.getDay();  // 0=日
+                const daysInMonth = last.getDate();
+                const cells = [];
+                // 前置 padding 對齊到 day-1 的星期欄位
+                for (let p = 0; p < startWeekday; p++) {
+                    const isWknd = (p % 7 === 0) || (p % 7 === 6);
+                    cells.push({
+                        day: 0, year, month: m,
+                        classes: ['pad', isWknd ? 'wknd' : ''].filter(Boolean).join(' '),
+                        title: '',
+                    });
+                }
+                for (let day = 1; day <= daysInMonth; day++) {
+                    const dt = new Date(year, m, day);
+                    const colIdx = startWeekday + (day - 1);
+                    const isWknd = (colIdx % 7 === 0) || (colIdx % 7 === 6);
+                    const iso = this._isoDate(dt);
+                    const cnt = (eventByDate[iso] || []).length;
+                    const heat = cnt === 0 ? '' :
+                                 cnt === 1 ? 'has-1' :
+                                 cnt === 2 ? 'has-2' :
+                                 cnt <= 4  ? 'has-3' : 'has-4';
+                    const isToday = dt.getTime() === today.getTime();
+                    cells.push({
+                        day, year, month: m,
+                        title: cnt > 0 ? (iso + '：' + cnt + ' 件') : iso,
+                        classes: [heat, isWknd ? 'wknd' : '', isToday ? 'is-today' : '']
+                            .filter(Boolean).join(' '),
+                    });
+                }
+                // 後置 padding 補滿到 42 格
+                while (cells.length < 42) {
+                    const colIdx = cells.length;
+                    const isWknd = (colIdx % 7 === 0) || (colIdx % 7 === 6);
+                    cells.push({
+                        day: 0, year, month: m,
+                        classes: ['pad', isWknd ? 'wknd' : ''].filter(Boolean).join(' '),
+                        title: '',
+                    });
+                }
+                rows.push({ monthIdx: m, cells });
+            }
+            return rows;
+        },
+
+        // ============================================================
+        // Year view helpers
+        // ============================================================
+        yearMonthCells(monthIdx) {
+            const year = this.cursor.getFullYear();
+            const first = new Date(year, monthIdx, 1);
+            const last = new Date(year, monthIdx + 1, 0);
+            const start = new Date(first); start.setDate(start.getDate() - first.getDay());
+            const end = new Date(last); end.setDate(end.getDate() + (6 - last.getDay()));
+            const today = new Date(); today.setHours(0,0,0,0);
+            const eventByDate = this._eventByDate();
+            const cells = [];
+            const cur = new Date(start);
+            let key = 0;
+            while (cur <= end) {
+                const isOther = cur.getMonth() !== monthIdx;
+                const iso = this._isoDate(cur);
+                const isToday = cur.getTime() === today.getTime();
+                const cnt = (eventByDate[iso] || []).length;
+                const heat = cnt === 0 ? '' :
+                             cnt === 1 ? 'has-1' :
+                             cnt === 2 ? 'has-2' :
+                             cnt <= 4  ? 'has-3' : 'has-4';
+                cells.push({
+                    key: key++,
+                    year: cur.getFullYear(),
+                    month: cur.getMonth(),
+                    day: cur.getDate(),
+                    title: cnt > 0 ? (iso + '：' + cnt + ' 件') : iso,
+                    classes: [heat,
+                              isOther ? 'is-other' : '',
+                              isToday ? 'is-today' : ''].filter(Boolean).join(' '),
+                });
+                cur.setDate(cur.getDate() + 1);
+            }
+            return cells;
+        },
+
+        // ============================================================
+        // Day view helpers
+        // ============================================================
+        dayEvents() {
+            const iso = this._isoDate(this.cursor);
+            return this.events
+                .filter(ev => ev.date === iso)
+                .sort((a, b) => (a.datetime || '').localeCompare(b.datetime || ''));
+        },
+
+        // ============================================================
+        // Event display
+        // ============================================================
+        eventClass(ev) {
+            const base = ev.is_project ? 'ev-project' : 'ev-free';
+            return base + (ev.status === 'done' ? ' ev-done' : '');
+        },
+        openEntry(ev) {
+            const url = '/beakbroodnest/canvas/' + encodeURIComponent(ev.canvas_slug)
+                      + '?open=' + encodeURIComponent(ev.atom_id);
+            window.open(url, '_blank');
+        },
+
+        // ============================================================
+        // Helpers
+        // ============================================================
+        _pad(n) { return n < 10 ? '0' + n : '' + n; },
+        _isoDate(d) {
+            return d.getFullYear() + '-' + this._pad(d.getMonth() + 1) + '-' + this._pad(d.getDate());
+        },
+        truncate(s, n) {
+            if (!s) return '';
+            return s.length > n ? s.substring(0, n) + '…' : s;
+        },
+        formatTime(iso) {
+            if (!iso) return '--:--';
+            // ISO 可能是 "2026-05-09T14:30:00" 或帶毫秒/時區
+            const m = String(iso).match(/T(\d{2}):(\d{2})/);
+            return m ? (m[1] + ':' + m[2]) : '--:--';
+        },
+    };
+}
+</script>
+</body>
+</html>
