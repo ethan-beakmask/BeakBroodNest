@@ -545,14 +545,40 @@ function calendarApp() {
         async init() {
             await this.loadCanvases();
             await this.reload();
+            // 監聽選擇變動 → 同步焦點 slug 到 URL，供 nav_menu 切回白板/專案時帶出
+            this.$watch('selectedSlugs', () => this._syncFocusToUrl());
         },
         async loadCanvases() {
             try {
                 const r = await fetch('/beakbroodnest/calendar/api/canvases');
                 this.canvases = await r.json();
-                // 預設全選
-                this.selectedSlugs = this.canvases.map(c => c.slug);
+                // 焦點傳入：?canvas=<slug> 存在且合法 → 只勾該白板，否則預設全選
+                let focusSlug = '';
+                try {
+                    const sp = new URLSearchParams(window.location.search);
+                    focusSlug = (sp.get('canvas') || '').trim();
+                } catch (_) {}
+                const allSlugs = this.canvases.map(c => c.slug);
+                if (focusSlug && allSlugs.includes(focusSlug)) {
+                    this.selectedSlugs = [focusSlug];
+                } else {
+                    this.selectedSlugs = allSlugs;
+                }
             } catch (e) { console.error(e); }
+        },
+        _syncFocusToUrl() {
+            // 規則：若只勾 1 個白板（且不是「全選=1 張」的退化情況）→ 寫入 ?canvas=
+            //       否則清掉 ?canvas=
+            try {
+                const url = new URL(window.location.href);
+                if (this.selectedSlugs.length === 1
+                    && this.canvases.length > 1) {
+                    url.searchParams.set('canvas', this.selectedSlugs[0]);
+                } else {
+                    url.searchParams.delete('canvas');
+                }
+                window.history.replaceState(null, '', url.pathname + (url.search || '') + (url.hash || ''));
+            } catch (_) {}
         },
         async reload() {
             const range = this._currentRange();
