@@ -1414,10 +1414,19 @@ function whiteboardMindmapMixin() {
             // 已在某殼內的 mindmap 節點不重複 attach
             if (this.dragCard.mindmap_shell_id) return false;
 
-            var elem = document.elementFromPoint(e.clientX, e.clientY);
-            if (!elem) return false;
-            var nodeEl = elem.closest('.wb-mindmap-node');
-            var shellEl = elem.closest('.wb-mindmap-shell');
+            // 拖曳中的卡片以 z-index:100 蓋在游標下，需跳過它才能命中底下的 mindmap shell/node
+            var draggedDomId = 'card-' + this.dragCard.atom_id;
+            var stack = (document.elementsFromPoint ? document.elementsFromPoint(e.clientX, e.clientY) : [document.elementFromPoint(e.clientX, e.clientY)]) || [];
+            var nodeEl = null, shellEl = null;
+            for (var i = 0; i < stack.length; i++) {
+                var el = stack[i];
+                if (!el) continue;
+                var draggedRoot = document.getElementById(draggedDomId);
+                if (draggedRoot && (el === draggedRoot || draggedRoot.contains(el))) continue;
+                if (!nodeEl) { var n = el.closest && el.closest('.wb-mindmap-node'); if (n) nodeEl = n; }
+                if (!shellEl) { var s = el.closest && el.closest('.wb-mindmap-shell'); if (s) shellEl = s; }
+                if (nodeEl || shellEl) break;
+            }
             if (!nodeEl && !shellEl) return false;
 
             var shellId = null;

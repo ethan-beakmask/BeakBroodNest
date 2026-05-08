@@ -490,11 +490,13 @@ function whiteboardConnectionsMixin() {
                 return;
             }
             var visibleIds = this.filteredAtomIds;
+            // 心智圖摺疊隱藏的後代 atom，連線需一併隱藏（展開時 renderConnections 會重繪恢復）
+            var hiddenByCollapse = (this._collapsedHiddenAtomIds ? this._collapsedHiddenAtomIds() : {}) || {};
             // 連線可見性：atom 端點受 filter 控制；textbox 端點一律可見
             // 樹線(灰色)與 connection(彩色)並存,不去重
             var baseConns = this.connections.filter(function(c) {
-                var srcOk = (c.from_kind === 'textbox') || visibleIds.includes(c.source_atom_id);
-                var tgtOk = (c.to_kind   === 'textbox') || visibleIds.includes(c.target_atom_id);
+                var srcOk = (c.from_kind === 'textbox') || (visibleIds.includes(c.source_atom_id) && !hiddenByCollapse[c.source_atom_id]);
+                var tgtOk = (c.to_kind   === 'textbox') || (visibleIds.includes(c.target_atom_id) && !hiddenByCollapse[c.target_atom_id]);
                 return srcOk && tgtOk;
             });
             var renderList = this.rtOptEnabled ? this._filterOptimizedConnections(baseConns) : baseConns;
