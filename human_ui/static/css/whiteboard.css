@@ -135,6 +135,13 @@
     background: transparent;
 }
 
+.wb-canvas.wb-grid-show {
+    background-image:
+        linear-gradient(to right, rgba(127,127,127,0.18) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(127,127,127,0.18) 1px, transparent 1px);
+    background-size: 10px 10px;
+}
+
 /* ---- SVG 連線層 ---- */
 .wb-connections {
     position: absolute;

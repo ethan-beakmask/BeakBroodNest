@@ -592,27 +592,41 @@ function whiteboardApp(canvasId) {
             if (this.isConnDragging) { this.endConnDrag(); return; }
             if (this.isPanning) { this.isPanning = false; this.saveViewport(); }
             if (this.dragGroup) {
+                this.dragGroup.pos_x = this.snap10(this.dragGroup.pos_x);
+                this.dragGroup.pos_y = this.snap10(this.dragGroup.pos_y);
                 API.updateGroup(this.dragGroup.id, { pos_x: this.dragGroup.pos_x, pos_y: this.dragGroup.pos_y });
                 var self = this;
-                this.atoms.forEach(function(a) { if (self.groupDragMemberStarts && self.groupDragMemberStarts[a.atom_id]) API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); });
+                this.atoms.forEach(function(a) {
+                    if (self.groupDragMemberStarts && self.groupDragMemberStarts[a.atom_id]) {
+                        a.pos_x = self.snap10(a.pos_x); a.pos_y = self.snap10(a.pos_y);
+                        API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y });
+                    }
+                });
                 this.dragGroup = null; this.groupDragMemberStarts = null;
+                this.renderConnections();
             }
             if (this.resizeGroup) { API.updateGroup(this.resizeGroup.id, { width: this.resizeGroup.width, height: this.resizeGroup.height }); this.resizeGroup = null; }
             if (this.dragTextbox) {
+                this.dragTextbox.pos_x = this.snap10(this.dragTextbox.pos_x);
+                this.dragTextbox.pos_y = this.snap10(this.dragTextbox.pos_y);
                 API.updateTextbox(this.dragTextbox.id, { pos_x: this.dragTextbox.pos_x, pos_y: this.dragTextbox.pos_y });
                 this.dragTextbox = null;
+                this.renderConnections();
             }
             if (this.dragMindmapShell) {
                 var sh = this.dragMindmapShell;
+                sh.pos_x = this.snap10(sh.pos_x); sh.pos_y = this.snap10(sh.pos_y);
                 API.updateMindmapShell(sh.id, { pos_x: sh.pos_x, pos_y: sh.pos_y });
                 var selfMM = this;
                 this.atoms.forEach(function(ca) {
                     if (selfMM.mindmapShellDragMemberStarts && selfMM.mindmapShellDragMemberStarts[ca.atom_id]) {
+                        ca.pos_x = selfMM.snap10(ca.pos_x); ca.pos_y = selfMM.snap10(ca.pos_y);
                         API.updateCanvasAtom(ca.id, { pos_x: ca.pos_x, pos_y: ca.pos_y });
                     }
                 });
                 this.dragMindmapShell = null;
                 this.mindmapShellDragMemberStarts = null;
+                this.renderConnections();
             }
             if (this.resizeTextbox) {
                 API.updateTextbox(this.resizeTextbox.id, { width: this.resizeTextbox.width, height: this.resizeTextbox.height });
@@ -630,9 +644,10 @@ function whiteboardApp(canvasId) {
                 var groupsToResize = new Set(); var movedIds = []; var beforePos = []; var afterPos = [];
                 if (this.multiDragStarts) {
                     var self = this;
-                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { movedIds.push(a.atom_id); beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y }); afterPos.push({ x: a.pos_x, y: a.pos_y }); API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); if (a.group_ids) a.group_ids.forEach(function(gid) { groupsToResize.add(gid); }); } });
+                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { a.pos_x = self.snap10(a.pos_x); a.pos_y = self.snap10(a.pos_y); movedIds.push(a.atom_id); beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y }); afterPos.push({ x: a.pos_x, y: a.pos_y }); API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); if (a.group_ids) a.group_ids.forEach(function(gid) { groupsToResize.add(gid); }); } });
                     this.multiDragStarts = null;
                 } else {
+                    this.dragCard.pos_x = this.snap10(this.dragCard.pos_x); this.dragCard.pos_y = this.snap10(this.dragCard.pos_y);
                     movedIds.push(this.dragCard.atom_id); beforePos.push({ x: this.cardStartX, y: this.cardStartY }); afterPos.push({ x: this.dragCard.pos_x, y: this.dragCard.pos_y });
                     API.updateCanvasAtom(this.dragCard.id, { pos_x: this.dragCard.pos_x, pos_y: this.dragCard.pos_y });
                     if (this.dragCard.group_ids) this.dragCard.group_ids.forEach(function(gid) { groupsToResize.add(gid); });
@@ -640,6 +655,7 @@ function whiteboardApp(canvasId) {
                 if (movedIds.length > 0 && (beforePos[0].x !== afterPos[0].x || beforePos[0].y !== afterPos[0].y)) this.pushMoveUndo(movedIds, beforePos, afterPos);
                 var self2 = this; groupsToResize.forEach(function(gid) { self2.autoResizeGroup(gid); });
                 this.dragCard = null;
+                this.renderConnections();
             }
         },
 
@@ -682,6 +698,11 @@ function whiteboardApp(canvasId) {
         screenToCanvas(sx, sy) {
             const vp = this.$refs.viewport; const rect = vp.getBoundingClientRect();
             return { x: (sx - rect.left - this.panX) / this.zoom, y: (sy - rect.top - this.panY) / this.zoom };
+        },
+
+        snap10(v) { return Math.round(v / 10) * 10; },
+        get isObjectDragging() {
+            return !!(this.dragCard || this.dragTextbox || this.dragMindmapShell || this.dragGroup);
         },
 
         // ============================================
