@@ -281,6 +281,23 @@
     padding: 0 16px 12px;
 }
 
+.ce-pane-pdf-text {
+    flex-shrink: 0;
+    max-height: 45%;
+    overflow-y: auto;
+    padding: 8px 16px;
+    margin: 0 16px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+}
+
 .ce-pane-footer {
     display: flex;
     align-items: center;

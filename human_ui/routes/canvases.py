@@ -262,6 +262,7 @@ def get_canvas(slug):
                 KnowledgeAtom.title,
                 func.left(KnowledgeAtom.content, CONTENT_PREVIEW_LEN).label('content_preview'),
                 KnowledgeAtom.content_type,
+                KnowledgeAtom.content_json,
                 KnowledgeAtom.thumbnail_url,
                 KnowledgeAtom.atom_type,
                 KnowledgeAtom.lifecycle,
@@ -389,8 +390,27 @@ def get_canvas(slug):
                 group_ids_map.setdefault(ca_id, []).append(gid)
 
         # --- 組裝原子列表 ---
+        # media 卡片(PDF/圖片)需要 content_json 才能在白板正確渲染縮圖；
+        # 一般卡片仍只回 content_preview 維持 payload 輕量
         result['atoms'] = []
         for r in ca_rows:
+            atom_dict = {
+                'id': r.ka_id,
+                'title': r.title,
+                'content': r.content_preview or '',
+                'content_type': r.content_type,
+                'thumbnail_url': r.thumbnail_url,
+                'atom_type': r.atom_type,
+                'lifecycle': r.lifecycle,
+                'vitality_score': r.vitality_score,
+                'source': r.source,
+                'owner': r.atom_owner or 'ethan',
+                'tags': tags_map.get(r.atom_id, []),
+                'updated_at': r.atom_updated_at.isoformat() if r.atom_updated_at else None,
+                'entries': entries_map.get(r.atom_id, []),
+            }
+            if r.content_type == 'media':
+                atom_dict['content_json'] = r.content_json
             result['atoms'].append({
                 'id': r.id,
                 'canvas_id': r.canvas_id,
@@ -403,21 +423,7 @@ def get_canvas(slug):
                 'visual_style': r.visual_style,
                 'group_ids': group_ids_map.get(r.id, []),
                 'mindmap_shell_id': r.mindmap_shell_id,
-                'atom': {
-                    'id': r.ka_id,
-                    'title': r.title,
-                    'content': r.content_preview or '',
-                    'content_type': r.content_type,
-                    'thumbnail_url': r.thumbnail_url,
-                    'atom_type': r.atom_type,
-                    'lifecycle': r.lifecycle,
-                    'vitality_score': r.vitality_score,
-                    'source': r.source,
-                    'owner': r.atom_owner or 'ethan',
-                    'tags': tags_map.get(r.atom_id, []),
-                    'updated_at': r.atom_updated_at.isoformat() if r.atom_updated_at else None,
-                    'entries': entries_map.get(r.atom_id, []),
-                },
+                'atom': atom_dict,
                 'is_blocked': r.atom_id in blocked_ids,
             })
 

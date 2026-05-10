@@ -966,6 +966,10 @@
                         <div class="ce-pane-reserved" @mousedown.stop @click.stop></div>
                         <!-- Pane Body (Tiptap mount point) -->
                         <div class="ce-pane-body"></div>
+                        <!-- PDF 縮圖模式：顯示已索引的純文字內文（read-only） -->
+                        <div class="ce-pane-pdf-text"
+                             x-show="ceIsPdfMediaEditor(ed.id) && !ceIsPdfReaderEditor(ed.id) && ed._content && ed._content.trim()"
+                             x-text="ed._content"></div>
                         <!-- Pane Footer -->
                         <div class="ce-pane-footer">
                             <span class="status-text" x-text="ed.readonly ? '唯讀' : (ed.dirty ? '已修改' : '已儲存')"

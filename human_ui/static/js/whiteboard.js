@@ -652,7 +652,7 @@ function whiteboardApp(canvasId) {
                 API.updateTextbox(this.resizeTextbox.id, { width: this.resizeTextbox.width, height: this.resizeTextbox.height });
                 this.resizeTextbox = null;
             }
-            if (this.resizeCard) { API.updateCanvasAtom(this.resizeCard.id, { width: this.resizeCard.width, height: this.resizeCard.height }); if (this.resizeCard.group_ids) this.resizeCard.group_ids.forEach(gid => this.autoResizeGroup(gid)); this.resizeCard = null; }
+            if (this.resizeCard) { if (this.resizeCard.id > 0) { API.updateCanvasAtom(this.resizeCard.id, { width: this.resizeCard.width, height: this.resizeCard.height }); } if (this.resizeCard.group_ids) this.resizeCard.group_ids.forEach(gid => this.autoResizeGroup(gid)); this.resizeCard = null; }
             if (this.dragCard) {
                 this._justDragged = true;
                 // 拖到心智圖殼/節點上 → 收入心智圖（不再走位置儲存）
@@ -664,12 +664,12 @@ function whiteboardApp(canvasId) {
                 var groupsToResize = new Set(); var movedIds = []; var beforePos = []; var afterPos = [];
                 if (this.multiDragStarts) {
                     var self = this;
-                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { a.pos_x = self.snap10(a.pos_x); a.pos_y = self.snap10(a.pos_y); movedIds.push(a.atom_id); beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y }); afterPos.push({ x: a.pos_x, y: a.pos_y }); API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); if (a.group_ids) a.group_ids.forEach(function(gid) { groupsToResize.add(gid); }); } });
+                    this.atoms.forEach(function(a) { if (self.multiDragStarts[a.atom_id]) { a.pos_x = self.snap10(a.pos_x); a.pos_y = self.snap10(a.pos_y); movedIds.push(a.atom_id); beforePos.push({ x: self.multiDragStarts[a.atom_id].x, y: self.multiDragStarts[a.atom_id].y }); afterPos.push({ x: a.pos_x, y: a.pos_y }); if (a.id > 0) { API.updateCanvasAtom(a.id, { pos_x: a.pos_x, pos_y: a.pos_y }); } if (a.group_ids) a.group_ids.forEach(function(gid) { groupsToResize.add(gid); }); } });
                     this.multiDragStarts = null;
                 } else {
                     this.dragCard.pos_x = this.snap10(this.dragCard.pos_x); this.dragCard.pos_y = this.snap10(this.dragCard.pos_y);
                     movedIds.push(this.dragCard.atom_id); beforePos.push({ x: this.cardStartX, y: this.cardStartY }); afterPos.push({ x: this.dragCard.pos_x, y: this.dragCard.pos_y });
-                    API.updateCanvasAtom(this.dragCard.id, { pos_x: this.dragCard.pos_x, pos_y: this.dragCard.pos_y });
+                    if (this.dragCard.id > 0) { API.updateCanvasAtom(this.dragCard.id, { pos_x: this.dragCard.pos_x, pos_y: this.dragCard.pos_y }); }
                     if (this.dragCard.group_ids) this.dragCard.group_ids.forEach(function(gid) { groupsToResize.add(gid); });
                 }
                 if (movedIds.length > 0 && (beforePos[0].x !== afterPos[0].x || beforePos[0].y !== afterPos[0].y)) this.pushMoveUndo(movedIds, beforePos, afterPos);

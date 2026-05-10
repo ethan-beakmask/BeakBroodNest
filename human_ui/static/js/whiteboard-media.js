@@ -298,12 +298,44 @@ function whiteboardMediaMixin() {
                         width: placeholder.width, height: placeholder.height,
                     });
                     self._replacePlaceholder(localId, ca, atom);
+                    // 背景索引：不阻塞 UI，純圖檔抽不到字也安靜吞掉
+                    self._backgroundIndexPdf(atom.id, file).catch(function(e) {
+                        console.warn('background pdf index failed:', e);
+                    });
                 } catch (err) {
                     console.error('drop pdf upload failed:', err);
                     self.showToast('PDF 上傳失敗: ' + (err.message || err), 'error');
                     self._removePlaceholder(localId);
                 }
             })();
+        },
+
+        // 拖拉 PDF 後在背景抽文字寫入 atom.content，讓 note_search 找得到
+        // 並讓白板卡片底下的內文摘要區即時顯示
+        async _backgroundIndexPdf(atomId, file) {
+            if (!window.PdfUtils) return;
+            var text;
+            try {
+                text = await window.PdfUtils.extractAllText(file);
+            } catch (e) { return; }
+            if (!text || !text.trim()) return;
+            var resp = await API.updateAtom(atomId, { content: text });
+            // 觸發 reactive：用 splice 重建 ca 物件
+            var idx = this.atoms.findIndex(function(a) { return a.atom_id === atomId; });
+            if (idx >= 0) {
+                var newAtom = Object.assign({}, this.atoms[idx].atom, {
+                    content: text,
+                    updated_at: (resp && resp.updated_at) || this.atoms[idx].atom.updated_at,
+                });
+                var newCa = Object.assign({}, this.atoms[idx], { atom: newAtom });
+                this.atoms.splice(idx, 1, newCa);
+            }
+            // 若該卡片正開在編輯器中，同步更新讓 PDF 內文 panel 立即出現
+            var ed = (this.openEditors || []).find(function(e) { return e.atomId === atomId; });
+            if (ed) {
+                ed._content = text;
+                if (resp && resp.updated_at) ed._knownServerTs = resp.updated_at;
+            }
         },
 
         // ============================================

@@ -349,7 +349,13 @@ function whiteboardCardEditorMixin() {
                 }
             }
 
-            var saveResp = await API.updateAtom(ed.atomId, { title: title, content: md, content_json: json });
+            // PDF 媒體卡片：content 由「索引內文」按鈕專管，不可被 Tiptap markdown 序列化覆寫
+            // (pdfReader 自訂 node 無 markdown 序列化器，會吐出裸 HTML 把索引結果蓋掉)
+            var isPdfMedia = !!this._findPdfNode(json);
+            var updatePayload = isPdfMedia
+                ? { title: title, content_json: json }
+                : { title: title, content: md, content_json: json };
+            var saveResp = await API.updateAtom(ed.atomId, updatePayload);
 
             // pending placement：首次儲存時才擺放到白板（位置為點擊新增卡片時記錄的滑鼠座標）
             if (ed._pendingCanvasPos) {
@@ -373,7 +379,9 @@ function whiteboardCardEditorMixin() {
             var serverThumb = saveResp ? saveResp.thumbnail_url : undefined;
             var ca = this.atoms.find(a => a.atom_id === ed.atomId);
             if (ca && ca.atom) {
-                ca.atom.title = title; ca.atom.content = md; ca.atom.content_json = json;
+                ca.atom.title = title;
+                if (!isPdfMedia) ca.atom.content = md;
+                ca.atom.content_json = json;
                 ca.atom.updated_at = serverTs;
                 if (serverThumb !== undefined) ca.atom.thumbnail_url = serverThumb;
                 // 同步最新 entries（含 field_values）給白板渲染 -- idcard 主帳卡縮圖會用到
@@ -383,7 +391,8 @@ function whiteboardCardEditorMixin() {
             }
             ed._knownServerTs = serverTs;
             if (this.selectedAtomDetails && this.selectedAtomDetails.id === ed.atomId) {
-                this.selectedAtomDetails.title = title; this.selectedAtomDetails.content = md;
+                this.selectedAtomDetails.title = title;
+                if (!isPdfMedia) this.selectedAtomDetails.content = md;
                 if (serverThumb !== undefined) this.selectedAtomDetails.thumbnail_url = serverThumb;
             }
             ed.dirty = false;
@@ -773,11 +782,18 @@ function whiteboardCardEditorMixin() {
                     return;
                 }
                 var resp = await API.updateAtom(ed.atomId, { content: text });
-                ca.atom.content = text;
-                if (resp && resp.updated_at) {
-                    ca.atom.updated_at = resp.updated_at;
-                    ed._knownServerTs = resp.updated_at;
+                ed._content = text;
+                // 用 splice 重建 ca 物件，確保 Alpine 對 ceIsPdfIndexed 重新求值
+                var idx = this.atoms.findIndex(function(a) { return a.atom_id === ed.atomId; });
+                if (idx >= 0) {
+                    var newAtom = Object.assign({}, this.atoms[idx].atom, {
+                        content: text,
+                        updated_at: (resp && resp.updated_at) || this.atoms[idx].atom.updated_at,
+                    });
+                    var newCa = Object.assign({}, this.atoms[idx], { atom: newAtom });
+                    this.atoms.splice(idx, 1, newCa);
                 }
+                if (resp && resp.updated_at) ed._knownServerTs = resp.updated_at;
                 this.refreshSidebarAtoms();
                 this.showToast('已索引 ' + text.length + ' 字', 'success');
             } catch (e) {
