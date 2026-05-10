@@ -1546,6 +1546,7 @@
                 <div>
                     <div class="context-menu-item" @click="openCardEditor(contextMenu.ca.atom_id); closeContextMenu()">開啟卡片</div>
                     <div class="context-menu-item" @click="selectCard(contextMenu.ca.atom_id); closeContextMenu()">側欄編輯</div>
+                    <div class="context-menu-item" @click="exportCardMarkdown(contextMenu.ca); closeContextMenu()">匯出 Markdown (.md)</div>
                     <template x-if="isPdfReaderCard(contextMenu.ca)">
                         <div class="context-menu-item"
                              @click="togglePdfViewModeOnCanvas(contextMenu.ca); closeContextMenu()"

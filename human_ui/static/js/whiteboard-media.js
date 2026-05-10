@@ -42,6 +42,8 @@ function whiteboardMediaMixin() {
                     this._dropImage(f, dropPos);
                 } else if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
                     this._dropPdf(f, dropPos);
+                } else if (f.type === 'text/markdown' || /\.md$/i.test(f.name) || /\.markdown$/i.test(f.name)) {
+                    this._dropMarkdown(f, dropPos);
                 } else {
                     this.showToast('不支援的檔案類型: ' + (f.type || '未知'), 'error');
                 }
@@ -433,6 +435,77 @@ function whiteboardMediaMixin() {
             } catch (e) {
                 console.warn('_cachePdfThumbnailForCard failed', e);
             }
+        },
+
+        // 拖拉 .md 檔案到白板：檔名（去 .md）成標題、內文 = content
+        // content_json 保留 null，由卡片編輯器首次開啟時依 content 重建
+        // 上限 256KB（系統安全紅線；商業 md 通常遠小於此）
+        _dropMarkdown(file, pos) {
+            var MAX_BYTES = 256 * 1024;
+            if (file.size > MAX_BYTES) {
+                this.showToast('Markdown 檔過大（' + Math.round(file.size / 1024) + 'KB > 256KB 上限）：' + file.name, 'error');
+                return;
+            }
+            var self = this;
+            var localId = this._tempLocalAtomId();
+            var rawTitle = file.name.replace(/\.(md|markdown)$/i, '').trim() || 'untitled';
+            var width = 280, height = 180;
+            var placeholder = {
+                id: localId,
+                atom_id: localId,
+                canvas_id: this.canvasId,
+                pos_x: pos.x, pos_y: pos.y,
+                width: width, height: height,
+                z_index: 0,
+                visual_style: '{}',
+                atom: {
+                    id: localId,
+                    title: rawTitle,
+                    content: '（讀取中...）',
+                    content_json: null,
+                    content_type: 'markdown',
+                    atom_type: 'F',
+                    lifecycle: 'active',
+                    owner: 'ethan',
+                    source: 'human',
+                    tags: [],
+                    entries: [],
+                    _pending: true,
+                },
+            };
+            this.atoms.push(placeholder);
+            this.$nextTick(function() { self.renderConnections(); });
+
+            (async function() {
+                try {
+                    var text = await file.text();
+                    if (text.length > MAX_BYTES) {
+                        // text.length 是字元數，再保險一次（UTF-8 後可能更大已被前面擋下）
+                        self.showToast('Markdown 內容過大：' + file.name, 'error');
+                        self._removePlaceholder(localId);
+                        return;
+                    }
+                    var atom = await API.createAtom({
+                        title: rawTitle,
+                        content: text,
+                        content_json: null,
+                        content_type: 'markdown',
+                        atom_type: 'F',
+                        source: 'human',
+                    });
+                    var ca = await API.addAtomToCanvas(self.canvasId, {
+                        atom_id: atom.id,
+                        pos_x: placeholder.pos_x, pos_y: placeholder.pos_y,
+                        width: width, height: height,
+                    });
+                    self._replacePlaceholder(localId, ca, atom);
+                    self.showToast('已建立卡片：' + rawTitle, 'success', 1500);
+                } catch (err) {
+                    console.error('drop markdown failed:', err);
+                    self.showToast('Markdown 匯入失敗: ' + (err.message || err), 'error');
+                    self._removePlaceholder(localId);
+                }
+            })();
         },
     };
 }

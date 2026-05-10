@@ -1716,6 +1716,9 @@ function whiteboardApp(canvasId) {
     if (typeof whiteboardMediaMixin === 'function') {
         _mergeInto(app, whiteboardMediaMixin());
     }
+    if (typeof whiteboardExportMdMixin === 'function') {
+        _mergeInto(app, whiteboardExportMdMixin());
+    }
     if (typeof whiteboardExchangeMixin === 'function') {
         _mergeInto(app, whiteboardExchangeMixin());
     }
