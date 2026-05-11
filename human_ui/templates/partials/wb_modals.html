@@ -833,7 +833,7 @@
                     <div class="ce-pane" :data-ce-id="ed.id"
                          :data-continuous="(ceColorPen[ed.id] || ceColorHl[ed.id]) ? '1' : '0'"
                          :class="{ 'ce-pane-maximized': maximizedEditorId === ed.id }"
-                         @mouseup="ceHandleSelection(ed.id)">
+                         @mouseup="ceHandleSelection(ed.id, $event)">
                         <!-- Pane Header -->
                         <div class="ce-pane-header">
                             <input class="card-editor-title-input"

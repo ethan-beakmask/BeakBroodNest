@@ -920,11 +920,20 @@ function whiteboardCardEditorMixin() {
             return new Blob([buf], { type: mime });
         },
 
-        ceHandleSelection(editorId) {
+        ceHandleSelection(editorId, ev) {
             var ed = this.openEditors.find(function(e) { return e.id === editorId; });
             if (!ed) return;
             var ce = _ceStore[ed.atomId];
             if (!ce) return;
+
+            // 只處理「在編輯器內容區完成的圈選」：mouseup 必須落在 .ce-pane-body 內，
+            // 否則（如點工具列、調色盤、頁面其他按鈕）一律不再走擷取流程，
+            // 避免一次圈選後每個後續動作都重複擷取。
+            if (ev && ev.target) {
+                var body = ev.target.closest && ev.target.closest('.ce-pane-body');
+                var pane = ev.target.closest && ev.target.closest('[data-ce-id="' + editorId + '"]');
+                if (!body || !pane || !pane.contains(body)) return;
+            }
 
             // PDF reader 卡片走獨立路徑：native selection、移動降級為複製
             var pdfMeta = ce.detectPdfMediaNode();
@@ -1147,11 +1156,28 @@ function whiteboardCardEditorMixin() {
                     // 用 _knownServerTs 比對，避免開啟時 getAtom 造成的時間差誤判
                     var knownTs = ed._knownServerTs || '';
                     if (remoteTs <= knownTs) continue;
+
+                    // 真正觸發「遠端已更新」警示的條件：必須有實質 field 變更
+                    // (EntryFieldChangeLog 紀錄；來自 gantt / wbs 等其他 UI)。
+                    // atom.updated_at 會因為 lifecycle 評分、ORM 觸發、我們自己的儲存與 poll race
+                    // 等原因前進但內容沒變；若僅靠時間戳會誤判成衝突，多卡開啟時還會全部一起跳。
+                    var realChanges = (changesByAtom[ca.atom_id] || []).filter(function(c) {
+                        // 卡片編輯器自己的儲存會寫入 changed_by='user'，那是我們自家動作不算衝突；
+                        // 只把 gantt / wbs 等外部 UI 的變更視為「真的有人改了」(如 'gantt:drag')。
+                        return c.by && c.by !== 'user';
+                    });
+                    if (realChanges.length === 0) {
+                        // 沒有實質的外部欄位變更 -> 視為良性 updated_at 漂移，
+                        // 把 _knownServerTs 同步成最新值即可，下次不再重複比對
+                        ed._knownServerTs = remoteTs;
+                        continue;
+                    }
+
                     // 已在衝突中 -> 跳過
                     if (ed._conflict) continue;
                     ed._conflict = true;
                     ed._conflictTs = remoteTs;
-                    ed._conflictChanges = changesByAtom[ca.atom_id] || [];
+                    ed._conflictChanges = realChanges;
                     self._showConflictUI(ed);
                 } else {
                     // 未編輯 -> 靜默更新
