@@ -12,7 +12,7 @@ import { NodeSelection } from '@tiptap/pm/state'
 // 必須走 esm.min 全量入口；core.mjs 內部用 await import() 動態載入各圖型，
 // 在 IIFE bundle 下 dynamic import 失效，render() 會靜默失敗。
 import mermaid from 'mermaid/dist/mermaid.esm.min.mjs'
-import { MERMAID_TEMPLATES } from './mermaid-templates.js'
+import { MERMAID_TEMPLATES, MERMAID_KIND_META } from './mermaid-templates.js'
 
 let _mermaidInitialised = false
 function ensureMermaidInit() {
@@ -47,6 +47,8 @@ export const MermaidBlock = Node.create({
     addAttributes() {
         return {
             source: { default: '' },
+            displayTitle: { default: '' },
+            collapsed: { default: true },
         }
     },
 
@@ -54,13 +56,19 @@ export const MermaidBlock = Node.create({
         return [{
             tag: 'pre[data-mermaid]',
             preserveWhitespace: 'full',
-            getAttrs: (dom) => ({ source: dom.textContent || '' }),
+            getAttrs: (dom) => ({
+                source: dom.textContent || '',
+                displayTitle: dom.getAttribute('data-title') || '',
+                collapsed: dom.getAttribute('data-collapsed') !== 'false',
+            }),
         }]
     },
 
     renderHTML({ node, HTMLAttributes }) {
         return ['pre', mergeAttributes(HTMLAttributes, {
             'data-mermaid': '',
+            'data-title': node.attrs.displayTitle || '',
+            'data-collapsed': node.attrs.collapsed ? 'true' : 'false',
             'class': 'mermaid-block-raw',
         }), node.attrs.source || '']
     },
@@ -117,9 +125,14 @@ export const MermaidBlock = Node.create({
         return {
             insertMermaid: (kind) => ({ commands }) => {
                 const src = MERMAID_TEMPLATES[kind] || MERMAID_TEMPLATES.flowchart
+                const meta = MERMAID_KIND_META[kind] || {}
                 return commands.insertContent({
                     type: 'mermaidBlock',
-                    attrs: { source: src },
+                    attrs: {
+                        source: src,
+                        displayTitle: meta.defaultTitle || '',
+                        collapsed: true,
+                    },
                 })
             },
         }
@@ -139,6 +152,7 @@ class MermaidBlockView {
         this.dom.contentEditable = 'false'
         // 整塊不可拖；只在 header 的 drag handle 可拖
         this.dom.draggable = false
+        this._applyCollapsedClass(node.attrs.collapsed)
 
         // header
         const header = document.createElement('div')
@@ -162,13 +176,39 @@ class MermaidBlockView {
                 e.stopPropagation()
             }
         }, true)
-        const tag = document.createElement('span')
-        tag.className = 'mermaid-block-tag'
-        tag.textContent = 'Mermaid'
-        header.appendChild(tag)
+
+        // 可編輯的圖形標題 (input)
+        const titleInput = document.createElement('input')
+        titleInput.className = 'mermaid-block-title'
+        titleInput.type = 'text'
+        titleInput.placeholder = '未命名圖形'
+        titleInput.value = node.attrs.displayTitle || ''
+        titleInput.title = '點此修改圖形名稱'
+        ;['keydown', 'keyup', 'keypress', 'beforeinput', 'paste', 'copy', 'cut'].forEach(ev => {
+            titleInput.addEventListener(ev, (e) => e.stopPropagation())
+        })
+        titleInput.addEventListener('blur', () => this._commitTitle())
+        titleInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); titleInput.blur() }
+        })
+        header.appendChild(titleInput)
+        this.titleInput = titleInput
+
         const spacer = document.createElement('span')
         spacer.style.flex = '1'
         header.appendChild(spacer)
+
+        // 收合 / 展開切換
+        const collapseBtn = document.createElement('button')
+        collapseBtn.type = 'button'
+        collapseBtn.className = 'mermaid-block-collapse'
+        collapseBtn.tabIndex = -1
+        collapseBtn.addEventListener('mousedown', (e) => e.preventDefault())
+        collapseBtn.addEventListener('click', (e) => { e.preventDefault(); this._toggleCollapsed() })
+        header.appendChild(collapseBtn)
+        this.collapseBtn = collapseBtn
+        this._refreshCollapseBtn(node.attrs.collapsed)
+
         const del = document.createElement('button')
         del.type = 'button'
         del.className = 'mermaid-block-x'
@@ -245,6 +285,42 @@ class MermaidBlockView {
         // 會被當成 orphan 清掉。mermaid 11 內部會自行清理 body 上的臨時容器。
     }
 
+    _commitTitle() {
+        if (typeof this.getPos !== 'function') return
+        const pos = this.getPos()
+        if (pos == null) return
+        const val = this.titleInput.value
+        if (val === (this.node.attrs.displayTitle || '')) return
+        const tr = this.editor.view.state.tr.setNodeMarkup(pos, undefined, {
+            ...this.node.attrs,
+            displayTitle: val,
+        })
+        this.editor.view.dispatch(tr)
+    }
+
+    _toggleCollapsed() {
+        if (typeof this.getPos !== 'function') return
+        const pos = this.getPos()
+        if (pos == null) return
+        const next = !this.node.attrs.collapsed
+        const tr = this.editor.view.state.tr.setNodeMarkup(pos, undefined, {
+            ...this.node.attrs,
+            collapsed: next,
+        })
+        this.editor.view.dispatch(tr)
+    }
+
+    _applyCollapsedClass(collapsed) {
+        if (collapsed) this.dom.classList.add('collapsed')
+        else this.dom.classList.remove('collapsed')
+    }
+
+    _refreshCollapseBtn(collapsed) {
+        if (!this.collapseBtn) return
+        this.collapseBtn.textContent = collapsed ? '[+]' : '[-]'
+        this.collapseBtn.title = collapsed ? '展開以顯示語法' : '收合（只顯示圖形與標題）'
+    }
+
     _commitSource() {
         if (typeof this.getPos !== 'function') return
         const pos = this.getPos()
@@ -276,6 +352,12 @@ class MermaidBlockView {
             this._autosizeTextarea()
             this._renderPreview(fresh)
         }
+        const freshTitle = node.attrs.displayTitle || ''
+        if (document.activeElement !== this.titleInput && this.titleInput.value !== freshTitle) {
+            this.titleInput.value = freshTitle
+        }
+        this._applyCollapsedClass(node.attrs.collapsed)
+        this._refreshCollapseBtn(node.attrs.collapsed)
         return true
     }
 
@@ -283,11 +365,15 @@ class MermaidBlockView {
         if (this._renderTimer) clearTimeout(this._renderTimer)
     }
 
-    // 讓 textarea / 按鈕內的事件不要被 PM 視為 PM 事件
+    // 讓 textarea / 按鈕 / 標題 input 內的事件不要被 PM 視為 PM 事件
     stopEvent(event) {
         const t = event.target
         if (!t) return false
-        return this.textarea.contains(t) || (t.tagName === 'BUTTON' && this.dom.contains(t))
+        if (this.textarea.contains(t)) return true
+        if (this.titleInput && this.titleInput.contains(t)) return true
+        if (t.tagName === 'BUTTON' && this.dom.contains(t)) return true
+        if (t.tagName === 'INPUT' && this.dom.contains(t)) return true
+        return false
     }
 
     ignoreMutation() { return true }

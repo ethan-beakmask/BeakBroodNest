@@ -619,6 +619,32 @@ function whiteboardCardEditorMixin() {
             if (ce) ce.cmd(command);
         },
 
+        // Mermaid 圖型挑選對話框
+        mermaidPicker: {
+            open: false,
+            editorId: null,
+            options: [
+                { kind: 'sequence',    label: '時序圖',          thumb: '/beakbroodnest/static/img/mermaid-thumb/sequence.png' },
+                { kind: 'flowchart',   label: '流程圖',          thumb: '/beakbroodnest/static/img/mermaid-thumb/flowchart.png' },
+                { kind: 'swimlane',    label: '泳道圖',          thumb: '/beakbroodnest/static/img/mermaid-thumb/swimlane.png' },
+                { kind: 'gitgraph_lr', label: 'Git 分支圖 (橫)', thumb: '/beakbroodnest/static/img/mermaid-thumb/gitgraph-lr.png' },
+                { kind: 'gitgraph_tb', label: 'Git 分支圖 (直)', thumb: '/beakbroodnest/static/img/mermaid-thumb/gitgraph-tb.png' },
+            ],
+        },
+        ceOpenMermaidPicker(editorId) {
+            this.mermaidPicker.editorId = editorId;
+            this.mermaidPicker.open = true;
+        },
+        cePickMermaid(kind) {
+            var editorId = this.mermaidPicker.editorId;
+            this.mermaidPicker.open = false;
+            if (!editorId) return;
+            var ed = this.openEditors.find(e => e.id === editorId);
+            if (!ed) return;
+            var ce = _ceStore[ed.atomId];
+            if (ce) ce.cmd('insertMermaid', kind);
+        },
+
         ceIsActive(name, attrs, editorId) {
             var ed = this.openEditors.find(e => e.id === editorId);
             if (!ed) return false;

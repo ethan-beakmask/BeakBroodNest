@@ -317,12 +317,9 @@ class CardEditor {
             case 'convertToEntry':
                 this.editor.commands.convertToEntry(args[0] || 'freetext', args[1] || null)
                 return
-            case 'mermaidSeq':
-                this.editor.commands.insertMermaid('sequence'); return
-            case 'mermaidFlow':
-                this.editor.commands.insertMermaid('flowchart'); return
-            case 'mermaidSwim':
-                this.editor.commands.insertMermaid('swimlane'); return
+            case 'insertMermaid':
+                // args[0] = kind (sequence / flowchart / swimlane / gitgraph_lr / gitgraph_tb)
+                this.editor.commands.insertMermaid(args[0] || 'flowchart'); return
             case 'htmlBlock':
                 this.editor.commands.insertHtmlBlock(); return
             case 'deleteTable': chain.deleteTable().run(); break
@@ -353,7 +350,8 @@ class CardEditor {
         const tr = state.tr
         let touched = 0
         state.doc.descendants((node, pos) => {
-            if (node.type.name !== 'structuredEntry') return
+            // 涵蓋 structuredEntry 與 mermaidBlock(兩者皆有 collapsed attr)
+            if (node.type.name !== 'structuredEntry' && node.type.name !== 'mermaidBlock') return
             if (!!node.attrs.collapsed === !!collapsed) return
             tr.setNodeMarkup(pos, undefined, { ...node.attrs, collapsed: !!collapsed })
             touched += 1
@@ -439,7 +437,8 @@ class CardEditor {
         let found = false
         this.editor.state.doc.descendants(node => {
             if (found) return false
-            if (node.type.name === 'structuredEntry' && node.attrs.collapsed) {
+            const isTarget = node.type.name === 'structuredEntry' || node.type.name === 'mermaidBlock'
+            if (isTarget && node.attrs.collapsed) {
                 found = true
                 return false
             }

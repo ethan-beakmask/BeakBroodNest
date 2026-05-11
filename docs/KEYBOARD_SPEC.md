@@ -69,7 +69,11 @@
 | textarea input | -- | debounce 350~400ms 後重繪預覽 (失敗時顯示錯誤訊息,不破壞 source) | NodeView |
 | NodeSelection 對 mermaidBlock/htmlBlock | `Backspace` / `Delete` | **吃掉** (只能透過 `[x]` 按鈕刪除) | NodeView keymap |
 | NodeSelection 對 mermaidBlock/htmlBlock | `Mod+Enter` | (沿用全域規則) 在區塊後插空段並進入 | `ListHotkeys` |
-| 任意位置 | toolbar `[時序][流程][泳道][HTML]` | 插入對應預填範本 | `wb_modals.html` |
+| 任意位置 | toolbar `[Mermaid]` | 開圖型挑選對話框,選 5 種圖型後插入 | `wb_modals.html` |
+| 任意位置 | toolbar `[HTML]` | 插入 HTML/SVG 退路區塊 | `wb_modals.html` |
+| mermaid header `[+]`/`[-]` 按鈕 | 點擊 | 切換該圖塊 collapsed (顯示/隱藏 source textarea) | NodeView |
+| mermaid 收合中 | 滑鼠移入 / focus textarea | 暫時展開 source textarea(CSS :hover/:focus-within) | `card-editor.css` |
+| toolbar `[+全展]/[-全收]` | 點擊 | 對整份文件的 structuredEntry **與** mermaidBlock 統一 collapsed=true/false | `card-editor.js` |
 
 > `atom: true` + `isolating: true`:PM caret 無法進入 NodeView 內;textarea 是 contentEditable=false 容器內的獨立輸入元素,鍵盤事件不流回 PM。
 

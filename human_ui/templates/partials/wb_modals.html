@@ -895,9 +895,7 @@
                             <button @click="ceCmd('codeBlock', ed.id)" title="程式區塊">{}</button>
                             <button @click="ceCmd('hr', ed.id)" title="分隔線">--</button>
                             <span class="tb-sep"></span>
-                            <button @click="ceCmd('mermaidSeq', ed.id)" title="插入時序圖 (Mermaid sequenceDiagram)">時序</button>
-                            <button @click="ceCmd('mermaidFlow', ed.id)" title="插入流程圖 (Mermaid flowchart)">流程</button>
-                            <button @click="ceCmd('mermaidSwim', ed.id)" title="插入泳道圖 (Mermaid flowchart + subgraph)">泳道</button>
+                            <button @click="ceOpenMermaidPicker(ed.id)" title="插入 Mermaid 圖形（時序 / 流程 / 泳道 / Git 分支橫 / Git 分支直）">Mermaid</button>
                             <button @click="ceCmd('htmlBlock', ed.id)" title="插入 HTML / SVG 區塊（兜底，預覽經 DOMPurify 過濾）">HTML</button>
                             <span class="tb-sep"></span>
                             <button @click="ceInsertLink(ed.id)" title="連結">Lk</button>
@@ -1661,6 +1659,34 @@
                     <div class="context-menu-item" @click="_deleteMindmapNode(contextMenu.ca.mindmap_shell_id, contextMenu.ca.atom_id); closeContextMenu()" style="color:var(--danger);">刪除節點+子樹</div>
                 </div>
             </template>
+        </div>
+    </template>
+    <!-- Mermaid 圖型挑選對話框 (z-index 高於 card editor pane 13000) -->
+    <template x-if="mermaidPicker.open">
+        <div class="modal-overlay" style="z-index:14000;">
+            <div class="modal" style="max-width:760px;">
+                <div class="modal-header">
+                    <h3>選擇要插入的 Mermaid 圖型</h3>
+                    <button class="modal-close" @click="mermaidPicker.open=false">x</button>
+                </div>
+                <div class="modal-body">
+                    <div class="mermaid-picker-grid">
+                        <template x-for="opt in mermaidPicker.options" :key="opt.kind">
+                            <button type="button" class="mermaid-picker-card" @click="cePickMermaid(opt.kind)">
+                                <img :src="opt.thumb" :alt="opt.label" class="mermaid-picker-thumb"
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
+                                <span class="mermaid-picker-thumb-fallback" style="display:none;">
+                                    <span x-text="opt.label"></span>
+                                </span>
+                                <span class="mermaid-picker-label" x-text="opt.label"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-sm" @click="mermaidPicker.open=false">取消</button>
+                </div>
+            </div>
         </div>
     </template>
 <!-- ============================================
