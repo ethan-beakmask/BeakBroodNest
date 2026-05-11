@@ -50,8 +50,9 @@ def project_summary(slug):
         if not atom_ids:
             return jsonify({
                 'canvas': {'id': canvas.id, 'name': canvas.name, 'slug': canvas.slug},
-                'summary': {'total': 0, 'pending': 0, 'in_progress': 0,
-                            'done': 0, 'blocked': 0, 'h': 0, 'm': 0, 'l': 0},
+                'summary': {'total': 0, 'planning': 0, 'in_progress': 0,
+                            'paused': 0, 'completed': 0, 'cancelled': 0,
+                            'blocked': 0, 'h': 0, 'm': 0, 'l': 0},
                 'items': [],
                 'blocks': [],
             })
@@ -110,15 +111,18 @@ def project_summary(slug):
 
         # 組裝 items
         items = []
-        counts = {'pending': 0, 'in_progress': 0, 'done': 0, 'blocked': 0}
+        counts = {'planning': 0, 'in_progress': 0, 'paused': 0,
+                  'completed': 0, 'cancelled': 0, 'blocked': 0}
         urgency_counts = {'H': 0, 'M': 0, 'L': 0}
 
         for entry in entries:
             fv = all_fv.get(entry.id, {})
-            status = fv.get('status', 'pending')
+            status = fv.get('status', 'planning')
             urgency = fv.get('urgency', 'M')
             category = fv.get('category', '')
-            is_blocked = entry.atom_id in blocked_map and status != 'done'
+            # 已完成 / 取消的不視為被阻塞（任務本身已結案）
+            is_blocked = (entry.atom_id in blocked_map
+                          and status not in ('completed', 'cancelled'))
 
             if status in counts:
                 counts[status] += 1
@@ -153,7 +157,8 @@ def project_summary(slug):
 
         # urgency 排序: H > M > L, blocked 優先顯示
         urgency_order = {'H': 0, 'M': 1, 'L': 2}
-        status_order = {'pending': 0, 'in_progress': 1, 'done': 2}
+        status_order = {'planning': 0, 'in_progress': 1, 'paused': 2,
+                        'completed': 3, 'cancelled': 4}
         items.sort(key=lambda x: (
             status_order.get(x['status'], 9),
             -int(x['is_blocked']),
@@ -188,10 +193,10 @@ def project_summary(slug):
             if cat not in cat_groups:
                 continue
             group_items = cat_groups[cat]
-            done_count = sum(1 for i in group_items if i['status'] == 'done')
+            done_count = sum(1 for i in group_items if i['status'] == 'completed')
             total = len(group_items)
-            group_status = 'done' if done_count == total else (
-                'in_progress' if any(i['status'] == 'in_progress' for i in group_items) else 'pending'
+            group_status = 'completed' if done_count == total else (
+                'in_progress' if any(i['status'] == 'in_progress' for i in group_items) else 'planning'
             )
             children = []
             for item in group_items:
@@ -239,9 +244,11 @@ def project_summary(slug):
             },
             'summary': {
                 'total': len(items),
-                'pending': counts['pending'],
+                'planning': counts['planning'],
                 'in_progress': counts['in_progress'],
-                'done': counts['done'],
+                'paused': counts['paused'],
+                'completed': counts['completed'],
+                'cancelled': counts['cancelled'],
                 'blocked': counts['blocked'],
                 'h': urgency_counts.get('H', 0),
                 'm': urgency_counts.get('M', 0),
@@ -336,7 +343,7 @@ def project_wbs(slug):
                 fv = all_fv.get(entry.id, {})
                 entries_by_atom[entry.atom_id] = {
                     'entry_id': entry.id,
-                    'status': fv.get('status', 'pending'),
+                    'status': fv.get('status', 'planning'),
                     'urgency': fv.get('urgency', 'M'),
                     'category': fv.get('category', ''),
                     'planned_start': fv.get('planned_start', ''),

@@ -149,7 +149,7 @@
                         var pct = Math.round(changes.progress * 100);
                         body.progress = String(pct);
                         if (pct >= 100) {
-                            body.status = 'done';
+                            body.status = 'completed';
                             body.actual_end = new Date().toISOString().slice(0, 16);
                             if (!task._actual_start) {
                                 body.actual_start = task.start_date + 'T00:00';
@@ -161,7 +161,7 @@
                                 body.actual_start = task.start_date + 'T00:00';
                             }
                         } else {
-                            body.status = 'pending';
+                            body.status = 'planning';
                             body.actual_end = '';  // 未開始 -> 清除實際結束
                         }
                     }

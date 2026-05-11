@@ -164,6 +164,11 @@ function whiteboardCardEditorMixin() {
                     }
                 } catch (e) { /* no entries yet, use content as-is */ }
 
+                // 接收 NodeView 的 task action 事件（暫停/恢復/取消/重啟）
+                host.addEventListener('beak-task-action', function(ev) {
+                    self._handleTaskAction(editorId, atomId, ce, ev.detail);
+                });
+
                 _ceStore[atomId] = ce;
                 self.$nextTick(function() {
                     initializing = false;
@@ -286,6 +291,47 @@ function whiteboardCardEditorMixin() {
         _markEditorDirty(editorId) {
             var ed = this.openEditors.find(e => e.id === editorId);
             if (ed) ed.dirty = true;
+        },
+
+        // task action 派發：呼叫後端、把回傳的 fieldValues 寫回對應 NodeView，避免 stale UI
+        async _handleTaskAction(editorId, atomId, ce, detail) {
+            if (!detail || !detail.action) return;
+            try {
+                var resp = await API.taskAction(atomId, detail.action, detail.reason, 'card');
+                if (!resp || !resp.ok) {
+                    this.showToast('操作失敗：' + (resp && resp.error || '未知錯誤'), 'error');
+                    return;
+                }
+                // 把新的 field_values 寫回該 entry 對應 node
+                if (resp.field_values && ce && ce.editor) {
+                    var pos = typeof detail.getPos === 'function' ? detail.getPos() : null;
+                    if (pos != null) {
+                        var view = ce.editor.view;
+                        var node = view.state.doc.nodeAt(pos);
+                        if (node && node.type.name === 'structuredEntry') {
+                            view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, {
+                                ...node.attrs,
+                                fieldValues: { ...(node.attrs.fieldValues || {}), ...resp.field_values },
+                            }));
+                        }
+                    }
+                }
+                // 後端已寫 DB，本地 atom.updated_at 跟著推進；同步 ca cache + _knownServerTs
+                var ca = this.atoms && this.atoms.find(function(a) { return a.atom_id === atomId; });
+                if (ca && ca.atom) {
+                    ca.atom.updated_at = new Date().toISOString();
+                }
+                var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+                if (ed) ed._knownServerTs = new Date().toISOString();
+                this.showToast('已 ' + this._taskActionLabel(detail.action), 'success');
+            } catch (err) {
+                console.error('task action failed:', err);
+                this.showToast('操作失敗：' + (err.message || err), 'error');
+            }
+        },
+
+        _taskActionLabel(a) {
+            return ({ pause: '暫停', resume: '恢復', cancel: '取消', reopen: '重啟' })[a] || a;
         },
 
         // 標題輸入框按 Enter 後將焦點移到內容編輯區開頭
@@ -1162,9 +1208,19 @@ function whiteboardCardEditorMixin() {
                     // atom.updated_at 會因為 lifecycle 評分、ORM 觸發、我們自己的儲存與 poll race
                     // 等原因前進但內容沒變；若僅靠時間戳會誤判成衝突，多卡開啟時還會全部一起跳。
                     var realChanges = (changesByAtom[ca.atom_id] || []).filter(function(c) {
-                        // 卡片編輯器自己的儲存會寫入 changed_by='user'，那是我們自家動作不算衝突；
-                        // 只把 gantt / wbs 等外部 UI 的變更視為「真的有人改了」(如 'gantt:drag')。
-                        return c.by && c.by !== 'user';
+                        // 我們自家動作不算衝突：
+                        //   'user'    -> 卡片編輯器 sync_entries 預設來源（一般 field 儲存）
+                        //   'card:*'  -> 卡片編輯器 task action（暫停/恢復/取消/重啟，Phase b 加入）
+                        // 真正的「他處改了」來源：
+                        //   'gantt:drag'           gantt 拖時間/進度
+                        //   'gantt:auto-clear|fill' progress consistency 自動補正
+                        //   'gantt:pause|resume|cancel|reopen'  gantt 的 task action
+                        //   'gantt:mvp'            舊 MVP gantt
+                        //   其他未知來源（AI / 腳本）
+                        if (!c.by) return false;
+                        if (c.by === 'user') return false;
+                        if (c.by.indexOf('card:') === 0) return false;
+                        return true;
                     });
                     if (realChanges.length === 0) {
                         // 沒有實質的外部欄位變更 -> 視為良性 updated_at 漂移，
@@ -1218,9 +1274,11 @@ function whiteboardCardEditorMixin() {
             var header = el.querySelector('.ce-pane-header');
             if (!header) return;
 
-            // 組裝變更明細文字
+            // 組裝變更明細文字（隱藏 JSON 歷史欄位避免塞原始字串給使用者看；status 已能傳達語意）
             var detailHtml = '';
-            var changes = ed._conflictChanges || [];
+            var changes = (ed._conflictChanges || []).filter(function(c) {
+                return c.field !== 'pause_log' && c.field !== 'cancel_info' && c.field !== 'reopen_log';
+            });
             if (changes.length > 0) {
                 var parts = [];
                 for (var i = 0; i < Math.min(changes.length, 5); i++) {

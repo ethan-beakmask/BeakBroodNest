@@ -109,6 +109,8 @@ def get_beak_gantt(slug):
                     # actual 另外傳，前端用於繪製進度細 bar
                     a_start = fv.get('actual_start', '')
                     a_end = fv.get('actual_end', '')
+                    bs = fv.get('baseline_start', '')
+                    be = fv.get('baseline_end', '')
                     tasks.append({
                         'id': 'e{}_{}'.format(atom.id, idx),
                         'text': entry['text'],
@@ -118,10 +120,15 @@ def get_beak_gantt(slug):
                         'duration': duration,
                         'progress': _resolve_progress(fv),
                         '_entry_id': entry_id,
-                        '_status': fv.get('status', 'pending'),
+                        '_status': fv.get('status', 'planning'),
                         '_urgency': fv.get('urgency', 'M'),
                         '_actual_start': a_start[:10] if a_start else '',
                         '_actual_end': a_end[:10] if a_end else '',
+                        '_baseline_start': bs[:10] if bs else '',
+                        '_baseline_end': be[:10] if be else '',
+                        '_pause_log': fv.get('pause_log', ''),
+                        '_cancel_info': fv.get('cancel_info', ''),
+                        '_reopen_log': fv.get('reopen_log', ''),
                     })
                     day_offset += 1
             else:
@@ -133,6 +140,8 @@ def get_beak_gantt(slug):
                 duration = _calc_duration(ps, pe) if ps else 1
                 a_start = leaf_fv.get('actual_start', '')
                 a_end = leaf_fv.get('actual_end', '')
+                bs = leaf_fv.get('baseline_start', '')
+                be = leaf_fv.get('baseline_end', '')
                 tasks.append({
                     'id': atom.id,
                     'text': atom.title,
@@ -142,10 +151,15 @@ def get_beak_gantt(slug):
                     'duration': duration,
                     'progress': _resolve_progress(leaf_fv),
                     'open': True,
-                    '_status': leaf_fv.get('status', 'pending'),
+                    '_status': leaf_fv.get('status', 'planning'),
                     '_urgency': leaf_fv.get('urgency', 'M'),
                     '_actual_start': a_start[:10] if a_start else '',
                     '_actual_end': a_end[:10] if a_end else '',
+                    '_baseline_start': bs[:10] if bs else '',
+                    '_baseline_end': be[:10] if be else '',
+                    '_pause_log': leaf_fv.get('pause_log', ''),
+                    '_cancel_info': leaf_fv.get('cancel_info', ''),
+                    '_reopen_log': leaf_fv.get('reopen_log', ''),
                 })
                 day_offset += 1
 
@@ -270,7 +284,7 @@ def create_beak_gantt_task(slug):
             f.name: f for f in
             s.query(EntrySchemaField).filter_by(schema_id=task_schema.id).all()
         }
-        defaults = {'status': 'pending', 'urgency': 'M'}
+        defaults = {'status': 'planning', 'urgency': 'M'}
         if start_date:
             defaults['planned_start'] = start_date + 'T00:00'
             if duration and int(duration) > 0:
@@ -381,6 +395,8 @@ def patch_beak_gantt_entry(slug, entry_id):
             sf = field_map.get(fname)
             if not sf:
                 continue
+            if fname == 'status':
+                fval = _normalize_status(fval)
             _upsert_field(s, entry.id, sf.id, fval)
             updated[fname] = fval
 
@@ -424,6 +440,8 @@ def patch_beak_gantt_task(slug, atom_id):
             sf = field_map.get(fname)
             if not sf:
                 continue
+            if fname == 'status':
+                fval = _normalize_status(fval)
             _upsert_field(s, entry.id, sf.id, fval)
             updated[fname] = fval
 
@@ -884,14 +902,42 @@ def _upsert_field(s, entry_id, field_id, value, changed_by='gantt:drag'):
     existing = s.query(EntryFieldValue).filter_by(entry_id=entry_id, field_id=field_id).first()
     # 空字串視同 None（清除語意）
     new_val = str(value) if value is not None and str(value).strip() != '' else None
+
+    # 同時維護 typed 欄位（value_datetime / value_date / value_int 等），
+    # 否則 gantt drag 後 typed 欄位仍會殘留舊值，造成 gantt 重讀時資料不一致。
+    sf = s.query(EntrySchemaField).filter_by(id=field_id).first()
+
+    def _apply_typed(fv):
+        fv.value = new_val
+        fv.value_int = None
+        fv.value_decimal = None
+        fv.value_date = None
+        fv.value_datetime = None
+        if new_val is None or not sf:
+            return
+        try:
+            if sf.field_type == 'number':
+                fv.value_int = int(float(new_val))
+            elif sf.field_type == 'decimal':
+                from decimal import Decimal
+                fv.value_decimal = Decimal(new_val)
+            elif sf.field_type == 'date':
+                fv.value_date = datetime.strptime(new_val[:10], '%Y-%m-%d').date()
+            elif sf.field_type == 'datetime':
+                fv.value_datetime = datetime.fromisoformat(new_val)
+        except (ValueError, TypeError):
+            pass
+
     if existing:
         log_field_change(s, entry_id, field_id, existing.value, new_val, changed_by)
-        existing.value = new_val
+        _apply_typed(existing)
     else:
         if new_val is None:
             return  # 值為空且不存在，不需要建立記錄
         log_field_change(s, entry_id, field_id, None, new_val, changed_by)
-        s.add(EntryFieldValue(entry_id=entry_id, field_id=field_id, value=new_val))
+        new_fv = EntryFieldValue(entry_id=entry_id, field_id=field_id)
+        _apply_typed(new_fv)
+        s.add(new_fv)
 
 
 def _calc_duration(start_raw, end_raw):
@@ -906,18 +952,35 @@ def _calc_duration(start_raw, end_raw):
         return 1
 
 
+_STATUS_LEGACY_MAP = {'pending': 'planning', 'done': 'completed'}
+
+
+def _normalize_status(value):
+    """把舊 status 字串（pending/done）映射到新 enum，其他原樣回傳。
+    保留作為過渡相容層：前端 / 外部呼叫尚未升級時，後端仍能寫入正確值。
+    """
+    if value in _STATUS_LEGACY_MAP:
+        return _STATUS_LEGACY_MAP[value]
+    return value
+
+
 def _resolve_progress(fv):
+    """有顯式 progress 就用它；否則靠 status 概略估。
+    新 status enum：planning / in_progress / paused / completed / cancelled
+    paused 與 cancelled 不假設進度，回 0；真實值需要使用者明示。
+    """
     p = fv.get('progress', '')
     if p:
         try:
             return max(0.0, min(1.0, int(float(p)) / 100))
         except (ValueError, TypeError):
             pass
-    status = fv.get('status', 'pending')
-    if status == 'done':
+    status = fv.get('status', 'planning')
+    if status == 'completed':
         return 1.0
     if status == 'in_progress':
         return 0.5
+    # planning / paused / cancelled / 未知 -> 沒有顯式進度就回 0
     return 0.0
 
 
@@ -925,8 +988,8 @@ def _apply_progress_consistency(s, entry_id, body, field_map, updated):
     """確保 actual_end 與進度/狀態語意一致。
 
     僅在 body 顯式帶入 progress 或 status 時才介入，避免影響純拖拉時間欄位的請求。
-    - 進度 < 100 且 status != done -> 清空 actual_end
-    - 進度 >= 100 或 status == done -> 若 actual_end 為空，補當下時間
+    - 進度 < 100 且 status != completed -> 清空 actual_end
+    - 進度 >= 100 或 status == completed -> 若 actual_end 為空，補當下時間
     """
     if 'progress' not in body and 'status' not in body:
         return
@@ -944,7 +1007,7 @@ def _apply_progress_consistency(s, entry_id, body, field_map, updated):
     if pct is not None:
         is_done = pct >= 100
     elif status_raw:
-        is_done = status_raw == 'done'
+        is_done = status_raw == 'completed'
     else:
         return
 

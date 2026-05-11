@@ -91,7 +91,7 @@ def _fetch_tasks(s, canvas_id):
             'entry_id': entry.id,
             'atom_id': entry.atom_id,
             'title': entry.atom.title if entry.atom else f'#{entry.atom_id}',
-            'status': fv.get('status', 'pending'),
+            'status': fv.get('status', 'planning'),
             'urgency': fv.get('urgency', 'M'),
             'category': fv.get('category', ''),
             'planned_start': fv.get('planned_start', ''),
@@ -232,9 +232,13 @@ def _resolve_gantt_status(task, actual_start, progress):
     回傳 not_started / in_progress / completed。
     前端直接用，避免重複計算。
     """
-    db_status = task.get('status', 'pending')
-    if db_status == 'done' or progress == 100:
+    db_status = task.get('status', 'planning')
+    if db_status == 'completed' or progress == 100:
         return 'completed'
+    if db_status == 'cancelled':
+        return 'cancelled'
+    if db_status == 'paused':
+        return 'paused'
     if actual_start or db_status == 'in_progress' or (progress and progress > 0):
         return 'in_progress'
     return 'not_started'
@@ -248,8 +252,8 @@ def _resolve_progress(task):
             return max(0, min(100, int(float(p))))
         except (ValueError, TypeError):
             pass
-    status = task.get('status', 'pending')
-    if status == 'done':
+    status = task.get('status', 'planning')
+    if status == 'completed':
         return 100
     if status == 'in_progress':
         return 50
@@ -289,8 +293,13 @@ def _calc_delta_days(baseline, actual_end):
 
 def _resolve_bar_class(task):
     """依 urgency/status 決定 Frappe Gantt CSS class。"""
-    if task.get('status') == 'done':
+    status = task.get('status')
+    if status == 'completed':
         return 'bar-done'
+    if status == 'cancelled':
+        return 'bar-cancelled'
+    if status == 'paused':
+        return 'bar-paused'
     return 'bar-urgency-' + (task.get('urgency', 'M'))
 
 
@@ -363,9 +372,34 @@ def patch_gantt_task(slug, entry_id):
 
 
 def _write_field(s, entry_id, field_id, value, changed_by='gantt:mvp'):
-    """寫入或更新單一欄位值。"""
+    """寫入或更新單一欄位值，同時維護 typed 欄位避免 gantt 重讀錯亂。"""
     from core.audit import log_field_change
     new_val = str(value) if value is not None and str(value).strip() != '' else None
+    sf = s.query(EntrySchemaField).filter_by(id=field_id).first()
+
+    def _apply_typed(fv):
+        fv.value = new_val
+        fv.value_int = None
+        fv.value_decimal = None
+        fv.value_date = None
+        fv.value_datetime = None
+        if new_val is None or not sf:
+            return
+        try:
+            if sf.field_type == 'number':
+                fv.value_int = int(float(new_val))
+            elif sf.field_type == 'decimal':
+                from decimal import Decimal
+                fv.value_decimal = Decimal(new_val)
+            elif sf.field_type == 'date':
+                from datetime import datetime as _dt
+                fv.value_date = _dt.strptime(new_val[:10], '%Y-%m-%d').date()
+            elif sf.field_type == 'datetime':
+                from datetime import datetime as _dt
+                fv.value_datetime = _dt.fromisoformat(new_val)
+        except (ValueError, TypeError):
+            pass
+
     existing = (
         s.query(EntryFieldValue)
         .filter_by(entry_id=entry_id, field_id=field_id)
@@ -373,15 +407,12 @@ def _write_field(s, entry_id, field_id, value, changed_by='gantt:mvp'):
     )
     if existing:
         log_field_change(s, entry_id, field_id, existing.value, new_val, changed_by)
-        existing.value = new_val
+        _apply_typed(existing)
     else:
         log_field_change(s, entry_id, field_id, None, new_val, changed_by)
-        fv = EntryFieldValue(
-            entry_id=entry_id,
-            field_id=field_id,
-            value=new_val,
-        )
-        s.add(fv)
+        new_fv = EntryFieldValue(entry_id=entry_id, field_id=field_id)
+        _apply_typed(new_fv)
+        s.add(new_fv)
 
 
 # ============================================================

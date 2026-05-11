@@ -545,6 +545,11 @@ class StructuredEntryView {
             this.tagRow.appendChild(this.editBtn)
         }
 
+        // task 專屬 action 按鈕：暫停 / 恢復 / 取消 / 重啟
+        if ((this.node.attrs.schemaCode || '') === 'task') {
+            this._buildTaskActionButtons()
+        }
+
         // 刪除(freetext 不顯示;但實務 freetext 走 paragraph,structuredEntry 內不會出現)
         if ((this.node.attrs.schemaCode || 'freetext') !== 'freetext') {
             this.deleteBtn = document.createElement('span')
@@ -557,6 +562,51 @@ class StructuredEntryView {
                 this._deleteEntry()
             })
             this.tagRow.appendChild(this.deleteBtn)
+        }
+    }
+
+    _buildTaskActionButtons() {
+        // 依目前 status 決定哪些動作可用，避免按下後端拒絕的無效操作
+        const fv = this.node.attrs.fieldValues || {}
+        const status = fv.status || 'planning'
+        const entryId = this.node.attrs.entryId
+        const actions = []
+        if (status === 'in_progress') {
+            actions.push({ key: 'pause', label: '暫停', title: '暫停此任務' })
+            actions.push({ key: 'cancel', label: '取消', title: '取消此任務' })
+        } else if (status === 'paused') {
+            actions.push({ key: 'resume', label: '恢復', title: '恢復進行中' })
+            actions.push({ key: 'cancel', label: '取消', title: '取消此任務' })
+        } else if (status === 'completed' || status === 'cancelled') {
+            actions.push({ key: 'reopen', label: '重啟', title: '重新開啟此任務' })
+        } else {
+            // planning：沒有 pause / reopen 可做；取消允許（直接放棄計畫中的任務）
+            actions.push({ key: 'cancel', label: '取消', title: '取消此計畫' })
+        }
+        for (const a of actions) {
+            const btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'se-task-action-btn se-task-action-' + a.key
+            btn.textContent = a.label
+            btn.title = a.title + (entryId ? '' : '（請先儲存卡片）')
+            btn.disabled = !entryId
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                if (!entryId) return
+                const reason = prompt(a.label + ' 原因（可空白）:', '') || ''
+                // 由 host (whiteboard-card-editor) 接手 API 呼叫 + 更新 node attrs
+                this.dom.dispatchEvent(new CustomEvent('beak-task-action', {
+                    detail: {
+                        action: a.key,
+                        reason: reason,
+                        entryId: entryId,
+                        getPos: () => this.getPos(),
+                    },
+                    bubbles: true,
+                }))
+            })
+            this.tagRow.appendChild(btn)
         }
     }
 
@@ -601,6 +651,7 @@ class StructuredEntryView {
         const code = this.node.attrs.schemaCode || ''
         if (code === 'idcard') return this._buildIdCardReadonly()
         if (code === 'file') return this._buildFileReadonly()
+        if (code === 'task') return this._buildTaskReadonly()
         const schema = this._getSchema()
         if (!schema || !schema.fields || schema.fields.length === 0) return null
         const grid = document.createElement('div')
@@ -622,6 +673,128 @@ class StructuredEntryView {
             grid.appendChild(row)
         }
         return grid
+    }
+
+    // -------------- Task 專屬唯讀視圖：三層時間 + 進度狀態 + 歷史摘要 --------------
+    _buildTaskReadonly() {
+        const fv = this.node.attrs.fieldValues || {}
+        const wrap = document.createElement('div')
+        wrap.className = 'se-task-readonly'
+
+        // 區段建構小工具
+        const mkSection = (title, pairs) => {
+            const sec = document.createElement('div')
+            sec.className = 'se-task-section'
+            const head = document.createElement('div')
+            head.className = 'se-task-section__head'
+            head.textContent = title
+            sec.appendChild(head)
+            const grid = document.createElement('div')
+            grid.className = 'se-task-section__grid'
+            for (const [label, val] of pairs) {
+                const row = document.createElement('div')
+                row.className = 'se-fields-readonly__row'
+                const l = document.createElement('span')
+                l.className = 'se-fields-readonly__label'
+                l.textContent = label + ':'
+                row.appendChild(l)
+                const v = document.createElement('span')
+                v.className = 'se-fields-readonly__value'
+                v.textContent = (val == null || val === '') ? '—' : String(val)
+                row.appendChild(v)
+                grid.appendChild(row)
+            }
+            sec.appendChild(grid)
+            return sec
+        }
+
+        // 摘要列（緊急度/類別/地點/出席者/備註）-- 非時間性的雜項
+        wrap.appendChild(mkSection('屬性', [
+            ['緊急度', fv.urgency || ''],
+            ['類別', fv.category || ''],
+            ['地點', fv.location || ''],
+            ['出席者', fv.attendees || ''],
+            ['備註', fv.note || ''],
+        ]))
+
+        // 三層時間（PMI 標準）
+        wrap.appendChild(mkSection('原計畫', [
+            ['開始', this._fmtDt(fv.baseline_start)],
+            ['結束', this._fmtDt(fv.baseline_end)],
+        ]))
+        wrap.appendChild(mkSection('預計', [
+            ['開始', this._fmtDt(fv.planned_start)],
+            ['結束', this._fmtDt(fv.planned_end)],
+            ['預估耗時', fv.planned_duration || ''],
+        ]))
+        wrap.appendChild(mkSection('實際', [
+            ['開始', this._fmtDt(fv.actual_start)],
+            ['結束', this._fmtDt(fv.actual_end)],
+            ['進度', fv.progress ? fv.progress + '%' : ''],
+            ['狀態', this._statusLabel(fv.status)],
+        ]))
+
+        // 歷史摘要（暫停 / 取消 / 重啟）-- 只在有資料時顯示
+        const histLines = []
+        const pauseLog = this._parseJson(fv.pause_log, [])
+        if (Array.isArray(pauseLog) && pauseLog.length > 0) {
+            const last = pauseLog[pauseLog.length - 1]
+            const stillPaused = !last.resumed_at
+            histLines.push(`暫停 ${pauseLog.length} 次` +
+                (stillPaused ? `（暫停中，自 ${this._fmtDt(last.paused_at)}）`
+                             : `（最近 ${this._fmtDt(last.paused_at)} → ${this._fmtDt(last.resumed_at)}）`) +
+                (last.reason ? ` 原因：${last.reason}` : ''))
+        }
+        const cancelInfo = this._parseJson(fv.cancel_info, null)
+        if (cancelInfo && cancelInfo.cancelled_at) {
+            histLines.push(`已取消 @ ${this._fmtDt(cancelInfo.cancelled_at)}` +
+                (cancelInfo.reason ? `，原因：${cancelInfo.reason}` : ''))
+        }
+        const reopenLog = this._parseJson(fv.reopen_log, [])
+        if (Array.isArray(reopenLog) && reopenLog.length > 0) {
+            const last = reopenLog[reopenLog.length - 1]
+            histLines.push(`重啟 ${reopenLog.length} 次（最近 ${this._fmtDt(last.reopened_at)}，` +
+                `自 ${last.from_status || '?'} → in_progress` +
+                (last.reason ? `，原因：${last.reason}` : '') + '）')
+        }
+        if (histLines.length > 0) {
+            const histSec = document.createElement('div')
+            histSec.className = 'se-task-section se-task-history'
+            const head = document.createElement('div')
+            head.className = 'se-task-section__head'
+            head.textContent = '歷史'
+            histSec.appendChild(head)
+            for (const line of histLines) {
+                const p = document.createElement('div')
+                p.className = 'se-task-history__line'
+                p.textContent = line
+                histSec.appendChild(p)
+            }
+            wrap.appendChild(histSec)
+        }
+
+        return wrap
+    }
+
+    _fmtDt(s) {
+        if (!s) return ''
+        // 截斷到分鐘以保持顯示乾淨
+        return String(s).replace('T', ' ').slice(0, 16)
+    }
+
+    _statusLabel(s) {
+        return {
+            planning: '規劃中',
+            in_progress: '進行中',
+            paused: '暫停中',
+            completed: '已完成',
+            cancelled: '已取消',
+        }[s] || (s || '')
+    }
+
+    _parseJson(s, def) {
+        if (!s) return def
+        try { return JSON.parse(s) } catch (e) { return def }
     }
 
     _buildIdCardReadonly() {

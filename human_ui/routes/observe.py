@@ -355,7 +355,7 @@ SELECT
     canvas_ids, blocker_count, atom_id, entry_id, schema_id,
     CASE
         WHEN source = 'atom' AND lifecycle = 'archived' THEN 'archived'
-        WHEN source = 'entry' AND entry_status = 'done' THEN 'archived'
+        WHEN source = 'entry' AND entry_status = 'completed' THEN 'archived'
         WHEN blocker_count > 0 THEN 'blocked'
         ELSE 'active'
     END AS unified_state

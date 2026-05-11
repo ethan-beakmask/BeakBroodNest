@@ -53,10 +53,15 @@ def _save_field_values(s, entry, field_values_dict, changed_by='user'):
     )
     field_map = {f.name: f for f in schema_fields}
 
+    # 舊 status 字串相容（pending → planning、done → completed），讓尚未升級的前端寫入也能正確存
+    _STATUS_LEGACY = {'pending': 'planning', 'done': 'completed'}
+
     for fname, fval in field_values_dict.items():
         if fname not in field_map:
             continue
         sf = field_map[fname]
+        if fname == 'status' and fval in _STATUS_LEGACY:
+            fval = _STATUS_LEGACY[fval]
         new_val = str(fval) if fval is not None else None
 
         existing = (
@@ -76,12 +81,15 @@ def _save_field_values(s, entry, field_values_dict, changed_by='user'):
     # 進度退回邏輯：從 100% 退回時清空 actual_end
     if 'progress' in field_values_dict or 'status' in field_values_dict:
         progress_val = field_values_dict.get('progress', '')
-        status_val = field_values_dict.get('status', '')
+        status_val = _STATUS_LEGACY.get(
+            field_values_dict.get('status', ''),
+            field_values_dict.get('status', ''),
+        )
         try:
             pct = int(float(progress_val)) if progress_val else -1
         except (ValueError, TypeError):
             pct = -1
-        is_done = (pct >= 100) or (status_val == 'done')
+        is_done = (pct >= 100) or (status_val == 'completed')
         if not is_done and 'actual_end' in field_map:
             ae_field = field_map['actual_end']
             ae_existing = (
@@ -436,4 +444,189 @@ def sync_entries(atom_id):
         return jsonify({
             'entries': [_entry_to_dict(e, s) for e in result_entries],
             'content_snapshot': atom.content,
+        })
+
+
+# ============================================================
+# Task lifecycle actions: pause / resume / cancel / reopen
+# ============================================================
+# 設計：
+#   每個 action 都是「狀態轉移 + 對應 JSON 歷史 log 追加」的原子操作。
+#   - pause_log: [{paused_at, resumed_at|null, reason}, ...]  支援多次暫停
+#   - cancel_info: {cancelled_at, reason}  單一物件，二次取消會覆寫
+#   - reopen_log: [{reopened_at, reason, from_status}, ...]  支援多次重啟
+#   reason 可空字串。所有時間用 ISO datetime 字串（含秒，前端顯示時截）。
+#   source 預設 'card'，gantt UI 呼叫時帶 'gantt' 以利 polling 衝突偵測辨識。
+
+_VALID_ACTIONS = ('pause', 'resume', 'cancel', 'reopen')
+
+
+def _load_json_field(fv_value, default):
+    """安全讀 JSON 欄位：空字串/None/格式錯 -> 回 default。"""
+    if not fv_value:
+        return default
+    try:
+        import json
+        return json.loads(fv_value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _dump_json_field(obj):
+    """寫回 JSON 字串。空 list/dict 寫成空字串方便 SQL NULL 判定。"""
+    import json
+    if obj is None or obj == [] or obj == {}:
+        return ''
+    return json.dumps(obj, ensure_ascii=False)
+
+
+def _get_task_entry(s, atom_id):
+    """取得指定 atom 的 task entry（;;cal / ;;td 用同一個 schema）。沒有則 None。"""
+    task_schema = s.query(EntrySchema).filter_by(code='task').first()
+    if not task_schema:
+        return None, None
+    entry = (
+        s.query(AtomEntry)
+        .filter_by(atom_id=atom_id, schema_id=task_schema.id)
+        .first()
+    )
+    return entry, task_schema
+
+
+def _fv_get(s, entry_id, field_id):
+    return (
+        s.query(EntryFieldValue)
+        .filter_by(entry_id=entry_id, field_id=field_id)
+        .first()
+    )
+
+
+def _set_field(s, entry, field_map, fname, value, changed_by):
+    """單欄位更新 + change log。value 為字串。"""
+    from core.audit import log_field_change
+    sf = field_map.get(fname)
+    if not sf:
+        return
+    existing = _fv_get(s, entry.id, sf.id)
+    if existing:
+        log_field_change(s, entry.id, sf.id, existing.value, value, changed_by)
+        _write_typed_value(existing, sf.field_type, value)
+    else:
+        log_field_change(s, entry.id, sf.id, None, value, changed_by)
+        fv = EntryFieldValue(entry_id=entry.id, field_id=sf.id)
+        _write_typed_value(fv, sf.field_type, value)
+        s.add(fv)
+
+
+@bp.route('/api/atoms/<int:atom_id>/task/action', methods=['POST'])
+def task_action(atom_id):
+    """執行任務狀態轉移：pause / resume / cancel / reopen。
+
+    Body: {
+        "action": "pause" | "resume" | "cancel" | "reopen",
+        "reason": "...",         # optional
+        "source": "card" | "gantt"  # optional, default 'card'，用於 changed_by 標記
+    }
+    """
+    body = request.get_json() or {}
+    action = body.get('action')
+    if action not in _VALID_ACTIONS:
+        return jsonify({'error': f'action 必須是 {_VALID_ACTIONS}'}), 400
+    reason = (body.get('reason') or '').strip()
+    source = body.get('source') or 'card'
+    if source not in ('card', 'gantt'):
+        source = 'card'
+    changed_by = f'{source}:{action}'
+
+    with session_scope() as s:
+        entry, task_schema = _get_task_entry(s, atom_id)
+        if not entry:
+            return jsonify({'error': '此原子沒有 task entry'}), 404
+
+        field_map = {
+            f.name: f for f in
+            s.query(EntrySchemaField).filter_by(schema_id=task_schema.id).all()
+        }
+        status_field = field_map.get('status')
+        if not status_field:
+            return jsonify({'error': 'task schema 缺 status 欄位'}), 500
+
+        current_status_fv = _fv_get(s, entry.id, status_field.id)
+        current_status = (current_status_fv.value if current_status_fv else '') or 'planning'
+
+        now_iso = datetime.datetime.now().isoformat(timespec='seconds')
+
+        if action == 'pause':
+            if current_status != 'in_progress':
+                return jsonify({'error': f'只能從 in_progress 暫停，目前狀態：{current_status}'}), 400
+            log_fv = _fv_get(s, entry.id, field_map['pause_log'].id) if 'pause_log' in field_map else None
+            arr = _load_json_field(log_fv.value if log_fv else None, [])
+            arr.append({'paused_at': now_iso, 'resumed_at': None, 'reason': reason})
+            _set_field(s, entry, field_map, 'pause_log', _dump_json_field(arr), changed_by)
+            _set_field(s, entry, field_map, 'status', 'paused', changed_by)
+
+        elif action == 'resume':
+            if current_status != 'paused':
+                return jsonify({'error': f'只能從 paused 恢復，目前狀態：{current_status}'}), 400
+            log_fv = _fv_get(s, entry.id, field_map['pause_log'].id) if 'pause_log' in field_map else None
+            arr = _load_json_field(log_fv.value if log_fv else None, [])
+            # 把最後一筆 resumed_at 還是 None 的補上
+            for item in reversed(arr):
+                if item.get('resumed_at') is None:
+                    item['resumed_at'] = now_iso
+                    if reason:
+                        item['resume_reason'] = reason
+                    break
+            _set_field(s, entry, field_map, 'pause_log', _dump_json_field(arr), changed_by)
+            _set_field(s, entry, field_map, 'status', 'in_progress', changed_by)
+
+        elif action == 'cancel':
+            if current_status in ('cancelled',):
+                return jsonify({'error': '已經是 cancelled'}), 400
+            cancel_info = {'cancelled_at': now_iso, 'reason': reason}
+            _set_field(s, entry, field_map, 'cancel_info', _dump_json_field(cancel_info), changed_by)
+            _set_field(s, entry, field_map, 'status', 'cancelled', changed_by)
+
+        elif action == 'reopen':
+            if current_status not in ('completed', 'cancelled'):
+                return jsonify({'error': f'只能從 completed / cancelled 重啟，目前狀態：{current_status}'}), 400
+            log_fv = _fv_get(s, entry.id, field_map['reopen_log'].id) if 'reopen_log' in field_map else None
+            arr = _load_json_field(log_fv.value if log_fv else None, [])
+            arr.append({'reopened_at': now_iso, 'reason': reason, 'from_status': current_status})
+            _set_field(s, entry, field_map, 'reopen_log', _dump_json_field(arr), changed_by)
+            _set_field(s, entry, field_map, 'status', 'in_progress', changed_by)
+            # 重啟時清掉 actual_end（之前的完成日已不成立）+ 若取消過則一併清 cancel_info
+            if 'actual_end' in field_map:
+                ae_fv = _fv_get(s, entry.id, field_map['actual_end'].id)
+                if ae_fv and ae_fv.value:
+                    _set_field(s, entry, field_map, 'actual_end', '', changed_by)
+            if current_status == 'cancelled' and 'cancel_info' in field_map:
+                _set_field(s, entry, field_map, 'cancel_info', '', changed_by)
+
+        # 同步推進 atom.updated_at，讓 polling 能察覺
+        atom = s.get(KnowledgeAtom, atom_id)
+        if atom:
+            atom.updated_at = datetime.datetime.now()
+
+        s.flush()
+        # 回傳更新後的全套 field_values 給前端，避免再多打一次 GET 來同步 NodeView attrs
+        refreshed = (
+            s.query(EntryFieldValue)
+            .options(joinedload(EntryFieldValue.field))
+            .filter_by(entry_id=entry.id)
+            .all()
+        )
+        fv_dict = {}
+        for fv in refreshed:
+            if fv.field:
+                fv_dict[fv.field.name] = fv.value
+        return jsonify({
+            'ok': True,
+            'atom_id': atom_id,
+            'entry_id': entry.id,
+            'action': action,
+            'new_status': 'paused' if action == 'pause'
+                          else 'cancelled' if action == 'cancel'
+                          else 'in_progress',
+            'field_values': fv_dict,
         })

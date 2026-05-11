@@ -339,8 +339,9 @@
 
 .bk-bar {
     position: absolute;
-    top: 4px;
-    height: 22px;
+    /* 預留上方 ~5px 給 baseline ghost、下方 ~5px 給 actual 細條 */
+    top: 7px;
+    height: 16px;
     border-radius: 3px;
     cursor: grab;
     z-index: 2;
@@ -424,6 +425,93 @@
 
 .bk-bar-done .bk-bar-body { background: #bbf7d0; border-color: #198754; }
 .bk-bar-done .bk-bar-progress { background: #198754; }
+
+/* paused: 主 bar 用條紋疊加，視覺暗示「日曆時間在跑但工作沒前進」 */
+.bk-bar-paused .bk-bar-body {
+    background: repeating-linear-gradient(
+        45deg,
+        #fef3c7 0 6px,
+        #fde68a 6px 12px
+    );
+    border-color: #b45309;
+}
+.bk-bar-paused .bk-bar-progress { background: #b45309; opacity: 0.6; }
+
+/* cancelled: 主 bar 紅色基調 + 對角 X 覆蓋 */
+.bk-bar-cancelled .bk-bar-body {
+    background: #fee2e2;
+    border-color: #b91c1c;
+    opacity: 0.7;
+}
+.bk-bar-cancelled .bk-bar-progress { background: #b91c1c; opacity: 0.4; }
+.bk-bar-overlay-x {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 4;
+    background:
+        linear-gradient(
+            to bottom right,
+            transparent calc(50% - 1px),
+            #b91c1c calc(50% - 1px),
+            #b91c1c calc(50% + 1px),
+            transparent calc(50% + 1px)
+        ),
+        linear-gradient(
+            to bottom left,
+            transparent calc(50% - 1px),
+            #b91c1c calc(50% - 1px),
+            #b91c1c calc(50% + 1px),
+            transparent calc(50% + 1px)
+        );
+}
+
+/* ---- Baseline ghost bar（原計畫，凍結基線）：細條，置頂、虛線框、淡灰 ---- */
+.bk-bar-baseline {
+    position: absolute;
+    top: 1px;
+    height: 4px;
+    background: repeating-linear-gradient(
+        90deg,
+        #cbd5e1 0 6px,
+        transparent 6px 8px
+    );
+    border-radius: 2px;
+    z-index: 1;
+    pointer-events: auto;
+}
+
+/* ---- Actual bar（實際，已發生）：細條，置底，實心、不可拖 ---- */
+.bk-bar-actual {
+    position: absolute;
+    top: 25px;
+    height: 4px;
+    background: #0f766e;       /* teal */
+    border-radius: 2px;
+    z-index: 1;
+    pointer-events: auto;
+}
+.bk-bar-actual-open {
+    /* 進行中：右端漸層成虛邊，暗示尚未完成 */
+    background: linear-gradient(
+        to right,
+        #0f766e 0%,
+        #0f766e 80%,
+        rgba(15,118,110,0.2) 100%
+    );
+}
+.bk-bar-actual-paused {
+    background: repeating-linear-gradient(
+        45deg,
+        #5eead4 0 4px,
+        #99f6e4 4px 8px
+    );
+}
+.bk-bar-actual-cancelled {
+    background: #b91c1c;
+    opacity: 0.5;
+}
+
 
 /* ---- Summary bar (Mode 1) ---- */
 .bk-bar-summary {

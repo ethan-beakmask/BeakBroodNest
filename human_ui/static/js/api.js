@@ -128,6 +128,11 @@ const API = {
     updateEntry(id, data)           { return this.put('/beakbroodnest/api/entries/' + id, data); },
     deleteEntry(id)                 { return this.del('/beakbroodnest/api/entries/' + id); },
     syncEntries(atomId, entries)    { return this.post('/beakbroodnest/api/atoms/' + atomId + '/entries/sync', { entries: entries }); },
+    taskAction(atomId, action, reason, source) {
+        return this.post('/beakbroodnest/api/atoms/' + atomId + '/task/action', {
+            action: action, reason: reason || '', source: source || 'card',
+        });
+    },
 
     // Entry Schema Fields
     getEntrySchemaFields(schemaId)  { return this.get('/beakbroodnest/api/entry-schemas/' + schemaId + '/fields'); },

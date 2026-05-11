@@ -568,25 +568,45 @@ def ensure_entry_schemas():
                  'options': '["H","M","L"]', 'required': False, 'sort_order': 0, 'dimension': 'Y'},
                 {'name': 'category', 'label': '類別', 'field_type': 'select',
                  'options': '[]', 'required': False, 'sort_order': 1, 'dimension': 'H'},
+                # 預計（forecast，可隨進度滾動）
                 {'name': 'planned_start', 'label': '預計開始', 'field_type': 'datetime',
                  'options': '', 'required': False, 'sort_order': 2, 'dimension': 'T'},
                 {'name': 'planned_end', 'label': '預計結束', 'field_type': 'datetime',
                  'options': '', 'required': False, 'sort_order': 3, 'dimension': 'T'},
                 {'name': 'planned_duration', 'label': '預估耗時', 'field_type': 'duration',
                  'options': '', 'required': False, 'sort_order': 4, 'dimension': 'T'},
+                # 實際（一次性填寫）
                 {'name': 'actual_start', 'label': '實際開始', 'field_type': 'datetime',
                  'options': '', 'required': False, 'sort_order': 5, 'dimension': 'T'},
                 {'name': 'actual_end', 'label': '實際結束', 'field_type': 'datetime',
                  'options': '', 'required': False, 'sort_order': 6, 'dimension': 'T'},
                 {'name': 'status', 'label': '狀態', 'field_type': 'select',
-                 'options': '["pending","in_progress","done"]', 'required': False,
-                 'sort_order': 7, 'dimension': None},
+                 'options': '["planning","in_progress","paused","completed","cancelled"]',
+                 'required': False, 'sort_order': 7, 'dimension': None},
                 {'name': 'location', 'label': '地點', 'field_type': 'text',
                  'options': '', 'required': False, 'sort_order': 8, 'dimension': 'P'},
                 {'name': 'attendees', 'label': '出席者', 'field_type': 'text',
                  'options': '', 'required': False, 'sort_order': 9, 'dimension': 'W'},
+                # 原計畫（baseline，建立後鎖定，re-baseline 才能改）
+                {'name': 'baseline_start', 'label': '原計畫開始', 'field_type': 'datetime',
+                 'options': '', 'required': False, 'sort_order': 10, 'dimension': 'T'},
+                {'name': 'baseline_end', 'label': '原計畫結束', 'field_type': 'datetime',
+                 'options': '', 'required': False, 'sort_order': 11, 'dimension': 'T'},
+                {'name': 'progress', 'label': '進度', 'field_type': 'number',
+                 'options': '', 'required': False, 'sort_order': 12, 'dimension': None},
                 {'name': 'note', 'label': '備註', 'field_type': 'text',
                  'options': '', 'required': False, 'sort_order': 13, 'dimension': None},
+                # 暫停 / 取消 / 重啟歷史，存 JSON 字串：
+                #   pause_log: [{paused_at, resumed_at|null, reason}, ...]
+                #   cancel_info: {cancelled_at, reason} or '' when not cancelled
+                #   reopen_log: [{reopened_at, reason}, ...]
+                # NodeView / gantt 用專屬控件處理，不走通用 text input
+                {'name': 'pause_log', 'label': '暫停紀錄', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 14, 'dimension': None},
+                {'name': 'cancel_info', 'label': '取消資訊', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 15, 'dimension': None},
+                {'name': 'reopen_log', 'label': '重啟紀錄', 'field_type': 'text',
+                 'options': '', 'required': False, 'sort_order': 16, 'dimension': None},
             ],
         },
         {

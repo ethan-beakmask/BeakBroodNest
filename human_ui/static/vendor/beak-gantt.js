@@ -417,8 +417,23 @@ var BeakGanttChart = (function() {
                     bar.title=task._wbs+'  '+task.text+'\nSpan: '+_fd(s)+' ~ '+_fd(e);
                     rd.appendChild(bar);
                 }else{
-                    var uc=task._status==='done'?'bk-bar-done':'bk-bar-'+(task._urgency||'L');
-                    var bar=_el('div','bk-bar '+uc,{style:'left:'+x1+'px;width:'+bw+'px;'});
+                    // ---- Baseline ghost bar（原計畫）：細條，淡灰、虛線框 ----
+                    var bs=_pd(task._baseline_start),be=_pd(task._baseline_end);
+                    if(bs&&be){
+                        var bx1=_d2x(bs,rng.start,cw,this._viewMode);
+                        var bx2=_d2x(be,rng.start,cw,this._viewMode);
+                        var bbw=Math.max(2,bx2-bx1);
+                        var ghost=_el('div','bk-bar-baseline',{style:'left:'+bx1+'px;width:'+bbw+'px;'});
+                        ghost.title='原計畫：'+(task._baseline_start||'?')+' ~ '+(task._baseline_end||'?');
+                        rd.appendChild(ghost);
+                    }
+                    // ---- Planned 主 bar（預計，互動：拖拉/resize/進度）----
+                    var statusCls='';
+                    if(task._status==='completed') statusCls=' bk-bar-done';
+                    else if(task._status==='paused') statusCls=' bk-bar-paused';
+                    else if(task._status==='cancelled') statusCls=' bk-bar-cancelled';
+                    var uc='bk-bar-'+(task._urgency||'L');
+                    var bar=_el('div','bk-bar '+uc+statusCls,{style:'left:'+x1+'px;width:'+bw+'px;'});
                     bar.dataset.taskId=task.id;bar._task=task;bar._rowIdx=r;
                     this._barEls[task.id]=bar;
                     bar.appendChild(_el('div','bk-bar-body'));
@@ -428,14 +443,44 @@ var BeakGanttChart = (function() {
                     var ph=_el('div','bk-bar-progress-handle',{style:'left:'+hl+'px;'});bar.appendChild(ph);
                     bar.appendChild(_el('div','bk-bar-text',{text:task.text||''}));
                     bar.appendChild(_el('div','bk-bar-resize'));
-                    var stM={pending:'Pending',in_progress:'Working',done:'Done'};
-                    bar.title=[task._wbs+'  '+task.text,'Start: '+(task.start_date||'-')+'  End: '+(task.end_date||'-'),'Progress: '+_fp(task.progress)+'%  Urgency: '+(task._urgency||'-')+'  Status: '+(stM[task._status]||'-')].join('\n');
+                    // cancelled 加 X 對角斜紋；paused 加水平條紋（由 CSS 提供）
+                    if(task._status==='cancelled') bar.appendChild(_el('div','bk-bar-overlay-x'));
+                    var stM={planning:'Planning',in_progress:'Working',paused:'Paused',completed:'Done',cancelled:'Cancelled'};
+                    var titleLines=[
+                        task._wbs+'  '+task.text,
+                        '預計: '+(task.start_date||'-')+' ~ '+(task.end_date||'-'),
+                    ];
+                    if(task._baseline_start||task._baseline_end){
+                        titleLines.push('原計畫: '+(task._baseline_start||'?')+' ~ '+(task._baseline_end||'?'));
+                    }
+                    if(task._actual_start||task._actual_end){
+                        titleLines.push('實際: '+(task._actual_start||'?')+' ~ '+(task._actual_end||'進行中'));
+                    }
+                    titleLines.push('Progress: '+_fp(task.progress)+'%  Urgency: '+(task._urgency||'-')+'  Status: '+(stM[task._status]||task._status||'-'));
+                    bar.title=titleLines.join('\n');
                     var ld=_el('div','bk-link-dot bk-link-dot-right');bar.appendChild(ld);
                     this._initLinkDrag(ld,task,r);
                     this._initBarDrag(bar,task,rng,cw);
                     this._initBarResize(bar,task,rng,cw);
                     this._initProgressDrag(bar,pd,ph,task,bw);
                     rd.appendChild(bar);
+
+                    // ---- Actual 細 bar（實際）：底部呈現實際發生範圍 ----
+                    var as=_pd(task._actual_start);
+                    var ae=_pd(task._actual_end);
+                    if(as){
+                        var ax1=_d2x(as,rng.start,cw,this._viewMode);
+                        // 沒結束時用今天當右端，讓使用者看到進行中已耗用時間
+                        var ax2=_d2x(ae||new Date(),rng.start,cw,this._viewMode);
+                        var abw=Math.max(2,ax2-ax1);
+                        var actCls='bk-bar-actual';
+                        if(task._status==='paused') actCls+=' bk-bar-actual-paused';
+                        if(task._status==='cancelled') actCls+=' bk-bar-actual-cancelled';
+                        if(!ae) actCls+=' bk-bar-actual-open';
+                        var actBar=_el('div',actCls,{style:'left:'+ax1+'px;width:'+abw+'px;'});
+                        actBar.title='實際：'+(task._actual_start||'?')+' ~ '+(task._actual_end||'進行中');
+                        rd.appendChild(actBar);
+                    }
                 }
             }else if(isSummary&&(sMode==='no-bar'||sMode==='outline-only')){
                 var label=_el('div','bk-summary-label',{text:task.text||'',

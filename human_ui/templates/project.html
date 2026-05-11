@@ -126,7 +126,9 @@
                         <tbody>
                             <template x-for="item in filteredItems" :key="item.entry_id">
                                 <tr :class="{
-                                    'row-done': item.status === 'done',
+                                    'row-done': item.status === 'completed',
+                                    'row-cancelled': item.status === 'cancelled',
+                                    'row-paused': item.status === 'paused',
                                     'row-blocked': item.is_blocked
                                 }">
                                     <td>
@@ -382,14 +384,17 @@ function projectApp() {
 
         async cycleItemStatus(item) {
             if (item.is_blocked) return;
-            const cycle = ['pending', 'in_progress', 'done'];
-            const idx = cycle.indexOf(item.status);
+            // 注意：暫停 / 取消 / 重啟走 task action endpoint，不在這個循環裡
+            const cycle = ['planning', 'in_progress', 'completed'];
+            const curIdx = cycle.indexOf(item.status);
+            // 若 status 不在 cycle 內（paused / cancelled），就退回從 planning 開始
+            const idx = curIdx === -1 ? -1 : curIdx;
             const next = cycle[(idx + 1) % cycle.length];
             const fields = { status: next };
             if (next === 'in_progress' && !item.actual_start) {
                 fields.actual_start = new Date().toISOString().slice(0, 16);
             }
-            if (next === 'done' && !item.actual_end) {
+            if (next === 'completed' && !item.actual_end) {
                 fields.actual_end = new Date().toISOString().slice(0, 16);
             }
             try {
@@ -419,11 +424,11 @@ function projectApp() {
 
         get pctDone() {
             if (!this.summary.total) return 0;
-            return Math.round(this.summary.done / this.summary.total * 100);
+            return Math.round((this.summary.completed || 0) / this.summary.total * 100);
         },
         get pctProgress() {
             if (!this.summary.total) return 0;
-            return Math.round(this.summary.in_progress / this.summary.total * 100);
+            return Math.round((this.summary.in_progress || 0) / this.summary.total * 100);
         },
         get pctPending() {
             if (!this.summary.total) return 0;
@@ -447,7 +452,8 @@ function projectApp() {
                 const asc = this.sortAsc;
                 const order = {
                     urgency: { H: 0, M: 1, L: 2 },
-                    status: { pending: 0, in_progress: 1, done: 2 },
+                    status: { planning: 0, in_progress: 1, paused: 2,
+                              completed: 3, cancelled: 4 },
                 };
                 result = [...result].sort((a, b) => {
                     let va = a[col] || '';
@@ -479,18 +485,24 @@ function projectApp() {
         },
 
         statusLabel(s) {
-            const m = { pending: 'Pending', in_progress: 'Working', done: 'Done' };
+            const m = {
+                planning: 'Planning', in_progress: 'Working',
+                paused: 'Paused', completed: 'Done', cancelled: 'Cancelled',
+            };
             return m[s] || s;
         },
 
         cycleStatusFilter() {
-            const cycle = ['', 'pending', 'in_progress', 'done', 'blocked'];
+            const cycle = ['', 'planning', 'in_progress', 'paused', 'completed', 'cancelled', 'blocked'];
             const idx = cycle.indexOf(this.filterStatus);
             this.filterStatus = cycle[(idx + 1) % cycle.length];
         },
 
         filterStatusLabel() {
-            const m = { '': 'ALL STATUS', pending: 'PENDING', in_progress: 'WORKING', done: 'DONE', blocked: 'BLOCKED' };
+            const m = {
+                '': 'ALL STATUS', planning: 'PLANNING', in_progress: 'WORKING',
+                paused: 'PAUSED', completed: 'DONE', cancelled: 'CANCELLED', blocked: 'BLOCKED',
+            };
             return m[this.filterStatus] || 'ALL STATUS';
         },
     };

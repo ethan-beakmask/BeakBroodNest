@@ -96,7 +96,7 @@ def _fetch_tasks(s):
             'entry_id': entry.id,
             'atom_id': entry.atom_id,
             'title': title,
-            'status': fv.get('status', 'pending'),
+            'status': fv.get('status', 'planning'),
             'urgency': fv.get('urgency', 'M'),
             'category': fv.get('category', ''),
             'planned_start': planned_start,
