@@ -58,6 +58,21 @@
 | entry NodeSelection | `Tab` / `Shift+Tab` | 同 Arrow 方向跳出 | `structuredEntry` |
 | entry NodeSelection | `Backspace` / `Delete` | **吃掉(只能透過 `[x]` 刪除)** | `structuredEntry` |
 
+### `mermaidBlock` / `htmlBlock` (圖形 atomic block)
+
+工具列「時序 / 流程 / 泳道 / HTML」按鈕插入後即為 atomic block:NodeView 內含 source textarea + 預覽。
+
+| 情境 | 鍵 | 行為 | 來源 |
+|---|---|---|---|
+| 區塊內 textarea | 任意鍵 | textarea 自行處理 (stopPropagation,PM 不介入) | `mermaid-node.js` / `html-block-node.js` |
+| textarea blur | -- | 內容寫回 node attrs.source,觸發預覽重繪 | NodeView |
+| textarea input | -- | debounce 350~400ms 後重繪預覽 (失敗時顯示錯誤訊息,不破壞 source) | NodeView |
+| NodeSelection 對 mermaidBlock/htmlBlock | `Backspace` / `Delete` | **吃掉** (只能透過 `[x]` 按鈕刪除) | NodeView keymap |
+| NodeSelection 對 mermaidBlock/htmlBlock | `Mod+Enter` | (沿用全域規則) 在區塊後插空段並進入 | `ListHotkeys` |
+| 任意位置 | toolbar `[時序][流程][泳道][HTML]` | 插入對應預填範本 | `wb_modals.html` |
+
+> `atom: true` + `isolating: true`:PM caret 無法進入 NodeView 內;textarea 是 contentEditable=false 容器內的獨立輸入元素,鍵盤事件不流回 PM。
+
 ### 刪除保護 (邊界誤刪防護)
 
 | 情境 | 鍵 | 行為 | 來源 |

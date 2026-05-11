@@ -895,6 +895,11 @@
                             <button @click="ceCmd('codeBlock', ed.id)" title="程式區塊">{}</button>
                             <button @click="ceCmd('hr', ed.id)" title="分隔線">--</button>
                             <span class="tb-sep"></span>
+                            <button @click="ceCmd('mermaidSeq', ed.id)" title="插入時序圖 (Mermaid sequenceDiagram)">時序</button>
+                            <button @click="ceCmd('mermaidFlow', ed.id)" title="插入流程圖 (Mermaid flowchart)">流程</button>
+                            <button @click="ceCmd('mermaidSwim', ed.id)" title="插入泳道圖 (Mermaid flowchart + subgraph)">泳道</button>
+                            <button @click="ceCmd('htmlBlock', ed.id)" title="插入 HTML / SVG 區塊（兜底，預覽經 DOMPurify 過濾）">HTML</button>
+                            <span class="tb-sep"></span>
                             <button @click="ceInsertLink(ed.id)" title="連結">Lk</button>
                             <button @click="ceInsertImage(ed.id)" title="插入圖片 (URL)">Img</button>
                             <button @click="ceUploadImage(ed.id)" title="上傳圖片">Img&uarr;</button>

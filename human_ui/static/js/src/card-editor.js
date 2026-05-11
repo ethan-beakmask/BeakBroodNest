@@ -142,6 +142,8 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import { Color } from '@tiptap/extension-color'
 import { Markdown } from 'tiptap-markdown'
 import { StructuredEntry, jumpOutOfBlock } from './structured-entry.js'
+import { MermaidBlock } from './mermaid-node.js'
+import { HtmlBlock } from './html-block-node.js'
 import { SlashCommand } from './slash-command.js'
 import { SelectionToolbar } from './selection-toolbar.js'
 import { PasteTextTable } from './paste-text-table.js'
@@ -195,6 +197,8 @@ class CardEditor {
                     transformCopiedText: true,
                 }),
                 StructuredEntry,
+                MermaidBlock,
+                HtmlBlock,
                 PdfThumbnail,
                 PdfReader,
                 SlashCommand,
@@ -313,6 +317,14 @@ class CardEditor {
             case 'convertToEntry':
                 this.editor.commands.convertToEntry(args[0] || 'freetext', args[1] || null)
                 return
+            case 'mermaidSeq':
+                this.editor.commands.insertMermaid('sequence'); return
+            case 'mermaidFlow':
+                this.editor.commands.insertMermaid('flowchart'); return
+            case 'mermaidSwim':
+                this.editor.commands.insertMermaid('swimlane'); return
+            case 'htmlBlock':
+                this.editor.commands.insertHtmlBlock(); return
             case 'deleteTable': chain.deleteTable().run(); break
             case 'addRowAfter': chain.addRowAfter().run(); break
             case 'addRowBefore': chain.addRowBefore().run(); break

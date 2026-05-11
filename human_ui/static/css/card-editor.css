@@ -2292,3 +2292,121 @@ input[type="checkbox"].se-field-input {
 .ProseMirror-focused .ProseMirror-gapcursor {
     display: block;
 }
+
+/* ===== Mermaid / HTML 圖形區塊 ===== */
+.mermaid-block-wrap {
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    margin: 8px 0;
+    background: #f8fafc;
+    overflow: hidden;
+    /* 不再對整塊禁用 user-select；textarea / preview 內可選字 */
+}
+.mermaid-block-wrap.ProseMirror-selectednode {
+    outline: 2px solid #2563eb;
+    outline-offset: 1px;
+}
+.mermaid-block-drag-handle {
+    display: inline-block;
+    width: 18px;
+    text-align: center;
+    color: #64748b;
+    cursor: grab;
+    user-select: none;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 3px;
+}
+.mermaid-block-drag-handle:hover {
+    background: #cbd5e1;
+    color: #0f172a;
+}
+.mermaid-block-drag-handle:active {
+    cursor: grabbing;
+}
+.mermaid-block-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px;
+    background: #e2e8f0;
+    font-size: 12px;
+    color: #475569;
+    border-bottom: 1px solid #cbd5e1;
+}
+.mermaid-block-tag {
+    font-weight: 600;
+    color: #1e293b;
+}
+.mermaid-block-note {
+    color: #64748b;
+    font-style: italic;
+}
+.mermaid-block-x {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #b91c1c;
+    font-size: 11px;
+    padding: 2px 6px;
+    cursor: pointer;
+    border-radius: 3px;
+}
+.mermaid-block-x:hover {
+    background: #fee2e2;
+}
+.mermaid-block-preview {
+    padding: 12px;
+    background: #fff;
+    text-align: center;
+    overflow-x: auto;
+    min-height: 40px;
+}
+.mermaid-block-preview svg {
+    max-width: 100%;
+    height: auto;
+}
+.mermaid-block-empty {
+    color: #94a3b8;
+    font-style: italic;
+    font-size: 12px;
+}
+.mermaid-block-error {
+    color: #b91c1c;
+    text-align: left;
+    font-size: 12px;
+    background: #fef2f2;
+    padding: 6px 8px;
+    border: 1px solid #fecaca;
+    border-radius: 3px;
+}
+.mermaid-block-error pre {
+    margin: 4px 0 0 0;
+    white-space: pre-wrap;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: #7f1d1d;
+}
+.mermaid-block-source {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    border: 0;
+    border-top: 1px dashed #cbd5e1;
+    background: #f1f5f9;
+    color: #0f172a;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 6px 8px;
+    resize: vertical;
+    outline: none;
+    user-select: text;
+}
+.mermaid-block-source:focus {
+    background: #fff;
+    box-shadow: inset 0 0 0 1px #2563eb;
+}
+.html-block-preview {
+    text-align: left;
+}
