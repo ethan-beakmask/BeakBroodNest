@@ -148,6 +148,7 @@ import { SlashCommand } from './slash-command.js'
 import { SelectionToolbar } from './selection-toolbar.js'
 import { PasteTextTable } from './paste-text-table.js'
 import { openSectionNav } from './section-nav.js'
+import { FindReplace, findKey } from './find-replace.js'
 
 class CardEditor {
     constructor() {
@@ -205,6 +206,7 @@ class CardEditor {
                 SelectionToolbar,
                 ListHotkeys,
                 PasteTextTable,
+                FindReplace,
             ],
             editorProps: {
                 attributes: {
@@ -350,8 +352,10 @@ class CardEditor {
         const tr = state.tr
         let touched = 0
         state.doc.descendants((node, pos) => {
-            // 涵蓋 structuredEntry 與 mermaidBlock(兩者皆有 collapsed attr)
-            if (node.type.name !== 'structuredEntry' && node.type.name !== 'mermaidBlock') return
+            // 涵蓋 structuredEntry / mermaidBlock / htmlBlock(三者皆有 collapsed attr)
+            if (node.type.name !== 'structuredEntry'
+                && node.type.name !== 'mermaidBlock'
+                && node.type.name !== 'htmlBlock') return
             if (!!node.attrs.collapsed === !!collapsed) return
             tr.setNodeMarkup(pos, undefined, { ...node.attrs, collapsed: !!collapsed })
             touched += 1
@@ -437,13 +441,78 @@ class CardEditor {
         let found = false
         this.editor.state.doc.descendants(node => {
             if (found) return false
-            const isTarget = node.type.name === 'structuredEntry' || node.type.name === 'mermaidBlock'
+            const isTarget = node.type.name === 'structuredEntry'
+                || node.type.name === 'mermaidBlock'
+                || node.type.name === 'htmlBlock'
             if (isTarget && node.attrs.collapsed) {
                 found = true
                 return false
             }
         })
         return found
+    }
+
+    /** 取得 FindReplace plugin 當前狀態（query / total / currentIdx） */
+    findGetState() {
+        if (!this.editor) return { query: '', total: 0, currentIdx: -1 }
+        const s = findKey.getState(this.editor.state)
+        if (!s) return { query: '', total: 0, currentIdx: -1 }
+        return { query: s.query, total: s.matches.length, currentIdx: s.currentIdx }
+    }
+
+    findSetQuery(q) {
+        if (!this.editor) return
+        this.editor.commands.findReplaceSet(q)
+        this._findScrollToCurrent()
+    }
+
+    findNext() {
+        if (!this.editor) return
+        this.editor.commands.findReplaceNext()
+        this._findScrollToCurrent()
+    }
+
+    findPrev() {
+        if (!this.editor) return
+        this.editor.commands.findReplacePrev()
+        this._findScrollToCurrent()
+    }
+
+    findClose() {
+        if (!this.editor) return
+        this.editor.commands.findReplaceClose()
+    }
+
+    findReplaceCurrent(replacement) {
+        if (!this.editor) return
+        this.editor.commands.findReplaceReplaceCurrent(replacement)
+        this._findScrollToCurrent()
+    }
+
+    findReplaceAll(replacement) {
+        if (!this.editor) return 0
+        const before = this.findGetState().total
+        this.editor.commands.findReplaceReplaceAll(replacement)
+        return before
+    }
+
+    _findScrollToCurrent() {
+        if (!this.editor) return
+        const s = findKey.getState(this.editor.state)
+        if (!s || s.currentIdx < 0 || !s.matches.length) return
+        const m = s.matches[s.currentIdx]
+        try {
+            const view = this.editor.view
+            const dom = view.domAtPos(m.from)
+            const target = dom && dom.node
+            if (target && target.nodeType === Node.TEXT_NODE && target.parentElement) {
+                target.parentElement.scrollIntoView({ block: 'center', behavior: 'smooth' })
+            } else if (target && target.scrollIntoView) {
+                target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+            }
+        } catch (e) {
+            // domAtPos 偶爾在 atom node 邊界丟錯，忽略
+        }
     }
 
     /**

@@ -41,6 +41,9 @@ orchestrator/windows/relay/config.yaml
 # 改名探索候選清單（個人草稿，不入版控）
 tools/name_candidates.csv
 
+# 內部測試腳本（不對外維護）
+tests/
+
 # Node.js (Tiptap build)
 node_modules/
 

@@ -20,6 +20,10 @@ function whiteboardCardEditorMixin() {
         ceTableActive: {},     // { editorId: 游標是否在表格內 }
         ceHasCollapsed: {},    // { editorId: 是否仍有收合中的 ;; 物件 }
 
+        // 搜尋／取代（per editorId）
+        // { editorId: { open, mode:'find'|'replace', query, replacement, total, currentIdx } }
+        findBar: {},
+
         // 連續色筆 / 連續螢光（per editorId，null = 未啟用）
         ceColorPen: {},        // { editorId: '#hex' | null }
         ceColorHl:  {},        // { editorId: '#hex' | null }
@@ -169,6 +173,14 @@ function whiteboardCardEditorMixin() {
                     self._handleTaskAction(editorId, atomId, ce, ev.detail);
                 });
 
+                // FindReplace extension 觸發的熱鍵事件（Ctrl+Shift+F / H）
+                host.addEventListener('ce:open-find', function() {
+                    self.ceOpenFind(editorId);
+                });
+                host.addEventListener('ce:open-replace', function() {
+                    self.ceOpenReplace(editorId);
+                });
+
                 _ceStore[atomId] = ce;
                 self.$nextTick(function() {
                     initializing = false;
@@ -270,6 +282,128 @@ function whiteboardCardEditorMixin() {
             }, { once: true });
             document.body.appendChild(input);
             input.click();
+        },
+
+        ceOpenFind(editorId) {
+            this._ceEnsureFindBar(editorId, 'find');
+            this._ceFocusFindInput(editorId, 'query');
+        },
+
+        ceOpenReplace(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed || ed.readonly) {
+                // 唯讀卡片開取代沒意義，退化成搜尋
+                return this.ceOpenFind(editorId);
+            }
+            this._ceEnsureFindBar(editorId, 'replace');
+            this._ceFocusFindInput(editorId, 'query');
+        },
+
+        _ceEnsureFindBar(editorId, mode) {
+            if (!this.findBar[editorId]) {
+                this.findBar[editorId] = {
+                    open: true, mode: mode,
+                    query: '', replacement: '',
+                    total: 0, currentIdx: -1,
+                };
+            } else {
+                this.findBar[editorId].open = true;
+                this.findBar[editorId].mode = mode;
+            }
+            // 若已有 query 字串，重新觸發搜尋
+            var fb = this.findBar[editorId];
+            if (fb.query) {
+                var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+                var ce = ed && _ceStore[ed.atomId];
+                if (ce) {
+                    ce.findSetQuery(fb.query);
+                    this._ceSyncFindState(editorId);
+                }
+            }
+        },
+
+        _ceFocusFindInput(editorId, field) {
+            var sel = '[data-ce-id="' + editorId + '"] .ce-find-bar input[data-find-field="' + field + '"]';
+            this.$nextTick(function() {
+                var el = document.querySelector(sel);
+                if (el) { el.focus(); el.select(); }
+            });
+        },
+
+        ceFindClose(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            var ce = ed && _ceStore[ed.atomId];
+            if (ce) ce.findClose();
+            if (this.findBar[editorId]) {
+                this.findBar[editorId].open = false;
+                this.findBar[editorId].total = 0;
+                this.findBar[editorId].currentIdx = -1;
+            }
+            // caret 回到 editor
+            if (ce && ce.editor) ce.editor.commands.focus();
+        },
+
+        ceFindOnInput(editorId) {
+            var fb = this.findBar[editorId];
+            if (!fb) return;
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            var ce = ed && _ceStore[ed.atomId];
+            if (!ce) return;
+            ce.findSetQuery(fb.query || '');
+            this._ceSyncFindState(editorId);
+        },
+
+        ceFindNext(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            var ce = ed && _ceStore[ed.atomId];
+            if (!ce) return;
+            ce.findNext();
+            this._ceSyncFindState(editorId);
+        },
+
+        ceFindPrev(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            var ce = ed && _ceStore[ed.atomId];
+            if (!ce) return;
+            ce.findPrev();
+            this._ceSyncFindState(editorId);
+        },
+
+        ceFindReplaceCurrent(editorId) {
+            var fb = this.findBar[editorId];
+            if (!fb) return;
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed || ed.readonly) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce) return;
+            if (fb.total <= 0) return;
+            ce.findReplaceCurrent(fb.replacement || '');
+            this._markEditorDirty(editorId);
+            this._ceSyncFindState(editorId);
+        },
+
+        ceFindReplaceAll(editorId) {
+            var fb = this.findBar[editorId];
+            if (!fb) return;
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            if (!ed || ed.readonly) return;
+            var ce = _ceStore[ed.atomId];
+            if (!ce) return;
+            var n = ce.findReplaceAll(fb.replacement || '');
+            this._markEditorDirty(editorId);
+            this._ceSyncFindState(editorId);
+            this.showToast('已取代 ' + n + ' 處', 'success');
+        },
+
+        _ceSyncFindState(editorId) {
+            var ed = this.openEditors.find(function(e) { return e.id === editorId; });
+            var ce = ed && _ceStore[ed.atomId];
+            if (!ce) return;
+            var st = ce.findGetState();
+            var fb = this.findBar[editorId];
+            if (!fb) return;
+            fb.total = st.total;
+            fb.currentIdx = st.currentIdx;
         },
 
         ceToggleAllEntries(editorId) {

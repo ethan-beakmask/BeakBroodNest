@@ -2508,6 +2508,69 @@ input[type="checkbox"].se-field-input {
     display: none;
 }
 
+/* Find / Replace 控制條 */
+.ce-find-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: #fef9c3;
+    border-bottom: 1px solid #facc15;
+    flex-shrink: 0;
+    font-size: 12px;
+}
+.ce-find-bar .ce-find-input {
+    flex: 0 1 220px;
+    padding: 3px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    background: #fff;
+}
+.ce-find-bar .ce-find-input:focus {
+    outline: none;
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245,158,11,0.25);
+}
+.ce-find-bar .ce-find-count {
+    color: #78350f;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    min-width: 48px;
+    text-align: center;
+}
+.ce-find-bar .ce-find-btn {
+    padding: 2px 8px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #475569;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    min-width: 24px;
+}
+.ce-find-bar .ce-find-btn:hover:not(:disabled) { background: #f1f5f9; }
+.ce-find-bar .ce-find-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ce-find-bar .ce-find-close { color: #991b1b; }
+.ce-find-bar .ce-find-replace-zone {
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.ce-find-bar .ce-find-sep {
+    width: 1px; height: 16px; background: #facc15;
+}
+
+/* 命中高亮（PM Decoration） */
+.ce-find-hit {
+    background: #fef08a;
+    border-radius: 2px;
+}
+.ce-find-hit.ce-find-current {
+    background: #fb923c;
+    color: #1f2937;
+    box-shadow: 0 0 0 1px #c2410c;
+}
+
 /* Mermaid 挑選對話框 grid */
 .mermaid-picker-grid {
     display: grid;

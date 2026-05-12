@@ -37,6 +37,7 @@ export const HtmlBlock = Node.create({
     addAttributes() {
         return {
             source: { default: '' },
+            collapsed: { default: true },
         }
     },
 
@@ -44,13 +45,17 @@ export const HtmlBlock = Node.create({
         return [{
             tag: 'pre[data-html-block]',
             preserveWhitespace: 'full',
-            getAttrs: (dom) => ({ source: dom.textContent || '' }),
+            getAttrs: (dom) => ({
+                source: dom.textContent || '',
+                collapsed: dom.getAttribute('data-collapsed') !== 'false',
+            }),
         }]
     },
 
     renderHTML({ node, HTMLAttributes }) {
         return ['pre', mergeAttributes(HTMLAttributes, {
             'data-html-block': '',
+            'data-collapsed': node.attrs.collapsed ? 'true' : 'false',
             'class': 'html-block-raw',
         }), node.attrs.source || '']
     },
@@ -107,7 +112,7 @@ export const HtmlBlock = Node.create({
             insertHtmlBlock: () => ({ commands }) => {
                 return commands.insertContent({
                     type: 'htmlBlock',
-                    attrs: { source: HTML_BLOCK_TEMPLATE },
+                    attrs: { source: HTML_BLOCK_TEMPLATE, collapsed: true },
                 })
             },
         }
@@ -125,6 +130,7 @@ class HtmlBlockView {
         this.dom.className = 'mermaid-block-wrap html-block-wrap'
         this.dom.contentEditable = 'false'
         this.dom.draggable = false
+        this._applyCollapsedClass(node.attrs.collapsed)
 
         const header = document.createElement('div')
         header.className = 'mermaid-block-header'
@@ -154,6 +160,17 @@ class HtmlBlockView {
         const spacer = document.createElement('span')
         spacer.style.flex = '1'
         header.appendChild(spacer)
+
+        const collapseBtn = document.createElement('button')
+        collapseBtn.type = 'button'
+        collapseBtn.className = 'mermaid-block-collapse'
+        collapseBtn.tabIndex = -1
+        collapseBtn.addEventListener('mousedown', (e) => e.preventDefault())
+        collapseBtn.addEventListener('click', (e) => { e.preventDefault(); this._toggleCollapsed() })
+        header.appendChild(collapseBtn)
+        this.collapseBtn = collapseBtn
+        this._refreshCollapseBtn(node.attrs.collapsed)
+
         const del = document.createElement('button')
         del.type = 'button'
         del.className = 'mermaid-block-x'
@@ -227,6 +244,29 @@ class HtmlBlockView {
         this.editor.view.dispatch(tr)
     }
 
+    _toggleCollapsed() {
+        if (typeof this.getPos !== 'function') return
+        const pos = this.getPos()
+        if (pos == null) return
+        const next = !this.node.attrs.collapsed
+        const tr = this.editor.view.state.tr.setNodeMarkup(pos, undefined, {
+            ...this.node.attrs,
+            collapsed: next,
+        })
+        this.editor.view.dispatch(tr)
+    }
+
+    _applyCollapsedClass(collapsed) {
+        if (collapsed) this.dom.classList.add('collapsed')
+        else this.dom.classList.remove('collapsed')
+    }
+
+    _refreshCollapseBtn(collapsed) {
+        if (!this.collapseBtn) return
+        this.collapseBtn.textContent = collapsed ? '[+]' : '[-]'
+        this.collapseBtn.title = collapsed ? '展開以顯示原始碼' : '收合（只顯示預覽）'
+    }
+
     _deleteSelf() {
         if (typeof this.getPos !== 'function') return
         const pos = this.getPos()
@@ -245,6 +285,8 @@ class HtmlBlockView {
             this._autosizeTextarea()
             this._renderPreview(fresh)
         }
+        this._applyCollapsedClass(node.attrs.collapsed)
+        this._refreshCollapseBtn(node.attrs.collapsed)
         return true
     }
 

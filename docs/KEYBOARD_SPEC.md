@@ -73,9 +73,26 @@
 | 任意位置 | toolbar `[HTML]` | 插入 HTML/SVG 退路區塊 | `wb_modals.html` |
 | mermaid header `[+]`/`[-]` 按鈕 | 點擊 | 切換該圖塊 collapsed (顯示/隱藏 source textarea) | NodeView |
 | mermaid 收合中 | 滑鼠移入 / focus textarea | 暫時展開 source textarea(CSS :hover/:focus-within) | `card-editor.css` |
-| toolbar `[+全展]/[-全收]` | 點擊 | 對整份文件的 structuredEntry **與** mermaidBlock 統一 collapsed=true/false | `card-editor.js` |
+| toolbar `[+全展]/[-全收]` | 點擊 | 對整份文件的 structuredEntry **與** mermaidBlock **與** htmlBlock 統一 collapsed=true/false | `card-editor.js` |
 
 > `atom: true` + `isolating: true`:PM caret 無法進入 NodeView 內;textarea 是 contentEditable=false 容器內的獨立輸入元素,鍵盤事件不流回 PM。
+
+### 搜尋／取代
+
+| 鍵 | 行為 | 來源 |
+|---|---|---|
+| `Ctrl+Shift+F` | 開搜尋條（focus query 輸入框） | `find-replace.js` |
+| `Ctrl+Shift+H` | 開取代條（focus query 輸入框；唯讀卡片退化為搜尋） | `find-replace.js` |
+| 搜尋框 `Enter` | 跳下一個命中 | `wb_modals.html` |
+| 搜尋框 `Shift+Enter` | 跳上一個命中 | `wb_modals.html` |
+| 搜尋框 `Esc` | 關閉控制條 | `wb_modals.html` |
+| 取代框 `Enter` | 取代當前命中 | `wb_modals.html` |
+| 工具列 `↑`/`↓` | 上/下一個命中 | `wb_modals.html` |
+| 工具列 `取代`/`全部` | 取代當前 / 全部取代 | `wb_modals.html` |
+
+> 範圍：當前卡片的 PM 原生文字（段落 / heading / list / table cell / blockquote / code mark）。
+> NodeView 內字串（structuredEntry fieldValues、Mermaid source、htmlBlock source）**不在搜尋範圍**。
+> 大小寫一律不分；不支援正則。
 
 ### 刪除保護 (邊界誤刪防護)
 
@@ -110,6 +127,7 @@
 | 檔案 | 責任 |
 |---|---|
 | `human_ui/static/js/src/card-editor.js` | `ListHotkeys` extension:Mod-Enter 全域規則、Tab/Shift-Tab 跨 list/table、表格邊界 ArrowUp/Down |
+| `human_ui/static/js/src/find-replace.js` | `FindReplace` extension:Mod-Shift-F/H 開搜尋條、PM Decoration 高亮命中、取代命令 |
 | `human_ui/static/js/src/structured-entry.js` | StructuredEntry NodeView (純展示) + entry 鍵盤行為 + 邊界刪除保護 + paste 攔截 |
 | `human_ui/static/js/src/entry-modal.js` | entry 編輯對話框 + 內部鍵盤 |
 | `human_ui/static/js/src/slash-command.js` | `;;XX` 觸發開 modal |

@@ -967,6 +967,46 @@
                         </div>
                         <!-- 保留條：避免 SelectionToolbar 浮窗覆蓋 toolbar，並提示此區不可編輯 -->
                         <div class="ce-pane-reserved" @mousedown.stop @click.stop></div>
+                        <!-- Find / Replace 控制條 (Ctrl+Shift+F / Ctrl+Shift+H) -->
+                        <template x-if="findBar[ed.id] && findBar[ed.id].open">
+                            <div class="ce-find-bar">
+                                <input type="text" data-find-field="query"
+                                       class="ce-find-input"
+                                       placeholder="搜尋（大小寫不分）"
+                                       x-model="findBar[ed.id].query"
+                                       @input.debounce.150ms="ceFindOnInput(ed.id)"
+                                       @keydown.enter.prevent="$event.shiftKey ? ceFindPrev(ed.id) : ceFindNext(ed.id)"
+                                       @keydown.escape.prevent="ceFindClose(ed.id)">
+                                <span class="ce-find-count"
+                                      x-text="findBar[ed.id].total > 0 ? (findBar[ed.id].currentIdx + 1) + '/' + findBar[ed.id].total : (findBar[ed.id].query ? '0/0' : '')"></span>
+                                <button class="ce-find-btn" @click="ceFindPrev(ed.id)"
+                                        :disabled="findBar[ed.id].total <= 0"
+                                        title="上一個 (Shift+Enter)">&uarr;</button>
+                                <button class="ce-find-btn" @click="ceFindNext(ed.id)"
+                                        :disabled="findBar[ed.id].total <= 0"
+                                        title="下一個 (Enter)">&darr;</button>
+                                <template x-if="findBar[ed.id].mode === 'replace' && !ed.readonly">
+                                    <span class="ce-find-replace-zone">
+                                        <span class="ce-find-sep"></span>
+                                        <input type="text" data-find-field="replacement"
+                                               class="ce-find-input"
+                                               placeholder="取代為"
+                                               x-model="findBar[ed.id].replacement"
+                                               @keydown.enter.prevent="ceFindReplaceCurrent(ed.id)"
+                                               @keydown.escape.prevent="ceFindClose(ed.id)">
+                                        <button class="ce-find-btn" @click="ceFindReplaceCurrent(ed.id)"
+                                                :disabled="findBar[ed.id].total <= 0"
+                                                title="取代當前">取代</button>
+                                        <button class="ce-find-btn" @click="ceFindReplaceAll(ed.id)"
+                                                :disabled="findBar[ed.id].total <= 0"
+                                                title="全部取代">全部</button>
+                                    </span>
+                                </template>
+                                <span style="flex:1;"></span>
+                                <button class="ce-find-btn ce-find-close" @click="ceFindClose(ed.id)"
+                                        title="關閉 (Esc)">x</button>
+                            </div>
+                        </template>
                         <!-- Pane Body (Tiptap mount point) -->
                         <div class="ce-pane-body"></div>
                         <!-- PDF 縮圖模式：顯示已索引的純文字內文（read-only） -->
