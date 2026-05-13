@@ -190,6 +190,43 @@ gunicorn --bind 127.0.0.1:5171 --workers 2 human_ui.app:app
 
 ![對話清單 - TalkList](docs/images/Observe-TalkList.png)
 
+## 整合到你的專案 CLAUDE.md
+
+安裝 BeakBroodNest 並在 `.mcp.json` 註冊 `beak_broodnest` 之後，建議在你
+**自己專案**的 `CLAUDE.md`（或 `~/.claude/CLAUDE.md` 全域檔）加入以下段落，
+讓 Claude Code 知道優先使用知識庫而不是內建的 `MEMORY.md`。
+
+---
+
+### BeakBroodNest 知識庫整合
+
+本專案使用 BeakBroodNest MCP server (`beak_broodnest`) 作為長期記憶，
+取代 Claude Code 內建的 `MEMORY.md` 機制。
+
+**每次對話開始時必做：**
+1. 呼叫 `note_inbox` 檢查跨專案未讀訊息，有未讀則摘要告知用戶
+2. 呼叫 `note_overview` 取得知識庫概覽（原子數、標籤、阻塞項目）
+3. 視任務性質呼叫 `note_search` 取得相關上下文
+   （例如查待辦：`tag=「待辦」+ tag=「<本專案名>」`）
+
+**記憶讀寫規則：**
+- 需要記憶 → `note_store`（不要寫入 MEMORY.md 或 memory/ 目錄）
+- 需要回憶 → `note_search` / `note_get`
+- 需要更新 → `note_update`
+- 需要淘汰 → `note_forget`（mode=archive 保留歷史，mode=purge 永久刪除）
+- 建立因果關係 → `note_relate`（blocks / follows / supports 等）
+
+**跨專案訊息：**
+- 身份由啟動 cwd 自動推斷（如 `/opt/MyProject` → `project:myproject`）
+- 發送通知用 `note_send`，**不要**用 tag 廣播
+- 不主動處理非當前專案的原子，避免上下文污染
+
+**降級策略：**
+- 若 `beak_broodnest` MCP 不可用（server 未啟動 / 連線失敗），
+  暫時回退到 MEMORY.md，並於 MCP 恢復後手動同步回知識庫
+
+---
+
 ## 開發
 
 ### 目錄結構
