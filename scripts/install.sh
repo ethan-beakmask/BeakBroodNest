@@ -219,9 +219,9 @@ if [ "$ACTION" = "update" ]; then
 
     git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
 
-    # 檢查 remote URL 是否帶有 token
-    current_url=$(git remote get-url origin 2>/dev/null)
-    if ! echo "$current_url" | grep -q '@github.com'; then
+    # 先實測是否能直接 fetch（public repo 或 URL 已嵌入有效 token 都會通過）
+    # 失敗才走 PAT 流程（私有 repo 或 token 過期）
+    if ! git ls-remote origin HEAD &>/dev/null; then
         if [ -z "${GITHUB_TOKEN:-}" ]; then
             read -s -p "請輸入 GitHub Personal Access Token: " GITHUB_TOKEN
             echo ""
