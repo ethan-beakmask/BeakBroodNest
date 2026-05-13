@@ -1630,3 +1630,50 @@ class GanttColorsProject(Base):
         DateTime, default=datetime.datetime.now,
         onupdate=datetime.datetime.now, nullable=False
     )
+
+
+# ============================================================
+# 5.11 搜尋前置詞典（alias → canonical 規範化）
+# ============================================================
+
+class TermAlias(Base):
+    """搜尋查詢規範化詞典。
+
+    在 note_search 入口將 alias 替換為 canonical，使
+    覆盤/復盤、PG/postgresql、固定錯字等變體能命中同一組原子。
+    不關聯實體原子，純粹是查詢預處理器。
+    """
+    __tablename__ = 'term_aliases'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alias: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    canonical: Mapped[str] = mapped_column(String(100), nullable=False)
+    source: Mapped[str] = mapped_column(
+        String(20), default='variant'
+    )  # variant / typo / slang / personal
+    note: Mapped[str] = mapped_column(Text, default='')
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now,
+        onupdate=datetime.datetime.now
+    )
+
+    __table_args__ = (
+        Index('idx_term_aliases_canonical', 'canonical'),
+        Index('idx_term_aliases_enabled', 'enabled'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'alias': self.alias,
+            'canonical': self.canonical,
+            'source': self.source,
+            'note': self.note,
+            'enabled': self.enabled,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }

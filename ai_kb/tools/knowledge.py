@@ -171,6 +171,15 @@ def register(mcp):
         if search_mode in ('semantic', 'hybrid') and not query.strip():
             search_mode = 'keyword'
 
+        if query:
+            from core.term_dict import normalize as _term_normalize
+            new_query, applied = _term_normalize(query)
+            if applied:
+                logger.info(
+                    f'note_search query normalized: {query!r} -> {new_query!r} via {applied}'
+                )
+                query = new_query
+
         with session_scope() as s:
             all_tags = list(tags) if tags else []
             if tag and tag not in all_tags:
