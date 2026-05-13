@@ -5,6 +5,7 @@
 import configparser
 from pathlib import Path
 from contextlib import contextmanager
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
@@ -33,8 +34,10 @@ def init_engine(config_path: str = None, db_url: str = None):
         cfg = configparser.ConfigParser()
         cfg.read(config_path, encoding='utf-8')
         pg = cfg['postgresql']
+        user = quote_plus(pg['username'])
+        password = quote_plus(pg['password'])
         db_url = (
-            f"postgresql+psycopg2://{pg['username']}:{pg['password']}"
+            f"postgresql+psycopg2://{user}:{password}"
             f"@{pg['host']}:{pg['port']}/{pg['database']}"
         )
 
