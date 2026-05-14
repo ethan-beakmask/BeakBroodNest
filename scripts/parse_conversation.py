@@ -64,17 +64,81 @@ def get_current_user() -> str:
     return os.environ.get('USER') or os.environ.get('LOGNAME') or 'unknown'
 
 
+def _candidate_projects_dirs() -> List[str]:
+    """枚舉 Claude 對話記錄目錄的候選路徑，依優先順序
+
+    1. config.ini [pipeline] claude_projects_dir（明確指定）
+    2. BeakBroodNest 安裝目錄擁有者的 home（cron 以 root 跑時的正確 fallback）
+    3. SUDO_USER 的 home（sudo 啟動時）
+    4. USER / LOGNAME 的 home（互動式 shell）
+    """
+    candidates: List[str] = []
+    seen = set()
+
+    def _add(path: Optional[str]):
+        if path and path not in seen:
+            seen.add(path)
+            candidates.append(path)
+
+    # (1) config.ini 明確指定
+    try:
+        import configparser
+        cfg_paths = [
+            '/opt/BeakBroodNest/config.ini',
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.ini'),
+        ]
+        for cfg_path in cfg_paths:
+            if not os.path.isfile(cfg_path):
+                continue
+            cp = configparser.ConfigParser()
+            cp.read(cfg_path, encoding='utf-8')
+            if cp.has_option('pipeline', 'claude_projects_dir'):
+                v = cp.get('pipeline', 'claude_projects_dir').strip()
+                if v:
+                    _add(v)
+            break
+    except Exception:
+        pass
+
+    # (2) INSTALL_DIR 擁有者的 home
+    try:
+        import pwd
+        install_dir = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
+        if os.path.isdir(install_dir):
+            uid = os.stat(install_dir).st_uid
+            if uid != 0:
+                owner_home = pwd.getpwuid(uid).pw_dir
+                _add(f"{owner_home}/.claude/projects")
+    except Exception:
+        pass
+
+    # (3) SUDO_USER
+    sudo_user = os.environ.get('SUDO_USER')
+    if sudo_user and sudo_user != 'root':
+        _add(f"/home/{sudo_user}/.claude/projects")
+
+    # (4) USER / LOGNAME
+    cur = os.environ.get('USER') or os.environ.get('LOGNAME')
+    if cur and cur != 'root':
+        _add(f"/home/{cur}/.claude/projects")
+
+    return candidates
+
+
 def get_claude_projects_path() -> Tuple[Optional[str], str]:
     """取得 Claude 對話記錄的實際路徑
 
     Returns:
         (projects_dir_or_None, full_path_for_display)
+        若所有候選都不存在，display 會列出嘗試過的路徑，便於排錯
     """
-    user = get_current_user()
-    projects_dir = f"/home/{user}/.claude/projects"
-    if os.path.exists(projects_dir):
-        return projects_dir, projects_dir
-    return None, projects_dir
+    candidates = _candidate_projects_dirs()
+    for path in candidates:
+        if os.path.isdir(path):
+            return path, path
+    if candidates:
+        return None, ' | '.join(candidates)
+    return None, '(無候選路徑：請於 config.ini [pipeline] claude_projects_dir 指定)'
 
 
 def extract_cwd_from_jsonl(jsonl_file: str) -> Optional[str]:
