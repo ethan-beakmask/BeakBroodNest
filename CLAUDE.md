@@ -171,7 +171,7 @@ cc-inbox-get --unread-only --mark-read
 ```bash
 sudo systemctl {start|stop|restart|status} beakbroodnest.service
 ```
-ExecStart: `gunicorn --bind 127.0.0.1:5171 ... human_ui.app:app`，對外經 nginx 接到 192.168.0.16:5170。
+ExecStart: `gunicorn --bind 127.0.0.1:5171 ... human_ui.app:app`，對外經 nginx 接到 `<HOST_IP>:5170`（依實際部署機 LAN IP 而定；同網段已有 .16 / .20 等多機並存）。
 
 ### 首次初始化資料庫
 ```bash
@@ -180,7 +180,7 @@ ExecStart: `gunicorn --bind 127.0.0.1:5171 ... human_ui.app:app`，對外經 ngi
 
 ### 開發 Flask dev server（hot reload，5175）
 ```bash
-/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/human_ui/app.py --serve --port 5175 --host 192.168.0.16
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/human_ui/app.py --serve --port 5175 --host <HOST_IP>
 ```
 與正式 gunicorn (5171) 並存，皆連同一個 `beak_broodnest` DB。
 
