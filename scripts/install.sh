@@ -214,6 +214,13 @@ if [ "$ACTION" = "update" ]; then
     atom_before=$(get_atom_count)
     log_info "資料庫安全檢查: 更新前知識原子數量 = $atom_before"
 
+    # 若是 re-exec 進來（git reset 後），直接跳過拉取，從 schema 補丁繼續
+    if [ -n "${BBN_UPDATE_REEXEC:-}" ]; then
+        log_info "（接續上一輪 git reset 後流程）"
+        goto_schema_patch=1
+    fi
+
+    if [ -z "${goto_schema_patch:-}" ]; then
     # [1] 拉取最新程式碼
     log_step "1/3" "拉取最新程式碼..."
 
@@ -248,6 +255,13 @@ if [ "$ACTION" = "update" ]; then
 
     git reset --hard origin/master
     log_info "更新至: $(git log --oneline -1)"
+
+    # 拉完後 exec 自己重啟，避免 bash 邊讀邊執行被改寫過的腳本檔造成偏移錯位
+    # （上一次此 bug 導致 schema patch 用了舊版 awk 解析，DB_PASS 落到預設值認證失敗）
+    export BBN_UPDATE_REEXEC=1
+    log_info "重新載入新版 install.sh 繼續..."
+    exec "$0" "$@"
+    fi  # end "if [ -z goto_schema_patch ]"
 
     # [2] 更新 Python 依賴（強制 HOME=/root 讓 pip cache 落到 root，避免 sudo -E 帶入用戶 HOME 導致 cache 被禁用）
     log_step "2/4" "更新 Python 依賴..."

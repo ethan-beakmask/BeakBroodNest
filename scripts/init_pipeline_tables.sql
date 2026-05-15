@@ -75,11 +75,20 @@ CREATE TABLE IF NOT EXISTS conversation_turns (
     UNIQUE (conversation_id, turn_seq)
 );
 
+-- 後續迭代新增的欄位（既有 DB 用 ALTER 補；新建 DB 上面 CREATE TABLE 沒有也走這裡）
+ALTER TABLE conversation_turns ADD COLUMN IF NOT EXISTS p0_imported_at TIMESTAMPTZ DEFAULT now();
+ALTER TABLE conversation_turns ADD COLUMN IF NOT EXISTS trace_id       UUID;
+ALTER TABLE conversation_turns ADD COLUMN IF NOT EXISTS parent_span_id UUID;
+ALTER TABLE conversation_turns ADD COLUMN IF NOT EXISTS actor_id       TEXT;
+ALTER TABLE conversation_turns ADD COLUMN IF NOT EXISTS span_kind      TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_ct_conv ON conversation_turns (conversation_id);
 CREATE INDEX IF NOT EXISTS idx_ct_role ON conversation_turns (role);
 CREATE INDEX IF NOT EXISTS idx_ct_p1 ON conversation_turns (p1_scanned_at);
 CREATE INDEX IF NOT EXISTS idx_ct_p2 ON conversation_turns (p2_summarized_at);
 CREATE INDEX IF NOT EXISTS idx_ct_timestamp ON conversation_turns (timestamp);
+CREATE INDEX IF NOT EXISTS idx_ct_actor_id ON conversation_turns (actor_id) WHERE actor_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_ct_trace_id ON conversation_turns (trace_id) WHERE trace_id IS NOT NULL;
 
 
 -- ============================================================
