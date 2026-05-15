@@ -87,7 +87,7 @@ sudo INSTALL_DIR=/opt/BeakBroodNest \
 | `INSTALL_DIR` | `/opt/BeakBroodNest` | 安裝目錄 |
 | `DB_NAME` | `beak_broodnest` | 資料庫名稱 |
 | `DB_USER` | `beak_broodnest` | 資料庫使用者 |
-| `DB_PASS` | `postgres123` | **強烈建議改成自己的密碼** |
+| `DB_PASS` | （無預設） | 全新安裝時若未設定，會互動式要求輸入（至少 8 字元、兩次確認）；非互動環境必須提供此環境變數 |
 | `BEAKBROODNEST_PORT` | `5170` | 對外 nginx port |
 | `SERVICE_NAME` | `beakbroodnest` | systemd / nginx site / log 檔前綴；同機跑多份必須改 |
 | `INSTALL_CRON` | （互動詢問） | 設 `yes`/`no` 跳過互動；非互動環境預設啟用 |

@@ -7,7 +7,7 @@ host = localhost
 port = 5432
 database = beak_broodnest
 username = beak_broodnest
-password = postgres123
+password = CHANGE-ME-TO-YOUR-DB-PASSWORD
 
 [flask]
 host = 127.0.0.1

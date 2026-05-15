@@ -42,7 +42,7 @@
 - 路徑: `/opt/BeakBroodNest/`（單一目錄，含 .git 版控倉庫；2026-04-26 P1 重組合併原 dev/runtime 雙目錄）
 - 技術棧: Python Flask + PostgreSQL + SQLAlchemy + MCP SDK
 - Port: 5170（對外經 nginx → gunicorn 127.0.0.1:5171，由 systemd 管理）
-- DB: `beak_broodnest`（user: `beak_broodnest`, pw: `postgres123`）
+- DB: `beak_broodnest`（user: `beak_broodnest`，密碼存於不入版控的 `config.ini`，由 `install.sh` 互動式設定）
 - MCP 設定: `/opt/.mcp.json`（故意置於父目錄讓所有 /opt/* 子專案向上搜尋共用 beak_broodnest；`/mcp` 命令 UI 會把路徑誤標為 `/opt/BeakBroodNest/.mcp.json`，那是 UI 拼接 project 路徑的顯示行為，實檔在父目錄）
 - 規劃文件: `docs/VISION.md`
 - 舊 MVP 參考: `OLD/`（不入版控）

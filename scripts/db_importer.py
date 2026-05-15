@@ -39,13 +39,12 @@ CONFIG_SEARCH_PATHS = [
     '/opt/BeakBroodNest/config.ini',
 ]
 
-# 預設 DB 連線參數（找不到 config.ini 時使用）
+# DB 連線參數的非機密預設值（密碼不在此提供，必須由 config.ini 取得）
 DEFAULT_DB_PARAMS = {
     'host': 'localhost',
     'port': 5432,
     'database': 'beak_broodnest',
     'user': 'beak_broodnest',
-    'password': 'postgres123',
 }
 
 # Heartbeat
@@ -122,20 +121,25 @@ _SPAN_KIND_MAP = {
 # ============================================================
 
 def _load_db_params() -> dict:
-    """從 config.ini 讀取 DB 連線參數，找不到時用預設值"""
+    """從 config.ini 讀取 DB 連線參數。密碼必須由 config.ini 提供，否則直接終止。"""
     for path in CONFIG_SEARCH_PATHS:
         if os.path.isfile(path):
             cfg = configparser.ConfigParser()
             cfg.read(path, encoding='utf-8')
             if cfg.has_section('postgresql'):
+                password = cfg.get('postgresql', 'password', fallback='')
+                if not password:
+                    print(f"[ERROR] {path} 的 [postgresql] 區段缺少 password，請補上後重試", file=sys.stderr)
+                    sys.exit(1)
                 return {
                     'host': cfg.get('postgresql', 'host', fallback='localhost'),
                     'port': cfg.getint('postgresql', 'port', fallback=5432),
                     'database': cfg.get('postgresql', 'database', fallback='beak_broodnest'),
                     'user': cfg.get('postgresql', 'username', fallback='beak_broodnest'),
-                    'password': cfg.get('postgresql', 'password', fallback='postgres123'),
+                    'password': password,
                 }
-    return DEFAULT_DB_PARAMS.copy()
+    print(f"[ERROR] 找不到 config.ini（搜尋路徑：{CONFIG_SEARCH_PATHS}），請先執行 install.sh", file=sys.stderr)
+    sys.exit(1)
 
 
 def _get_db_connection():

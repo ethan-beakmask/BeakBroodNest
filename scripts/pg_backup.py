@@ -61,7 +61,10 @@ def run_backup(keep_days: int = 7, dry_run: bool = False, config_path: str | Non
     db_port = cfg.get('postgresql', 'port', fallback='5432')
     db_name = cfg.get('postgresql', 'database', fallback='beak_broodnest')
     db_user = cfg.get('postgresql', 'user', fallback='beak_broodnest')
-    db_password = cfg.get('postgresql', 'password', fallback='postgres123')
+    db_password = cfg.get('postgresql', 'password', fallback='')
+    if not db_password:
+        logger.error(f'{config_path} 的 [postgresql] 區段缺少 password，無法執行備份')
+        return False
 
     # 確保備份目錄存在
     os.makedirs(BACKUP_DIR, exist_ok=True)

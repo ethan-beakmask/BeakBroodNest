@@ -14,7 +14,11 @@
 #   INSTALL_DIR            安裝目錄 (預設: /opt/BeakBroodNest)
 #   DB_NAME                資料庫名稱 (預設: beak_broodnest)
 #   DB_USER                資料庫使用者 (預設: beak_broodnest)
-#   DB_PASS                資料庫密碼 (預設: postgres123)
+#   DB_PASS                資料庫密碼（無預設值，安裝時必須提供）
+#                          全新安裝且未設定環境變數時，會互動式要求輸入（兩次確認、至少 8 字元）
+#                          非互動環境（無 TTY）必須以環境變數提供：DB_PASS='強密碼' sudo -E bash install.sh
+#                          升級（--update）會自動從既有 config.ini 讀取，不需重新輸入
+#                          最終密碼會寫入不入版控的 config.ini，由應用程式從該檔讀取
 #   BEAKBROODNEST_PORT     外部存取 port (預設: 5170)
 #   SERVICE_NAME           systemd / nginx site / log 檔前綴 (預設: beakbroodnest)
 #                          同機部署多份時必須改，避免互相覆蓋
@@ -29,7 +33,9 @@ set -e
 INSTALL_DIR="${INSTALL_DIR:-/opt/BeakBroodNest}"
 DB_NAME="${DB_NAME:-beak_broodnest}"
 DB_USER="${DB_USER:-beak_broodnest}"
-DB_PASS="${DB_PASS:-postgres123}"
+# DB_PASS：無後備值。環境變數未設且為全新安裝時，會在 [2/7] 互動式要求輸入。
+# 設計理由：避免任何可被搜尋到的預設密碼字串進入版本歷史。
+DB_PASS="${DB_PASS:-}"
 BEAKBROODNEST_PORT="${BEAKBROODNEST_PORT:-5170}"
 GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethan-beakmask/BeakBroodNest.git}"
 SERVICE_NAME="${SERVICE_NAME:-beakbroodnest}"
@@ -426,6 +432,37 @@ log_info "系統依賴就緒"
 
 # === [2/7] PostgreSQL ===
 log_step "2/7" "設定 PostgreSQL..."
+
+# 取得 DB 密碼：環境變數優先；否則互動式輸入；無 TTY 時直接報錯退出
+if [ -z "$DB_PASS" ]; then
+    if [ -t 0 ]; then
+        echo ""
+        echo "  請設定 PostgreSQL 使用者 $DB_USER 的密碼"
+        echo "  此密碼會寫入 $INSTALL_DIR/config.ini（不入版控），由應用程式讀取"
+        while true; do
+            read -sp "  密碼（至少 8 字元）: " DB_PASS
+            echo ""
+            if [ ${#DB_PASS} -lt 8 ]; then
+                echo "  密碼至少 8 個字元，請重新輸入"
+                DB_PASS=""
+                continue
+            fi
+            read -sp "  確認密碼: " DB_PASS2
+            echo ""
+            if [ "$DB_PASS" != "$DB_PASS2" ]; then
+                echo "  密碼不一致，請重新輸入"
+                DB_PASS=""
+                continue
+            fi
+            break
+        done
+        unset DB_PASS2
+    else
+        log_error "未提供 DB_PASS 環境變數，且非互動式環境無法提示輸入"
+        log_error "請改為：DB_PASS='強密碼' sudo -E bash install.sh"
+        exit 1
+    fi
+fi
 
 # 偵測 PostgreSQL 主版本，安裝對應的 pgvector 擴充套件
 PG_MAJOR=$(sudo -u postgres psql -tAc "SHOW server_version_num" 2>/dev/null | awk '{print int($1/10000)}')
