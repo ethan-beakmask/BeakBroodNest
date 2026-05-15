@@ -219,18 +219,19 @@ if [ "$ACTION" = "update" ]; then
 
     git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null || true
 
-    # 先實測是否能直接 fetch（public repo 或 URL 已嵌入有效 token 都會通過）
-    # 失敗才走 PAT 流程（私有 repo 或 token 過期）
+    # 此 repo 已公開，預設 origin 重設為純 public URL，避免舊安裝殘留的過期 token 卡住
+    # 仍保留 PAT fallback：若 public URL 也連不上（網路問題 / repo 被改回私有），才提示輸入
+    git remote set-url origin "$GITHUB_REPO"
     if ! git ls-remote origin HEAD &>/dev/null; then
+        log_warn "無法以公開方式存取 $GITHUB_REPO"
         if [ -z "${GITHUB_TOKEN:-}" ]; then
-            read -s -p "請輸入 GitHub Personal Access Token: " GITHUB_TOKEN
+            read -s -p "請輸入 GitHub Personal Access Token（或 Ctrl+C 中止）: " GITHUB_TOKEN
             echo ""
             if [ -z "$GITHUB_TOKEN" ]; then
                 log_error "未輸入 Token，無法繼續"
                 exit 1
             fi
         fi
-        # 從 GITHUB_REPO 提取 user/repo 路徑
         repo_path=$(echo "$GITHUB_REPO" | sed 's|.*github.com/||' | sed 's|\.git$||')
         git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${repo_path}.git"
     fi
