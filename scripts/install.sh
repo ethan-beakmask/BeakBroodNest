@@ -259,13 +259,30 @@ if [ "$ACTION" = "update" ]; then
     log_step "3/4" "套用 Schema 補丁..."
 
     # 從 config.ini 讀 DB 連線（升級情境用既有設定，不依賴環境變數）
-    if [ -f "$INSTALL_DIR/config.ini" ]; then
-        CFG_DB_NAME=$(awk -F= '/^\[postgresql\]/,/^\[/ { if ($1 ~ /^database[[:space:]]*$/) { gsub(/[[:space:]]/,"",$2); print $2 } }' "$INSTALL_DIR/config.ini" | head -1)
-        CFG_DB_USER=$(awk -F= '/^\[postgresql\]/,/^\[/ { if ($1 ~ /^username[[:space:]]*$/) { gsub(/[[:space:]]/,"",$2); print $2 } }' "$INSTALL_DIR/config.ini" | head -1)
-        CFG_DB_PASS=$(awk -F= '/^\[postgresql\]/,/^\[/ { if ($1 ~ /^password[[:space:]]*$/) { gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2 } }' "$INSTALL_DIR/config.ini" | head -1)
+    # 改用 python configparser 解析，避免 awk -F= 在密碼含 '=' / '#' / 前導空白等特殊字元時誤判
+    if [ -f "$INSTALL_DIR/config.ini" ] && [ -x "$INSTALL_DIR/venv/bin/python3" ]; then
+        CFG_VARS=$("$INSTALL_DIR/venv/bin/python3" - "$INSTALL_DIR/config.ini" <<'PYEOF'
+import configparser, shlex, sys
+c = configparser.ConfigParser()
+c.read(sys.argv[1])
+if c.has_section('postgresql'):
+    s = c['postgresql']
+    print(f"CFG_DB_NAME={shlex.quote(s.get('database',''))}")
+    print(f"CFG_DB_USER={shlex.quote(s.get('username',''))}")
+    print(f"CFG_DB_PASS={shlex.quote(s.get('password',''))}")
+    print(f"CFG_DB_HOST={shlex.quote(s.get('host','127.0.0.1'))}")
+    print(f"CFG_DB_PORT={shlex.quote(s.get('port','5432'))}")
+PYEOF
+)
+        eval "$CFG_VARS"
         DB_NAME="${CFG_DB_NAME:-$DB_NAME}"
         DB_USER="${CFG_DB_USER:-$DB_USER}"
         DB_PASS="${CFG_DB_PASS:-$DB_PASS}"
+        DB_HOST="${CFG_DB_HOST:-127.0.0.1}"
+        DB_PORT="${CFG_DB_PORT:-5432}"
+    else
+        DB_HOST="${DB_HOST:-127.0.0.1}"
+        DB_PORT="${DB_PORT:-5432}"
     fi
 
     # 同步 ORM schema（補上新版本新增的欄位/表），等同全新安裝 [6/7] 第一步
@@ -282,7 +299,7 @@ print('  ORM 結構同步完成')
 
     # Pipeline 表（conversations / conversation_turns / pipeline_runs / session_logs / p2_failures）
     if [ -f "$INSTALL_DIR/scripts/init_pipeline_tables.sql" ]; then
-        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h 127.0.0.1 \
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
             -f "$INSTALL_DIR/scripts/init_pipeline_tables.sql" -v ON_ERROR_STOP=1 -q \
             && log_info "  Pipeline 表結構補丁完成" \
             || log_warn "  Pipeline 表結構補丁失敗（observe 對話拓樸可能空白）"
@@ -290,7 +307,7 @@ print('  ORM 結構同步完成')
 
     # seed_baseline 也是 idempotent（INSERT ... ON CONFLICT DO NOTHING / CREATE OR REPLACE VIEW）
     if [ -f "$INSTALL_DIR/scripts/seed_baseline.sql" ]; then
-        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h 127.0.0.1 \
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
             -f "$INSTALL_DIR/scripts/seed_baseline.sql" -v ON_ERROR_STOP=1 -q \
             && log_info "  基線 seed 補丁完成（主選單 / view 等）" \
             || log_warn "  基線 seed 補丁失敗"
@@ -545,7 +562,7 @@ print('  資料表建立完成')
 
 # 載入基線 seed（主選單、relation_type_registry、atom_schemas、tag_categories、pending_outputs view）
 if [ -f "$INSTALL_DIR/scripts/seed_baseline.sql" ]; then
-    PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h 127.0.0.1 \
+    PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
         -f "$INSTALL_DIR/scripts/seed_baseline.sql" -v ON_ERROR_STOP=1 -q \
         && log_info "  基線 seed 載入完成（主選單、因果鍊類型等）" \
         || log_warn "  基線 seed 載入失敗（系統可能缺主選單，請手動執行 seed_baseline.sql）"
@@ -554,7 +571,7 @@ fi
 # 載入 Pipeline 表結構（conversations / conversation_turns / pipeline_runs / session_logs / p2_failures）
 # 這些表是 P0~P3 復盤管線 + observe 對話拓樸所需，SQL 內全為 CREATE TABLE IF NOT EXISTS，可安全重跑
 if [ -f "$INSTALL_DIR/scripts/init_pipeline_tables.sql" ]; then
-    PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h 127.0.0.1 \
+    PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
         -f "$INSTALL_DIR/scripts/init_pipeline_tables.sql" -v ON_ERROR_STOP=1 -q \
         && log_info "  Pipeline 表結構載入完成（conversations 等 5 張表）" \
         || log_warn "  Pipeline 表結構載入失敗（P1/P2/P3 與 observe 將無法運作）"
