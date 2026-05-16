@@ -26,10 +26,41 @@
 #                          yes/no/(空)；空值時互動詢問（非互動環境預設 yes）
 #   GITHUB_TOKEN           GitHub Personal Access Token (私有 repo 時需要)
 #   GITHUB_REPO            GitHub clone URL (預設: ethan-beakmask/BeakBroodNest)
+#
+#   INSTANCE               多實例簡寫；設定後自動推導未明確指定的變數：
+#                            INSTALL_DIR=/opt/BeakBroodNest-${INSTANCE}
+#                            DB_NAME=beak_broodnest_${INSTANCE}
+#                            DB_USER=beak_broodnest_${INSTANCE}
+#                            SERVICE_NAME=beakbroodnest-${INSTANCE}
+#                            MCP server key=beak_broodnest_${INSTANCE}
+#                            identity=project:beakbroodnest_${INSTANCE}
+#                          BEAKBROODNEST_PORT 仍須各自指定（自動推導風險高）
+#                          使用者顯式設的個別變數優先於 INSTANCE 推導
 # =============================================================================
 set -e
 
+# === 自動偵測安裝路徑 ===
+# 當 install.sh 從已安裝目錄執行（e.g. /opt/BeakBroodNest-staging/scripts/install.sh）
+# 且使用者未顯式指定 INSTALL_DIR / INSTANCE 時，從 script 位置反推
+_SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+_SCRIPT_PARENT_DIR="$(dirname "$(dirname "$_SCRIPT_PATH")")"
+if [ -z "${INSTALL_DIR:-}" ] && [ -z "${INSTANCE:-}" ] && [[ "$_SCRIPT_PARENT_DIR" == /opt/BeakBroodNest-* ]]; then
+    # /opt/BeakBroodNest-staging -> INSTANCE=staging
+    INSTANCE="${_SCRIPT_PARENT_DIR#/opt/BeakBroodNest-}"
+    echo "[INFO] 從 script 路徑自動推導 INSTANCE=$INSTANCE"
+fi
+
 # === 設定 ===
+INSTANCE="${INSTANCE:-}"
+
+# 有 INSTANCE 時，未顯式指定的變數自動套上後綴
+if [ -n "$INSTANCE" ]; then
+    INSTALL_DIR="${INSTALL_DIR:-/opt/BeakBroodNest-${INSTANCE}}"
+    DB_NAME="${DB_NAME:-beak_broodnest_${INSTANCE}}"
+    DB_USER="${DB_USER:-beak_broodnest_${INSTANCE}}"
+    SERVICE_NAME="${SERVICE_NAME:-beakbroodnest-${INSTANCE}}"
+fi
+
 INSTALL_DIR="${INSTALL_DIR:-/opt/BeakBroodNest}"
 DB_NAME="${DB_NAME:-beak_broodnest}"
 DB_USER="${DB_USER:-beak_broodnest}"
@@ -40,6 +71,22 @@ BEAKBROODNEST_PORT="${BEAKBROODNEST_PORT:-5170}"
 GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethan-beakmask/BeakBroodNest.git}"
 SERVICE_NAME="${SERVICE_NAME:-beakbroodnest}"
 HEALTH_TIMEOUT=30
+
+# MCP server name 與 identity（依 SERVICE_NAME 推導，預設安裝保持 beak_broodnest）
+if [ "$SERVICE_NAME" = "beakbroodnest" ]; then
+    MCP_SERVER_NAME="beak_broodnest"
+    IDENTITY_PROJECT_ID="beakbroodnest"
+else
+    # 從 SERVICE_NAME 取後綴（beakbroodnest-staging -> staging）
+    _SVC_SUFFIX="${SERVICE_NAME#beakbroodnest-}"
+    _SVC_SUFFIX="${_SVC_SUFFIX#beakbroodnest_}"
+    if [ "$_SVC_SUFFIX" = "$SERVICE_NAME" ]; then
+        # SERVICE_NAME 不以 beakbroodnest- 開頭，整段當後綴
+        _SVC_SUFFIX="$SERVICE_NAME"
+    fi
+    MCP_SERVER_NAME="beak_broodnest_${_SVC_SUFFIX}"
+    IDENTITY_PROJECT_ID="beakbroodnest_${_SVC_SUFFIX}"
+fi
 
 # === 顏色 ===
 RED='\033[0;31m'
@@ -746,6 +793,9 @@ token = $RELAY_TOKEN
 [logging]
 level = INFO
 
+[identity]
+project_id = $IDENTITY_PROJECT_ID
+
 ${PIPELINE_SECTION}
 CFGEOF
 
@@ -964,6 +1014,41 @@ if [ "$INSTALL_DIR" != "/opt/BeakBroodNest" ] && [ -f "$INSTALL_DIR/.claude/sett
             "$INSTALL_DIR/.claude/settings.json"
     fi
 fi
+
+# === 註冊/更新 /opt/.mcp.json ===
+# 多實例共存時，每個實例註冊獨立的 MCP server key (beak_broodnest_<suffix>)
+# 預設安裝保持 beak_broodnest 不變，向後相容
+log_info "註冊 MCP server 到 /opt/.mcp.json (key=${MCP_SERVER_NAME})"
+python3 - "$INSTALL_DIR" "$MCP_SERVER_NAME" <<'PYEOF'
+import json
+import os
+import sys
+
+install_dir, server_name = sys.argv[1], sys.argv[2]
+mcp_path = '/opt/.mcp.json'
+data = {'mcpServers': {}}
+if os.path.isfile(mcp_path):
+    try:
+        with open(mcp_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        data.setdefault('mcpServers', {})
+    except Exception as e:
+        print(f'[WARN] 既有 /opt/.mcp.json 無法解析（{e}），改寫為新檔', file=sys.stderr)
+        data = {'mcpServers': {}}
+
+data['mcpServers'][server_name] = {
+    'type': 'stdio',
+    'command': f'{install_dir}/venv/bin/python',
+    'args': [f'{install_dir}/ai_kb/mcp_server.py', '--stdio'],
+}
+
+tmp = mcp_path + '.tmp'
+with open(tmp, 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+os.replace(tmp, mcp_path)
+print(f'[OK] /opt/.mcp.json 已更新（server: {server_name}）')
+PYEOF
 
 # === 啟動服務 ===
 log_info "啟動 BeakBroodNest..."

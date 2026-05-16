@@ -98,8 +98,42 @@ sudo INSTALL_DIR=/opt/BeakBroodNest \
 | `DB_PASS` | （無預設） | 全新安裝時若未設定，會互動式要求輸入（至少 8 字元、兩次確認）；非互動環境必須提供此環境變數 |
 | `BEAKBROODNEST_PORT` | `5170` | 對外 nginx port |
 | `SERVICE_NAME` | `beakbroodnest` | systemd / nginx site / log 檔前綴；同機跑多份必須改 |
+| `INSTANCE` | （空） | 多實例簡寫，見下方「同機多實例部署」 |
 | `INSTALL_CRON` | （互動詢問） | 設 `yes`/`no` 跳過互動；非互動環境預設啟用 |
 | `GITHUB_REPO` | `https://github.com/ethan-beakmask/BeakBroodNest.git` | clone 來源 |
+
+#### 同機多實例部署
+
+同一台主機要跑多套 BeakBroodNest（例如 prod / staging 並存）時，必須讓所有命名空間獨立。直接設 `INSTANCE` 環境變數可自動推導大部分變數：
+
+```bash
+# 第二實例（staging）：只需指定 INSTANCE 與獨立 port
+sudo INSTANCE=staging \
+     BEAKBROODNEST_PORT=5180 \
+     DB_PASS='<staging_password>' \
+     bash /tmp/install.sh
+```
+
+`INSTANCE=staging` 會自動套用以下預設值（顯式設定的個別變數仍優先生效）：
+
+| 變數 | 自動值 |
+| --- | --- |
+| `INSTALL_DIR` | `/opt/BeakBroodNest-staging` |
+| `DB_NAME` | `beak_broodnest_staging` |
+| `DB_USER` | `beak_broodnest_staging` |
+| `SERVICE_NAME` | `beakbroodnest-staging` |
+| `/opt/.mcp.json` 註冊 key | `beak_broodnest_staging` |
+| `config.ini [identity] project_id` | `beakbroodnest_staging` |
+
+`BEAKBROODNEST_PORT` 必須各實例獨立指定，腳本不自動避讓。
+
+`install.sh` 從 `/opt/BeakBroodNest-staging/scripts/install.sh` 路徑執行時會自動反推 `INSTANCE=staging`，所以後續 `--update` / `--status` 等子命令可直接執行不需重設環境變數：
+
+```bash
+sudo bash /opt/BeakBroodNest-staging/scripts/install.sh --update
+```
+
+`/opt/.mcp.json` 採 merge 模式更新（不蓋掉其他既有 server 註冊），多實例會各自佔一個 server key，Claude Code 可同時連到所有實例的知識庫。
 
 > 安裝後會建立的 systemd service、Nginx site、log 路徑、以及需要手動加入 `/etc/crontab` 的 5 條排程，集中列於 [`docs/SERVICES_AND_SCHEDULES.md`](docs/SERVICES_AND_SCHEDULES.md)。
 
