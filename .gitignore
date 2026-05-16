@@ -23,8 +23,9 @@ data/
 signals_batch_*.json
 scripts/signals_batch_*.json
 
-# Scheduler 執行狀態（每台不同）
+# Scheduler / heartbeat monitor 執行狀態（每台不同）
 scripts/.scheduler_state.json
+scripts/.heartbeat_monitor_state.json
 
 # 備份檔
 backups/
