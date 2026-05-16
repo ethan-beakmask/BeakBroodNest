@@ -12,6 +12,9 @@
 
 set -u
 
+# 安裝目錄（支援自訂 INSTALL_DIR，install.sh 會在 systemd Environment 注入）
+: "${BBN_INSTALL_DIR:=/opt/BeakBroodNest}"
+
 # 自行 redirect stdout/stderr 到 log 檔，繞過 systemd StandardOutput=append:
 # 在 Ubuntu 24.04 + User=ethan 組合上會回傳 status=209/STDOUT 的問題
 LOG=/opt/tmp/p2_daemon.log
@@ -23,7 +26,7 @@ START_EPOCH=$(date +%s)
 export PATH="/home/ethan/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export HOME="/home/ethan"
 
-cd /opt/BeakBroodNest || exit 2
+cd "$BBN_INSTALL_DIR" || exit 2
 
 # 用 sentinel 檔案明確區分「flock 取得鎖（內部命令有跑）」與「flock 沒取到鎖（直接 skip）」
 # 避免單看 elapsed 時間誤判，例如 Topics: 0 也會在 1 秒內結束。
@@ -32,8 +35,8 @@ trap 'rm -rf "$SENTINEL_DIR"' EXIT
 
 /usr/bin/flock -E 0 -n /tmp/beak-p2.lock bash -c "
     touch '$SENTINEL_DIR/acquired'
-    exec /opt/BeakBroodNest/venv/bin/python \
-        /opt/BeakBroodNest/scripts/semantic_summarizer.py \
+    exec '$BBN_INSTALL_DIR/venv/bin/python' \
+        '$BBN_INSTALL_DIR/scripts/semantic_summarizer.py' \
         --all \
         --skip-subagents \
         --since-days 14 \

@@ -29,10 +29,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # 常數
 # ============================================================
 
+_INSTALL_DIR = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
+
 HEARTBEAT_DIR = '/opt/tmp/heartbeat'
 HEARTBEAT_BASE = 'pg_backup'
 LOG_PATH = '/opt/tmp/scripts-pg_backup.log'
-BACKUP_DIR = '/opt/BeakBroodNest/backups'
+BACKUP_DIR = os.path.join(_INSTALL_DIR, 'backups')
 
 
 def _write_heartbeat():

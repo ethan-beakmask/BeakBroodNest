@@ -174,7 +174,8 @@ def reviews():
     """
     import os, json as jsonlib
     hide_p2 = request.args.get('hide_p2_dispatcher', '1') in ('1', 'true', 'yes')
-    results_dir = '/opt/BeakBroodNest/data/reviews'
+    install_dir = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
+    results_dir = os.path.join(install_dir, 'data/reviews')
     items = []
     if os.path.isdir(results_dir):
         for fname in sorted(os.listdir(results_dir), reverse=True):
@@ -199,7 +200,8 @@ def reviews():
 def review_global_stats():
     """全域技術統計"""
     import json as jsonlib
-    fpath = '/opt/BeakBroodNest/data/reviews/_global_stats.json'
+    install_dir = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
+    fpath = os.path.join(install_dir, 'data/reviews/_global_stats.json')
     if os.path.isfile(fpath):
         with open(fpath, 'r', encoding='utf-8') as f:
             return jsonify(jsonlib.load(f))

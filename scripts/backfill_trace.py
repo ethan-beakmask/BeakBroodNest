@@ -29,7 +29,8 @@ RE_SUBAGENT_PATH = re.compile(
     re.IGNORECASE,
 )
 
-CONFIG_SEARCH_PATHS = ['/opt/BeakBroodNest/config.ini']
+_INSTALL_DIR = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
+CONFIG_SEARCH_PATHS = [os.path.join(_INSTALL_DIR, 'config.ini')]
 BATCH_SIZE = 1000
 
 

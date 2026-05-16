@@ -858,6 +858,7 @@ RestartSec=5
 KillMode=mixed
 TimeoutStopSec=30
 Environment=PYTHONPATH=$INSTALL_DIR
+Environment=BBN_INSTALL_DIR=$INSTALL_DIR
 
 [Install]
 WantedBy=multi-user.target
@@ -939,11 +940,11 @@ else
 
 ${CRON_BEGIN_MARKER}
 # BeakBroodNest 排程任務（由 install.sh 自動產生，移除請連同 END marker 一併刪除）
-* * * * * ${CRON_USER} flock -n /tmp/${SERVICE_NAME}-monitor.lock ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/orchestrator/monitor.py --start >> /opt/tmp/${SERVICE_NAME}-orchestrator-monitor.log 2>&1
-*/5 * * * * ${CRON_USER} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/scheduler.py --tick >> /opt/tmp/${SERVICE_NAME}-scheduler.log 2>&1
-* * * * * ${CRON_USER} cd ${INSTALL_DIR} && flock -n /tmp/${SERVICE_NAME}-embed.lock venv/bin/python scripts/embed_worker.py >> /opt/tmp/${SERVICE_NAME}-embed_worker.log 2>&1
-* * * * * ${CRON_USER} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/session_watchdog.py --check --alert >> /opt/tmp/${SERVICE_NAME}-session_watchdog.log 2>&1
-*/10 * * * * ${CRON_USER} flock -n /tmp/${SERVICE_NAME}-db-importer.lock ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/db_importer.py -convertall >> /opt/tmp/${SERVICE_NAME}-db_importer.log 2>&1
+* * * * * ${CRON_USER} BBN_INSTALL_DIR=${INSTALL_DIR} flock -n /tmp/${SERVICE_NAME}-monitor.lock ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/orchestrator/monitor.py --start >> /opt/tmp/${SERVICE_NAME}-orchestrator-monitor.log 2>&1
+*/5 * * * * ${CRON_USER} BBN_INSTALL_DIR=${INSTALL_DIR} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/scheduler.py --tick >> /opt/tmp/${SERVICE_NAME}-scheduler.log 2>&1
+* * * * * ${CRON_USER} cd ${INSTALL_DIR} && BBN_INSTALL_DIR=${INSTALL_DIR} flock -n /tmp/${SERVICE_NAME}-embed.lock venv/bin/python scripts/embed_worker.py >> /opt/tmp/${SERVICE_NAME}-embed_worker.log 2>&1
+* * * * * ${CRON_USER} BBN_INSTALL_DIR=${INSTALL_DIR} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/session_watchdog.py --check --alert >> /opt/tmp/${SERVICE_NAME}-session_watchdog.log 2>&1
+*/10 * * * * ${CRON_USER} BBN_INSTALL_DIR=${INSTALL_DIR} flock -n /tmp/${SERVICE_NAME}-db-importer.lock ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/db_importer.py -convertall >> /opt/tmp/${SERVICE_NAME}-db_importer.log 2>&1
 ${CRON_END_MARKER}
 CRONEOF
             log_info "  排程已寫入；下個整點開始啟動（如要立即測試：sudo bash -c 'tail -f /opt/tmp/${SERVICE_NAME}-*.log'）"
@@ -952,6 +953,16 @@ CRONEOF
             log_info "略過排程任務設定（要啟用請見 docs/SERVICES_AND_SCHEDULES.md）"
             ;;
     esac
+fi
+
+# === 自訂 INSTALL_DIR 時，把 .claude/settings.json 內的硬寫 hook 路徑改寫 ===
+# .claude/settings.json 的 command 欄位必須是絕對路徑，Claude Code 不支援相對路徑或 env var 展開
+if [ "$INSTALL_DIR" != "/opt/BeakBroodNest" ] && [ -f "$INSTALL_DIR/.claude/settings.json" ]; then
+    if grep -qF '/opt/BeakBroodNest/orchestrator/hooks/' "$INSTALL_DIR/.claude/settings.json"; then
+        log_info "改寫 .claude/settings.json 內的硬寫 hook 路徑為 $INSTALL_DIR"
+        sed -i.bak "s|/opt/BeakBroodNest/orchestrator/hooks/|${INSTALL_DIR}/orchestrator/hooks/|g" \
+            "$INSTALL_DIR/.claude/settings.json"
+    fi
 fi
 
 # === 啟動服務 ===

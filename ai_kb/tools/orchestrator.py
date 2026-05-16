@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """Orchestrator 工具: task_dispatch/status/list/collect"""
 import json
+import os
 
 from core.db import session_scope
 from orchestrator.models import WorkerTask, WorkerReport
 from orchestrator import dispatcher as orch_dispatcher
+
+_DEFAULT_WORKING_DIR = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
 
 
 def register(mcp):
@@ -14,7 +17,7 @@ def register(mcp):
         title: str,
         instruction: str,
         model: str = 'sonnet',
-        working_dir: str = '/opt/BeakBroodNest',
+        working_dir: str = _DEFAULT_WORKING_DIR,
         priority: int = 5,
         timeout_seconds: int = 600,
     ) -> str:

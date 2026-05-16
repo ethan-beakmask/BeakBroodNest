@@ -31,6 +31,7 @@ _current_identity: str = ''
 _current_cwd: str = ''
 
 # 從啟動目錄推斷專案身份的對照表
+# 自訂 INSTALL_DIR 時透過 BBN_INSTALL_DIR 動態補上 BeakBroodNest 自己的對應
 _CWD_PROJECT_MAP = {
     '/opt/BeakBroodNest': 'project:beakbroodnest',
     '/opt/BeakPlatform': 'project:beakplatform',
@@ -57,6 +58,12 @@ def init_identity(config_identity: str = '', cwd: str = ''):
     global _current_identity, _current_cwd
 
     _current_cwd = cwd or os.getcwd()
+
+    # 自訂 INSTALL_DIR 時動態把它對應到 project:beakbroodnest
+    _install_dir = os.environ.get('BBN_INSTALL_DIR')
+    if _install_dir:
+        _install_dir = os.path.realpath(_install_dir)
+        _CWD_PROJECT_MAP.setdefault(_install_dir, 'project:beakbroodnest')
 
     if config_identity:
         # config 明確指定，直接用

@@ -34,9 +34,12 @@ from parse_conversation import (
 # 常數
 # ============================================================
 
+# 安裝目錄（支援自訂 INSTALL_DIR）
+_INSTALL_DIR = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
+
 # config.ini 搜尋路徑（優先順序）
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakBroodNest/config.ini',
+    os.path.join(_INSTALL_DIR, 'config.ini'),
 ]
 
 # DB 連線參數的非機密預設值（密碼不在此提供，必須由 config.ini 取得）
@@ -148,7 +151,7 @@ def _get_db_connection():
         import psycopg2
     except ImportError:
         print("[ERROR] psycopg2 未安裝。請執行: pip install psycopg2-binary")
-        print("        或使用 BeakBroodNest venv: /opt/BeakBroodNest/venv/bin/pip install psycopg2-binary")
+        print(f"        或使用 BeakBroodNest venv: {_INSTALL_DIR}/venv/bin/pip install psycopg2-binary")
         sys.exit(1)
 
     params = _load_db_params()

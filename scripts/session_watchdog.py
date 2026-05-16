@@ -44,8 +44,11 @@ from typing import Dict, List, Optional, Tuple
 # JSONL 路徑
 CLAUDE_PROJECTS_DIR = os.path.expanduser('~/.claude/projects')
 
+# 安裝目錄（支援自訂 INSTALL_DIR，install.sh 會寫入 systemd Environment / cron 前綴）
+_INSTALL_DIR = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
+
 # 狀態檔（記錄上次檢查時的 JSONL 狀態）
-STATE_FILE = '/opt/BeakBroodNest/data/watchdog_state.json'
+STATE_FILE = os.path.join(_INSTALL_DIR, 'data/watchdog_state.json')
 
 # 閾值
 THRESHOLDS = {
@@ -57,7 +60,7 @@ THRESHOLDS = {
 
 # DB 連線
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakBroodNest/config.ini',
+    os.path.join(_INSTALL_DIR, 'config.ini'),
 ]
 
 

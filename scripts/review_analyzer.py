@@ -31,8 +31,9 @@ from typing import Dict, List, Optional
 # DB 連線
 # ============================================================
 
+_INSTALL_DIR = os.environ.get('BBN_INSTALL_DIR') or '/opt/BeakBroodNest'
 CONFIG_SEARCH_PATHS = [
-    '/opt/BeakBroodNest/config.ini',
+    os.path.join(_INSTALL_DIR, 'config.ini'),
 ]
 
 def _load_db_params() -> dict:
@@ -451,7 +452,7 @@ def save_review_results(conn, conversation_id: str,
 # 結果寫入 JSON（供觀察 UI 讀取）
 # ============================================================
 
-RESULTS_DIR = '/opt/BeakBroodNest/data/reviews'
+RESULTS_DIR = os.path.join(_INSTALL_DIR, 'data/reviews')
 
 
 def save_results_json(conversation_id: str, error_stats: dict,
