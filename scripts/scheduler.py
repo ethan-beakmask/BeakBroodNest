@@ -41,6 +41,12 @@ SCHEDULE_PATH = SCRIPTS_DIR / 'schedule.json'
 STATE_PATH = SCRIPTS_DIR / '.scheduler_state.json'
 VENV_PYTHON = sys.executable  # 用啟動 scheduler 的 Python，確保 venv 一致
 
+# scheduler 由 crontab 每 5 分鐘觸發一次，因此 schedule.json 內 cron 分鐘欄位
+# 若沒有任何值落在 {0,5,10,...,55} 上，任務永遠不會被觸發。
+# 歷史 bug：commit 0017c63 把復盤排程改為 "43 8 * * *"，43 不對齊 5 分鐘 tick，
+# 4 天無人發現。本常數用於對齊檢查。
+TICK_MINUTES = 5
+
 
 def _write_heartbeat():
     name = f'{HEARTBEAT_BASE}.ok'
@@ -111,6 +117,43 @@ def _field_matches(expr: str, current: int, lo: int, hi: int) -> bool:
 
 
 # ============================================================
+# Cron 對齊檢查
+# ============================================================
+
+def _cron_minute_set(minute_expr: str) -> set[int]:
+    """枚舉 cron 分鐘欄位能接受的所有值。"""
+    return {m for m in range(60) if _field_matches(minute_expr, m, 0, 59)}
+
+
+def validate_schedule_alignment(tasks: list[dict], tick_minutes: int = TICK_MINUTES) -> list[tuple[str, str]]:
+    """檢查每個 enabled 任務的 cron 分鐘欄位能否被 tick 命中。
+
+    回傳 [(task_name, reason), ...]，空 list = 全部對齊。
+    """
+    tick_set = set(range(0, 60, tick_minutes))
+    issues: list[tuple[str, str]] = []
+    for task in tasks:
+        if not task.get('enabled', True):
+            continue
+        name = task.get('name', '?')
+        cron = task.get('cron', '').strip()
+        parts = cron.split()
+        if len(parts) != 5:
+            issues.append((name, f'cron 欄位數錯誤: {cron!r}'))
+            continue
+        accepted = _cron_minute_set(parts[0])
+        if not accepted:
+            issues.append((name, f'cron 分鐘欄位無有效值: {parts[0]!r}'))
+            continue
+        if not (accepted & tick_set):
+            issues.append((name, (
+                f'cron 分鐘 {parts[0]!r} 不對齊 {tick_minutes} 分鐘 tick'
+                f'（接受值 {sorted(accepted)}，永不觸發）'
+            )))
+    return issues
+
+
+# ============================================================
 # 狀態管理
 # ============================================================
 
@@ -167,6 +210,9 @@ def tick(dry_run: bool = False):
     if not tasks:
         logger.warning('schedule.json 無任務或不存在')
         return
+
+    for tname, reason in validate_schedule_alignment(tasks):
+        logger.error(f'排程對齊異常: {tname}: {reason}')
 
     executed = 0
     for task in tasks:
@@ -291,6 +337,15 @@ def show_status():
         last_status = st.get('last_status', '-')
         print(f'{name:<20} {enabled:<6} {cron:<15} {last_ts:<20} {last_status:<10} {desc}')
 
+    issues = validate_schedule_alignment(tasks)
+    print()
+    if issues:
+        print(f'[排程對齊異常] {len(issues)} 個任務的 cron 不對齊 {TICK_MINUTES} 分鐘 tick：')
+        for tname, reason in issues:
+            print(f'  - {tname}: {reason}')
+    else:
+        print(f'[排程對齊檢查] 全部 enabled 任務的 cron 分鐘均能命中 {TICK_MINUTES} 分鐘 tick')
+
 
 # ============================================================
 # CLI
@@ -312,6 +367,8 @@ def main():
     parser.add_argument('--status', action='store_true', help='顯示所有任務狀態')
     parser.add_argument('--run-now', type=str, metavar='TASK', help='立即執行指定任務')
     parser.add_argument('--dry-run', action='store_true', help='試跑模式')
+    parser.add_argument('--validate', action='store_true',
+                        help=f'檢查 schedule.json 的 cron 是否對齊 {TICK_MINUTES} 分鐘 tick，有問題則 exit 1')
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -327,6 +384,16 @@ def main():
             logging.StreamHandler(),
         ],
     )
+
+    if args.validate:
+        issues = validate_schedule_alignment(_load_schedule())
+        if issues:
+            print(f'[FAIL] {len(issues)} 個排程對齊異常：')
+            for tname, reason in issues:
+                print(f'  - {tname}: {reason}')
+            sys.exit(1)
+        print(f'[OK] 所有 enabled 任務的 cron 分鐘均能命中 {TICK_MINUTES} 分鐘 tick')
+        return
 
     if args.status:
         show_status()

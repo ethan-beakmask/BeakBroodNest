@@ -220,13 +220,15 @@ def collect_user_mentions(conn, conversation_id: str = None) -> list:
     cur = conn.cursor()
 
     # 排除 P2 dispatcher 灌入的 user message（actor_id 標記 + prompt 前綴雙保險）
+    # LIKE pattern 一律走參數綁定，避免 psycopg2 把字串內的 '%' 當 placeholder
+    # （舊版直接 inline 'xxx%' 自 commit 89b1041 起導致 IndexError，P3 全斷）
     where = (
         "WHERE role = 'user' AND content IS NOT NULL AND content != '' "
-        "AND (actor_id IS NULL OR actor_id NOT LIKE 'p2-dispatcher%') "
-        "AND content NOT LIKE '請對以下 topic 產出結構化摘要%' "
-        "AND content NOT LIKE '[CC-LAUNCH-KIND=p2-dispatcher]%'"
+        "AND (actor_id IS NULL OR actor_id NOT LIKE %s) "
+        "AND content NOT LIKE %s "
+        "AND content NOT LIKE %s"
     )
-    params = []
+    params = ['p2-dispatcher%', '請對以下 topic 產出結構化摘要%', '[CC-LAUNCH-KIND=p2-dispatcher]%']
     if conversation_id:
         where += " AND conversation_id = %s"
         params.append(conversation_id)

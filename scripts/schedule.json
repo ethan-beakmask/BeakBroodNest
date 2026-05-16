@@ -27,9 +27,9 @@
         },
         {
             "name": "nightly_review",
-            "description": "每日復盤 Pipeline P0~P3（每日 08:43，通勤時段，避開夜間風扇噪音）",
+            "description": "每日復盤 Pipeline P0~P3（每日 08:45，通勤時段，避開夜間風扇噪音；cron 分鐘必須對齊 scheduler 5 分鐘 tick）",
             "command": ["{venv_python}", "{scripts_dir}/nightly_pipeline.py"],
-            "cron": "43 8 * * *",
+            "cron": "45 8 * * *",
             "enabled": true,
             "timeout_seconds": 10800
         },
