@@ -68,10 +68,18 @@
 `scripts/install.sh` 會自動處理 apt 套件、PostgreSQL 設定（含 pgvector）、venv、systemd service、nginx site config。
 
 ```bash
-# 直接從 GitHub 拉腳本執行
-curl -fsSL https://raw.githubusercontent.com/ethan-beakmask/BeakBroodNest/master/scripts/install.sh -o install.sh
-sudo bash install.sh
+# 推薦：one-liner（直接執行，無中介檔案）
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/ethan-beakmask/BeakBroodNest/master/scripts/install.sh)"
 ```
+
+或下載到 /tmp 再執行（方便先檢視內容）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ethan-beakmask/BeakBroodNest/master/scripts/install.sh -o /tmp/install.sh
+sudo bash /tmp/install.sh
+```
+
+> 注意：**不要在 `/opt` 下 `curl -o install.sh`**（一般使用者對 `/opt` 無寫權限），也**不要用 `./install.sh` 執行**（檔案無 x 執行位、sudo PATH 不含當前目錄）。一律以 `sudo bash <檔案路徑>` 啟動。
 
 預設值可用環境變數覆蓋：
 
@@ -79,7 +87,7 @@ sudo bash install.sh
 sudo INSTALL_DIR=/opt/BeakBroodNest \
      DB_PASS='<your_strong_password>' \
      BEAKBROODNEST_PORT=5170 \
-     bash install.sh
+     bash /tmp/install.sh
 ```
 
 | 環境變數 | 預設值 | 說明 |

@@ -58,7 +58,18 @@ log_step()  { echo -e "${BLUE}[$1]${NC} $2"; }
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         log_error "此腳本需要 root 權限執行"
-        echo "  用法: sudo bash $0 $*"
+        echo ""
+        echo "  正確用法（推薦 one-liner，直接從遠端執行）："
+        echo "    sudo bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/ethan-beakmask/BeakBroodNest/master/scripts/install.sh)\""
+        echo ""
+        echo "  或下載到 /tmp 後執行："
+        echo "    curl -fsSL https://raw.githubusercontent.com/ethan-beakmask/BeakBroodNest/master/scripts/install.sh -o /tmp/install.sh"
+        echo "    sudo bash /tmp/install.sh"
+        echo ""
+        echo "  常見錯誤："
+        echo "    ./install.sh           -> Permission denied（檔案無 x 執行位）"
+        echo "    sudo ./install.sh      -> command not found（sudo PATH 不含 .）"
+        echo "    請改用 sudo bash <檔案路徑>"
         exit 1
     fi
 }
