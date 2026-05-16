@@ -129,16 +129,18 @@ def main():
         logger.info(f'Daemon mode, interval={args.interval}s')
         while True:
             try:
-                count = process_pending()
-                if count:
-                    _write_heartbeat()
+                process_pending()
+                _write_heartbeat()
             except Exception as e:
                 logger.error(f'Error: {e}')
             time.sleep(args.interval)
     else:
         count = process_pending()
+        # heartbeat 表示「worker 跑過且未拋異常」，與是否有 pending 無關。
+        # 舊版只在 count>0 寫 heartbeat 會讓 heartbeat_monitor 誤判長時間無新
+        # 原子的情形為「embed_worker 壞了」。
+        _write_heartbeat()
         if count:
-            _write_heartbeat()
             print(f'Processed {count} atoms')
         else:
             print('No pending atoms')
