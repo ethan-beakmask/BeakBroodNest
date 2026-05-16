@@ -54,7 +54,7 @@ def run_backup(keep_days: int = 7, dry_run: bool = False, config_path: str | Non
     # 讀取組態
     if config_path is None:
         config_path = str(Path(__file__).resolve().parent.parent / 'config.ini')
-    cfg = configparser.ConfigParser()
+    cfg = configparser.RawConfigParser()
     cfg.read(config_path, encoding='utf-8')
 
     db_host = cfg.get('postgresql', 'host', fallback='localhost')

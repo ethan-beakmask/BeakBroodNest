@@ -31,7 +31,7 @@ def init_engine(config_path: str = None, db_url: str = None):
     if db_url is None:
         if config_path is None:
             config_path = str(Path(__file__).resolve().parent.parent / 'config.ini')
-        cfg = configparser.ConfigParser()
+        cfg = configparser.RawConfigParser()
         cfg.read(config_path, encoding='utf-8')
         pg = cfg['postgresql']
         user = quote_plus(pg['username'])

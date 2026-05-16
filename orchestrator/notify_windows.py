@@ -22,9 +22,9 @@ except ImportError:
     sys.exit(1)
 
 
-def _find_config() -> configparser.ConfigParser:
+def _find_config() -> configparser.RawConfigParser:
     """搜尋 config.ini（最多向上 5 層）"""
-    cfg = configparser.ConfigParser()
+    cfg = configparser.RawConfigParser()
     search = Path(__file__).resolve().parent
     for _ in range(5):
         candidate = search / 'config.ini'

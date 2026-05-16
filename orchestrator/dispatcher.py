@@ -36,7 +36,7 @@ WRAPPER_PATH = os.path.join(os.path.dirname(__file__), 'wrapper.sh')
 def _load_kb_url() -> str:
     """從 config.ini 讀取 BeakBroodNest HTTP base URL"""
     config_path = Path(__file__).resolve().parent.parent / 'config.ini'
-    cfg = configparser.ConfigParser()
+    cfg = configparser.RawConfigParser()
     cfg.read(str(config_path), encoding='utf-8')
     host = cfg.get('flask', 'host', fallback='192.168.0.16')
     port = cfg.getint('flask', 'port', fallback=5170)

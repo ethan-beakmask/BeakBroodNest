@@ -150,7 +150,7 @@ def main():
     identity_str = args.identity
     if not identity_str:
         try:
-            cfg = configparser.ConfigParser()
+            cfg = configparser.RawConfigParser()
             cfg.read(config_path, encoding='utf-8')
             if cfg.has_section('identity'):
                 project_id = cfg.get('identity', 'project_id', fallback='')

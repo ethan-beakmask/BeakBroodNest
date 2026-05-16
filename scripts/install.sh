@@ -283,7 +283,7 @@ if [ "$ACTION" = "update" ]; then
     if [ -f "$INSTALL_DIR/config.ini" ] && [ -x "$INSTALL_DIR/venv/bin/python3" ]; then
         CFG_VARS=$("$INSTALL_DIR/venv/bin/python3" - "$INSTALL_DIR/config.ini" <<'PYEOF'
 import configparser, shlex, sys
-c = configparser.ConfigParser()
+c = configparser.RawConfigParser()
 c.read(sys.argv[1])
 if c.has_section('postgresql'):
     s = c['postgresql']

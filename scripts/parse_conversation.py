@@ -90,7 +90,7 @@ def _candidate_projects_dirs() -> List[str]:
         for cfg_path in cfg_paths:
             if not os.path.isfile(cfg_path):
                 continue
-            cp = configparser.ConfigParser()
+            cp = configparser.RawConfigParser()
             cp.read(cfg_path, encoding='utf-8')
             if cp.has_option('pipeline', 'claude_projects_dir'):
                 v = cp.get('pipeline', 'claude_projects_dir').strip()

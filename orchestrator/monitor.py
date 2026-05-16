@@ -109,7 +109,7 @@ def kill_tmux_pane(pane_id: str) -> bool:
 def load_relay_config(config_path: str = RUNTIME_CONFIG) -> dict:
     """從 config.ini [relay] 讀取 relay 設定"""
     import configparser
-    cfg = configparser.ConfigParser()
+    cfg = configparser.RawConfigParser()
     if os.path.exists(config_path):
         cfg.read(config_path, encoding='utf-8')
     relay = {}

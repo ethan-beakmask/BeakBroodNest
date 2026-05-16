@@ -804,7 +804,7 @@ def main():
     if config_path is None:
         config_path = str(Path(__file__).resolve().parent.parent / 'config.ini')
 
-    cfg = configparser.ConfigParser()
+    cfg = configparser.RawConfigParser()
     cfg.read(config_path, encoding='utf-8')
 
     # 設定 logging
