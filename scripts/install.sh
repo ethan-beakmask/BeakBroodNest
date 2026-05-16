@@ -100,6 +100,126 @@ get_atom_count() {
     sudo -u postgres psql -d "$DB_NAME" -t -c "SELECT count(*) FROM knowledge_atoms;" 2>/dev/null | tr -d ' \n' || echo "N/A"
 }
 
+# 決定安裝目錄擁有者，並判斷 AI 對話分析 pipeline 是否啟用
+#
+# 影響：
+#   1. 目錄擁有者 -> /etc/crontab 自動寫入的 user 欄位
+#   2. config.ini [pipeline] claude_projects_dir -> db_importer 找 Claude Code 對話的路徑
+#
+# 結果寫入兩個全域變數：
+#   INSTALL_OWNER    最終 chown 目標（root / 實際使用者）
+#   PIPELINE_DISABLED  非空表示純白板模式，不寫 claude_projects_dir
+#
+# 決策順序：
+#   - 環境變數 INSTALL_OWNER 直接採用（自動化部署）
+#   - SUDO_USER 非 root 且存在 -> 自動採用
+#   - 互動詢問：列出 /home 下偵測到 ~/.claude/projects 的候選 + 純白板選項
+#   - 非互動且無 SUDO_USER -> root（純白板模式），印警告
+detect_install_owner() {
+    INSTALL_OWNER="${INSTALL_OWNER:-}"
+    PIPELINE_DISABLED=""
+
+    if [ -n "$INSTALL_OWNER" ]; then
+        if [ "$INSTALL_OWNER" = "root" ]; then
+            PIPELINE_DISABLED=1
+        elif ! id "$INSTALL_OWNER" &>/dev/null; then
+            log_error "INSTALL_OWNER='$INSTALL_OWNER' 不存在"
+            exit 1
+        fi
+        log_info "安裝擁有者: $INSTALL_OWNER (由環境變數指定)"
+        return
+    fi
+
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] && id "$SUDO_USER" &>/dev/null; then
+        INSTALL_OWNER="$SUDO_USER"
+        log_info "安裝擁有者: $INSTALL_OWNER (由 SUDO_USER 偵測)"
+        return
+    fi
+
+    if [ ! -t 0 ]; then
+        log_warn "非互動環境且無 SUDO_USER，安裝擁有者保留為 root"
+        log_warn "AI 對話分析將停用，僅可使用白板功能"
+        log_warn "完整模式請以 INSTALL_OWNER=<使用者> 環境變數重跑"
+        INSTALL_OWNER="root"
+        PIPELINE_DISABLED=1
+        return
+    fi
+
+    echo ""
+    echo "  ┌─────────────────────────────────────────────────────────────┐"
+    echo "  │ 安裝模式選擇                                                │"
+    echo "  ├─────────────────────────────────────────────────────────────┤"
+    echo "  │ 完整模式：分析 Claude Code 對話 + 白板筆記                  │"
+    echo "  │   需指定 Claude Code 使用者，pipeline 會讀取                │"
+    echo "  │   /home/<user>/.claude/projects/ 內的對話紀錄               │"
+    echo "  │                                                             │"
+    echo "  │ 純白板模式：僅使用白板筆記功能                              │"
+    echo "  │   不分析 AI 對話，適合純當記事本/知識白板使用               │"
+    echo "  │   隨時可手動編輯 config.ini 啟用完整模式（見下方說明）      │"
+    echo "  └─────────────────────────────────────────────────────────────┘"
+    echo ""
+
+    local candidates=()
+    while IFS= read -r h; do
+        local u
+        u=$(basename "$h")
+        if [ -d "$h/.claude/projects" ]; then
+            candidates+=("$u")
+        fi
+    done < <(find /home -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort)
+
+    if [ ${#candidates[@]} -eq 0 ]; then
+        echo "  未偵測到任何 /home/*/.claude/projects 目錄"
+        echo "    [1] 純白板模式（推薦）"
+        echo "    [2] 手動輸入 Claude Code 使用者帳號"
+        echo ""
+        while true; do
+            read -p "  選擇 [1-2]: " choice
+            case "$choice" in
+                1)
+                    INSTALL_OWNER="root"
+                    PIPELINE_DISABLED=1
+                    log_info "已選擇純白板模式"
+                    return ;;
+                2)
+                    read -p "  使用者帳號: " manual_user
+                    if id "$manual_user" &>/dev/null; then
+                        INSTALL_OWNER="$manual_user"
+                        log_info "安裝擁有者: $INSTALL_OWNER (手動輸入)"
+                        return
+                    else
+                        echo "  使用者 '$manual_user' 不存在"
+                    fi ;;
+                *) echo "  無效選項" ;;
+            esac
+        done
+    fi
+
+    echo "  偵測到以下 Claude Code 使用者："
+    local i=1
+    for u in "${candidates[@]}"; do
+        echo "    [$i] $u  (/home/$u/.claude/projects)"
+        i=$((i+1))
+    done
+    echo "    [s] 純白板模式（不分析 AI 對話）"
+    echo ""
+    while true; do
+        read -p "  選擇 [1-${#candidates[@]}/s]: " choice
+        if [ "$choice" = "s" ] || [ "$choice" = "S" ]; then
+            INSTALL_OWNER="root"
+            PIPELINE_DISABLED=1
+            log_info "已選擇純白板模式"
+            return
+        fi
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#candidates[@]} ]; then
+            INSTALL_OWNER="${candidates[$((choice-1))]}"
+            log_info "安裝擁有者: $INSTALL_OWNER"
+            return
+        fi
+        echo "  無效選項，請重新輸入"
+    done
+}
+
 # === 參數處理 ===
 ACTION="fresh"
 
@@ -545,6 +665,12 @@ else
 fi
 
 
+# 在 [3/7] clone 完成後立即決定擁有者，因為 [5/7] 寫 config.ini 時需要它
+# 才能正確設定 [pipeline] claude_projects_dir。實際 chown 延後到 [7/7] 之後執行，
+# 避免 [4]/[5]/[6] 中 root 寫入的新檔案讓擁有權混亂。
+detect_install_owner
+
+
 # === [4/7] Python 虛擬環境 ===
 log_step "4/7" "建立 Python 虛擬環境..."
 
@@ -568,6 +694,25 @@ else
     SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
     RELAY_TOKEN=$(python3 -c "import secrets; print(secrets.token_hex(16))")
 
+    if [ -n "$PIPELINE_DISABLED" ]; then
+        # 純白板模式：以註解形式留下完整模式啟用說明，使用者隨時可手動補上
+        PIPELINE_SECTION="[pipeline]
+; ──────────────────────────────────────────────────────────────────
+; 純白板模式 - AI 對話分析已停用
+; ──────────────────────────────────────────────────────────────────
+; 若要啟用「分析 Claude Code 對話 -> 萃取為知識原子」的完整功能：
+;   1. 移除以下這行開頭的分號，並改成你的實際路徑
+;      （路徑為 Claude Code 對話檔目錄，通常是 ~/.claude/projects）
+;   2. 將安裝目錄擁有者改為該使用者：
+;        sudo chown -R <使用者>:<使用者> $INSTALL_DIR
+;   3. 重新匯入：cd $INSTALL_DIR && sudo -u <使用者> venv/bin/python scripts/db_importer.py -convertall
+;
+; claude_projects_dir = /home/YOUR-USER/.claude/projects"
+    else
+        PIPELINE_SECTION="[pipeline]
+claude_projects_dir = /home/${INSTALL_OWNER}/.claude/projects"
+    fi
+
     cat > "$INSTALL_DIR/config.ini" << CFGEOF
 [postgresql]
 host = localhost
@@ -589,6 +734,8 @@ token = $RELAY_TOKEN
 
 [logging]
 level = INFO
+
+${PIPELINE_SECTION}
 CFGEOF
 
     chmod 600 "$INSTALL_DIR/config.ini"
@@ -801,6 +948,14 @@ log_info "啟動 BeakBroodNest..."
 systemctl restart "$SERVICE_NAME"
 health_check || true
 
+# 統一處理目錄擁有權
+# 注意：systemd unit 與 cron 條目皆以 root 跑（service 沒 User= 欄位、cron 已從 INSTALL_DIR
+# 擁有者反推），所以即使 chown 給非 root 使用者，service 仍能讀寫 config.ini（root 可讀任何檔）
+if [ -n "$INSTALL_OWNER" ] && [ "$INSTALL_OWNER" != "root" ]; then
+    chown -R "$INSTALL_OWNER:$INSTALL_OWNER" "$INSTALL_DIR"
+    log_info "目錄擁有者已設為 $INSTALL_OWNER"
+fi
+
 echo ""
 echo "============================================"
 log_info "全新安裝完成"
@@ -808,6 +963,17 @@ echo ""
 echo "  URL:     http://${SERVER_IP}:${NGINX_PORT}/beakbroodnest/login"
 echo "  帳號:    ${AUTH_USER}"
 echo "  原子數:  $(get_atom_count)"
+if [ -n "$PIPELINE_DISABLED" ]; then
+echo "  模式:    純白板模式（AI 對話分析停用）"
+echo ""
+echo "  啟用完整模式（分析 Claude Code 對話）的方法："
+echo "    1. 編輯 $INSTALL_DIR/config.ini 的 [pipeline] 段"
+echo "    2. 取消 'claude_projects_dir = ...' 那行的註解並填入正確路徑"
+echo "    3. sudo chown -R <使用者>:<使用者> $INSTALL_DIR"
+echo "    4. sudo systemctl restart $SERVICE_NAME"
+else
+echo "  模式:    完整模式（擁有者: $INSTALL_OWNER，pipeline 已啟用）"
+fi
 echo ""
 echo "  服務管理:"
 echo "    sudo bash $INSTALL_DIR/scripts/install.sh --status"

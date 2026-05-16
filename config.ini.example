@@ -22,3 +22,22 @@ token = CHANGE-ME-TO-RANDOM-TOKEN
 
 [logging]
 level = INFO
+
+# ============================================================
+# Pipeline（AI 對話分析）設定
+# ============================================================
+# 此區段為「分析 Claude Code 對話 -> 萃取為知識原子」功能所需。
+# 不設定或註解此段不影響白板筆記功能（純白板模式）。
+#
+# claude_projects_dir：
+#   Claude Code 存放對話檔的目錄，通常為 ~/.claude/projects
+#   db_importer.py / parse_conversation.py 會讀取此路徑下的 JSONL 對話
+#
+# 注意：
+#   - cron 跑此 pipeline 時以「BeakBroodNest 安裝目錄擁有者」身分執行，
+#     該使用者必須有權讀取此路徑
+#   - 若 BeakBroodNest 為 root 擁有，pipeline 會去找 /root/.claude/projects
+#     而非實際使用者的目錄；請執行 chown 改為實際使用者
+# ============================================================
+[pipeline]
+claude_projects_dir = /home/YOUR-USER/.claude/projects
