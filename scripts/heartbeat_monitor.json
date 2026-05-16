@@ -1,0 +1,55 @@
+{
+    "_comment": "heartbeat_monitor 監控的 heartbeat 清單。max_age_seconds 為從上次更新算起可接受的最大延遲，超過即告警。alert_cooldown_seconds 為同一項目重複告警的冷卻時間（避免每 30 分鐘 spam）。",
+    "heartbeat_dir": "/opt/tmp/heartbeat",
+    "default_alert_cooldown_seconds": 21600,
+    "items": [
+        {
+            "name": "nightly_pipeline",
+            "file": "nightly_pipeline.ok",
+            "max_age_seconds": 93600,
+            "description": "每日復盤 P0~P3（預期每日 08:45，容忍延遲 26h）"
+        },
+        {
+            "name": "scheduler",
+            "file": "scheduler.ok",
+            "max_age_seconds": 900,
+            "description": "BBN 集中式排程器（預期 5 分鐘 tick，容忍 15 分鐘）"
+        },
+        {
+            "name": "orchestrator-monitor",
+            "file": "orchestrator-monitor.ok",
+            "max_age_seconds": 300,
+            "description": "Orchestrator 監控（預期 1 分鐘 tick，容忍 5 分鐘）"
+        },
+        {
+            "name": "db_importer",
+            "file": "db_importer.ok",
+            "max_age_seconds": 1800,
+            "description": "JSONL 增量匯入 PostgreSQL（預期 10 分鐘 tick，容忍 30 分鐘）"
+        },
+        {
+            "name": "embed_worker",
+            "file": "embed_worker",
+            "max_age_seconds": 600,
+            "description": "Embedding worker（預期 1 分鐘 tick，容忍 10 分鐘）"
+        },
+        {
+            "name": "pg_backup",
+            "file": "pg_backup.ok",
+            "max_age_seconds": 93600,
+            "description": "PostgreSQL 備份（預期每日 02:30，容忍 26h）"
+        },
+        {
+            "name": "vitality_decay",
+            "file": "vitality_decay.ok",
+            "max_age_seconds": 93600,
+            "description": "原子活力衰減（預期每日 03:00，容忍 26h）"
+        },
+        {
+            "name": "uploads_gc",
+            "file": "uploads_gc.ok",
+            "max_age_seconds": 93600,
+            "description": "上傳檔案孤兒清理（預期每日 03:30，容忍 26h）"
+        }
+    ]
+}

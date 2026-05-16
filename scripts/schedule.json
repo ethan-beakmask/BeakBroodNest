@@ -34,6 +34,14 @@
             "timeout_seconds": 10800
         },
         {
+            "name": "heartbeat_monitor",
+            "description": "Heartbeat 監控（每 30 分鐘檢查所有排程的 heartbeat，超期則寫 alert 到 BBN inbox）",
+            "command": ["{venv_python}", "{scripts_dir}/heartbeat_monitor.py", "--check"],
+            "cron": "*/30 * * * *",
+            "enabled": true,
+            "timeout_seconds": 60
+        },
+        {
             "name": "p1_scan_frequent",
             "description": "P1 訊號掃描高頻版（每 10 分鐘，incremental 掃 p1_scanned_at IS NULL 的 turn）",
             "command": ["{venv_python}", "{scripts_dir}/signal_scanner.py", "--db"],
