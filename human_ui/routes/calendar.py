@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 from core.db import session_scope
 from core.models import (
     Canvas, CanvasAtom, AtomEntry, EntrySchemaField, EntryFieldValue,
+    CanvasStandaloneEntry, StandaloneEntry, EntrySchema,
 )
 
 bp = Blueprint('calendar', __name__)
@@ -203,6 +204,68 @@ def calendar_events():
                 'urgency': info.get('urgency', ''),
                 'planned_end': info.get('planned_end', ''),
             })
+
+        # ----- standalone_entries：白板獨立 task entry（P3a 新增物件，原本沒納入） -----
+        se_rows = (
+            s.query(StandaloneEntry, CanvasStandaloneEntry, Canvas, EntrySchema)
+            .join(CanvasStandaloneEntry,
+                  CanvasStandaloneEntry.standalone_entry_id == StandaloneEntry.id)
+            .join(Canvas, Canvas.id == CanvasStandaloneEntry.canvas_id)
+            .join(EntrySchema, EntrySchema.id == StandaloneEntry.schema_id)
+            .filter(
+                StandaloneEntry.is_deleted == False,  # noqa: E712
+                EntrySchema.code == 'task',
+                Canvas.is_archived == False,  # noqa: E712
+            )
+            .all()
+        )
+
+        for se, cse, canvas, schema in se_rows:
+            if canvas.is_project and not include_project:
+                continue
+            if (not canvas.is_project) and not include_free:
+                continue
+            if slug_set is not None and canvas.slug not in slug_set:
+                continue
+
+            fv = se.field_values or {}
+            ps_raw = (fv.get('planned_start') or '').strip()
+            if not ps_raw:
+                continue
+            try:
+                start_dt = datetime.datetime.fromisoformat(ps_raw)
+            except ValueError:
+                continue
+            if start_dt < dt_from or start_dt > dt_to:
+                continue
+
+            entry_text = (se.raw_text or '').strip() or (se.summary or '').strip()
+            title = entry_text[:80] if entry_text else f'#se{se.id}'
+
+            events.append({
+                'entry_id': se.id,
+                'atom_id': None,
+                'standalone_entry_id': se.id,
+                'source': 'standalone_entry',
+                'title': title,
+                'raw_text': se.raw_text or '',
+                'atom_title': '',
+                'schema_code': schema.code,
+                'schema_icon': schema.icon or '',
+                'schema_color': schema.color or '',
+                'date': start_dt.date().isoformat(),
+                'datetime': start_dt.isoformat(),
+                'canvas_slug': canvas.slug,
+                'canvas_name': canvas.name,
+                'is_project': canvas.is_project,
+                'status': str(fv.get('status') or ''),
+                'urgency': str(fv.get('urgency') or ''),
+                'planned_end': str(fv.get('planned_end') or ''),
+            })
+
+        # 既有 events 都是 atom_entry，補上 source 標記方便前端區分
+        for ev in events:
+            ev.setdefault('source', 'atom_entry')
 
         events.sort(key=lambda x: (x['date'], x['title']))
         return jsonify({

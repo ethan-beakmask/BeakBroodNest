@@ -61,9 +61,8 @@ function navMenu() {
             var m = path.match(/^\/beakbroodnest\/(canvas|project)\/([A-Za-z0-9_-]+)/);
             if (m) {
                 slug = m[2];
-            } else if (path.match(/^\/beakbroodnest\/calendar/)) {
-                // 行事曆頁：從 ?canvas=<slug> 取焦點，calendar 會把「只勾一個專案」
-                // 同步寫到 URL，這樣切回白板/專案能延續焦點
+            } else if (path.match(/^\/beakbroodnest\/(calendar|todos)/)) {
+                // 行事曆 / 待辦頁：從 ?canvas=<slug> 取焦點
                 try {
                     var sp = new URLSearchParams(window.location.search);
                     var c = (sp.get('canvas') || '').trim();
@@ -95,6 +94,10 @@ function navMenu() {
                     // 行事曆：把焦點 slug 帶過去
                     else if (url.match(/^\/beakbroodnest\/calendar/)) {
                         item._resolvedUrl = '/beakbroodnest/calendar?canvas=' + encodeURIComponent(slug);
+                    }
+                    // 待辦：把焦點 slug 帶過去
+                    else if (url.match(/^\/beakbroodnest\/todos/)) {
+                        item._resolvedUrl = '/beakbroodnest/todos?canvas=' + encodeURIComponent(slug);
                     }
                 }
 

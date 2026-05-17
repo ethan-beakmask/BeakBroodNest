@@ -836,6 +836,7 @@ function calendarApp() {
         onEventDragStart(e, ev) {
             this.dragState = {
                 entry_id: ev.entry_id,
+                source: ev.source || 'atom_entry',
                 origIso: ev.date,
                 origTime: this._extractTime(ev.datetime),
             };
@@ -864,12 +865,17 @@ function calendarApp() {
             this.dragState = null;
             if (!ds || !iso || iso === ds.origIso) return;
             const newDt = iso + 'T' + (ds.origTime || '00:00');
-            await this._patchEntryDatetime(ds.entry_id, 'planned_start', newDt, ds.origIso);
+            await this._patchEntryDatetime(ds.entry_id, ds.source, 'planned_start', newDt, ds.origIso);
         },
-        async _patchEntryDatetime(entry_id, fieldName, newDtStr, origIso) {
+        _entryApiUrl(entry_id, source) {
+            return source === 'standalone_entry'
+                ? '/beakbroodnest/api/standalone-entries/' + entry_id
+                : '/beakbroodnest/api/entries/' + entry_id;
+        },
+        async _patchEntryDatetime(entry_id, source, fieldName, newDtStr, origIso) {
             this.loadingMsg = '更新中…';
             try {
-                const r = await fetch('/beakbroodnest/api/entries/' + entry_id, {
+                const r = await fetch(this._entryApiUrl(entry_id, source), {
                     method: 'PUT',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ field_values: { [fieldName]: newDtStr } }),
@@ -914,6 +920,7 @@ function calendarApp() {
                 saving: false,
                 error: '',
                 entry_id: ev.entry_id,
+                source: ev.source || 'atom_entry',
                 atom_id: ev.atom_id,
                 canvas_slug: ev.canvas_slug,
                 canvas_name: ev.canvas_name,
@@ -947,7 +954,7 @@ function calendarApp() {
                 if (ed.raw_text !== ed.origRawText) {
                     body.raw_text = ed.raw_text;
                 }
-                const r = await fetch('/beakbroodnest/api/entries/' + ed.entry_id, {
+                const r = await fetch(this._entryApiUrl(ed.entry_id, ed.source), {
                     method: 'PUT',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(body),
@@ -958,20 +965,25 @@ function calendarApp() {
                 }
                 // 樂觀更新本地 events
                 const newTitle = (ed.raw_text || '').trim().slice(0, 80) || ed.atom_title;
-                this.events = this.events.map(ev => {
-                    if (ev.entry_id !== ed.entry_id) return ev;
-                    const newDt = fv.planned_start || ev.datetime;
-                    const newDate = newDt ? newDt.split('T')[0] : ev.date;
-                    return { ...ev,
-                        title: newTitle,
-                        raw_text: ed.raw_text,
-                        datetime: newDt,
-                        date: newDate,
-                        status: ed.status,
-                        urgency: ed.urgency,
-                        planned_end: fv.planned_end,
-                    };
-                });
+                if (!fv.planned_start) {
+                    // 清空 planned_start → 該事件不再屬於 calendar，移除（自動歸 /todos）
+                    this.events = this.events.filter(ev => ev.entry_id !== ed.entry_id);
+                } else {
+                    this.events = this.events.map(ev => {
+                        if (ev.entry_id !== ed.entry_id) return ev;
+                        const newDt = fv.planned_start;
+                        const newDate = newDt.split('T')[0];
+                        return { ...ev,
+                            title: newTitle,
+                            raw_text: ed.raw_text,
+                            datetime: newDt,
+                            date: newDate,
+                            status: ed.status,
+                            urgency: ed.urgency,
+                            planned_end: fv.planned_end,
+                        };
+                    });
+                }
                 ed.saving = false;
                 this.closeEditor();
             } catch (err) {

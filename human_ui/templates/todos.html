@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待辦 - BeakBroodNest</title>
+    <link rel="icon" href="/beakbroodnest/static/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/beakbroodnest/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+    <script defer src="/beakbroodnest/static/vendor/alpine.min.js"></script>
+    <style>
+        body { background:#f8f9fa; }
+
+        .todos-layout { display:grid; grid-template-columns:240px 1fr; gap:10px; }
+        @media (max-width: 900px) { .todos-layout { grid-template-columns:1fr; } }
+
+        .todos-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+            background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            padding:8px 12px; margin-bottom:10px; }
+        .todos-side { background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            padding:10px; font-size:12px; align-self:start; position:sticky; top:8px; }
+        .todos-side-group { margin-bottom:14px; }
+        .todos-side-group:last-child { margin-bottom:0; }
+        .todos-side-group .grp-title { font-weight:600; color:#6c757d; font-size:11px;
+            text-transform:uppercase; letter-spacing:0.3px; margin-bottom:4px;
+            display:flex; justify-content:space-between; align-items:center; }
+        .todos-side-group label { display:block; font-size:12px; line-height:1.7;
+            cursor:pointer; user-select:none; }
+        .todos-side-list { max-height:240px; overflow-y:auto;
+            border:1px solid #e9ecef; border-radius:3px; padding:4px 8px; background:#fafafa; }
+
+        .todos-table { background:#fff; border:1px solid #dee2e6; border-radius:4px;
+            overflow:auto; }
+        .todos-table table { width:100%; font-size:12px; margin:0;
+            border-collapse:collapse; }
+        .todos-table thead th { background:#f1f3f5; color:#495057; font-weight:600;
+            padding:6px 8px; text-align:left; border-bottom:1px solid #e9ecef;
+            position:sticky; top:0; z-index:1; font-size:11px; }
+        .todos-table thead th.sortable { cursor:pointer; user-select:none; }
+        .todos-table thead th.sortable:hover { background:#e9ecef; }
+        .todos-table tbody td { padding:6px 8px; border-bottom:1px solid #f1f3f5;
+            vertical-align:top; }
+        .todos-table tbody tr:hover { background:#f8f9fa; }
+        .todos-table tbody tr.is-done { opacity:0.55; }
+        .todos-table tbody tr.is-done td.task-text { text-decoration:line-through; }
+        .src-badge { display:inline-block; padding:1px 6px; font-size:10px;
+            border-radius:2px; font-weight:600; line-height:1.4; }
+        .src-badge.src-atom { background:#dbeafe; color:#1e3a8a; }
+        .src-badge.src-se { background:#fef3c7; color:#92400e; }
+        .status-pill { display:inline-block; padding:1px 6px; font-size:10px;
+            border-radius:2px; line-height:1.4; }
+        .status-pill.s-planning { background:#e9ecef; color:#495057; }
+        .status-pill.s-in_progress { background:#dbeafe; color:#1e3a8a; }
+        .status-pill.s-paused { background:#fef3c7; color:#92400e; }
+        .status-pill.s-completed { background:#d1fae5; color:#065f46; }
+        .status-pill.s-cancelled { background:#f3f4f6; color:#6b7280; }
+        .urgency-pill { display:inline-block; padding:0 4px; font-size:10px;
+            border-radius:2px; font-weight:700; line-height:1.4; }
+        .urgency-pill.u-H { background:#fee2e2; color:#991b1b; }
+        .urgency-pill.u-M { background:#fef3c7; color:#92400e; }
+        .urgency-pill.u-L { background:#e0e7ff; color:#3730a3; }
+
+        .todos-bar-bottom { background:#fff; border:1px solid #dee2e6;
+            border-radius:4px; padding:8px 12px; margin-top:10px;
+            display:flex; align-items:center; gap:10px; }
+        .todos-bar-bottom .btn { font-size:12px; padding:3px 10px; }
+        .todos-empty { padding:20px; text-align:center; color:#adb5bd; font-size:13px; }
+
+        .todos-link { color:#3b82f6; text-decoration:none; }
+        .todos-link:hover { text-decoration:underline; }
+    </style>
+</head>
+<body>
+
+<div x-data="todosApp()" x-init="init()">
+
+    <!-- Navbar -->
+    <nav class="navbar navbar-light bg-white border-bottom">
+        <div class="container-fluid">
+            <div class="d-flex align-items-center gap-3">
+                <a class="navbar-brand mb-0" href="/beakbroodnest/"
+                   style="font-weight:700;font-size:15px;color:#3b82f6;letter-spacing:-0.3px;">BeakBroodNest</a>
+                {% include 'partials/nav_menu.html' %}
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted" style="font-size:12px;" x-text="loadingMsg"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-2">
+
+        <!-- Toolbar -->
+        <div class="todos-toolbar">
+            <strong style="font-size:14px;">待辦清單</strong>
+            <span style="font-size:11px;color:#6c757d;">無預計開始時間的 ;;td / ;;cal</span>
+            <div class="ms-auto d-flex align-items-center gap-3" style="font-size:12px;">
+                <label><input type="checkbox" x-model="includeDone" @change="reload()"> 包含已完成</label>
+                <label>
+                    排序：
+                    <select x-model="order" @change="reload()" style="font-size:12px;">
+                        <option value="desc">最新建立</option>
+                        <option value="asc">最舊建立</option>
+                    </select>
+                </label>
+                <span x-text="'共 ' + items.length + ' 筆'" style="color:#6c757d;"></span>
+            </div>
+        </div>
+
+        <div class="todos-layout">
+
+        <!-- 左側篩選欄 -->
+        <aside class="todos-side">
+            <div class="todos-side-group">
+                <div class="grp-title">類別</div>
+                <label><input type="checkbox" x-model="includeProject" @change="reload()"> 專案白板</label>
+                <label><input type="checkbox" x-model="includeFree" @change="reload()"> 自由白板</label>
+            </div>
+
+            <div class="todos-side-group">
+                <div class="grp-title">
+                    <span>單一白板</span>
+                    <span x-show="canvasSlug">
+                        <a href="#" @click.prevent="canvasSlug=''; reload()">清除</a>
+                    </span>
+                </div>
+                <select x-model="canvasSlug" @change="reload()" style="width:100%; font-size:12px;">
+                    <option value="">（全部白板）</option>
+                    <optgroup label="專案白板">
+                        <template x-for="c in projectCanvases" :key="c.slug">
+                            <option :value="c.slug" x-text="c.name"></option>
+                        </template>
+                    </optgroup>
+                    <optgroup label="自由白板">
+                        <template x-for="c in freeCanvases" :key="c.slug">
+                            <option :value="c.slug" x-text="c.name"></option>
+                        </template>
+                    </optgroup>
+                </select>
+            </div>
+        </aside>
+
+        <!-- 右主區 -->
+        <main>
+            <div class="todos-table">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:30px;">
+                                <input type="checkbox" :checked="allSelected"
+                                       @change="toggleAll($event.target.checked)">
+                            </th>
+                            <th style="width:60px;">來源</th>
+                            <th style="width:64px;">nodeId</th>
+                            <th style="width:90px;">編號</th>
+                            <th>標題 / 任務文字</th>
+                            <th style="width:120px;">白板</th>
+                            <th style="width:80px;">狀態</th>
+                            <th style="width:50px;">急</th>
+                            <th style="width:70px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="it in items" :key="it.source + '-' + it.entry_id">
+                            <tr :class="(it.status==='completed'||it.status==='cancelled') ? 'is-done':''">
+                                <td>
+                                    <input type="checkbox"
+                                           :value="rowKey(it)"
+                                           x-model="selectedKeys">
+                                </td>
+                                <td>
+                                    <span class="src-badge"
+                                          :class="it.source==='atom_entry' ? 'src-atom':'src-se'"
+                                          x-text="it.source==='atom_entry' ? '卡片':'白板'"></span>
+                                </td>
+                                <td x-text="it.node_id || '-'" style="color:#6c757d;font-family:monospace;font-size:11px;"></td>
+                                <td style="color:#6c757d;font-family:monospace;font-size:11px;">
+                                    <template x-if="it.source==='atom_entry'">
+                                        <span x-text="'a'+it.atom_id+'/e'+it.entry_id"></span>
+                                    </template>
+                                    <template x-if="it.source==='standalone_entry'">
+                                        <span x-text="'se'+it.entry_id"></span>
+                                    </template>
+                                </td>
+                                <td class="task-text">
+                                    <div x-text="it.title" style="font-weight:500;"></div>
+                                    <div x-text="(it.raw_text||'').slice(0,120)"
+                                         x-show="it.source==='atom_entry' && it.raw_text"
+                                         style="color:#6c757d;font-size:11px;"></div>
+                                </td>
+                                <td>
+                                    <a class="todos-link"
+                                       :href="'/beakbroodnest/canvas/' + it.canvas_slug"
+                                       x-text="it.canvas_name"></a>
+                                    <span x-show="it.canvas_is_project"
+                                          style="font-size:9px;color:#3b82f6;">★</span>
+                                </td>
+                                <td>
+                                    <span class="status-pill" :class="'s-'+it.status"
+                                          x-text="statusLabel(it.status)"></span>
+                                </td>
+                                <td>
+                                    <span class="urgency-pill" :class="'u-'+it.urgency"
+                                          x-text="it.urgency"></span>
+                                </td>
+                                <td>
+                                    <a class="todos-link"
+                                       :href="'/beakbroodnest/canvas/' + it.canvas_slug"
+                                       title="到白板">開啟</a>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                <div class="todos-empty" x-show="items.length===0 && !loadingMsg">無待辦項目</div>
+            </div>
+
+            <!-- 底部多選操作列 -->
+            <div class="todos-bar-bottom">
+                <span x-text="'已選 ' + selectedKeys.length + ' 項'" style="font-size:12px;color:#6c757d;"></span>
+                <button class="btn btn-outline-danger btn-sm"
+                        :disabled="selectedKeys.length===0"
+                        @click="doDelete()">軟刪</button>
+                <span style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+                    <span style="font-size:12px;">移動到：</span>
+                    <select x-model="moveTargetSlug" style="font-size:12px;">
+                        <option value="">（選白板）</option>
+                        <optgroup label="專案白板">
+                            <template x-for="c in projectCanvases" :key="'mv-'+c.slug">
+                                <option :value="c.slug" x-text="c.name"></option>
+                            </template>
+                        </optgroup>
+                        <optgroup label="自由白板">
+                            <template x-for="c in freeCanvases" :key="'mv-'+c.slug">
+                                <option :value="c.slug" x-text="c.name"></option>
+                            </template>
+                        </optgroup>
+                    </select>
+                    <button class="btn btn-outline-primary btn-sm"
+                            :disabled="selectedKeys.length===0 || !moveTargetSlug"
+                            @click="doMove()">移動</button>
+                </span>
+            </div>
+        </main>
+
+        </div>
+    </div>
+</div>
+
+<script>
+function todosApp() {
+    return {
+        canvases: [],
+        items: [],
+        selectedKeys: [],
+        moveTargetSlug: '',
+        loadingMsg: '',
+        includeProject: true,
+        includeFree: true,
+        includeDone: false,
+        canvasSlug: '',
+        order: 'desc',
+
+        get projectCanvases() { return this.canvases.filter(c => c.is_project); },
+        get freeCanvases() { return this.canvases.filter(c => !c.is_project); },
+        get allSelected() {
+            return this.items.length > 0 && this.selectedKeys.length === this.items.length;
+        },
+
+        rowKey(it) { return it.source + ':' + it.entry_id; },
+
+        async init() {
+            // 從 URL 取 ?canvas=
+            try {
+                const sp = new URLSearchParams(window.location.search);
+                const c = (sp.get('canvas') || '').trim();
+                if (/^[A-Za-z0-9_-]+$/.test(c)) this.canvasSlug = c;
+            } catch (e) {}
+            await this.loadCanvases();
+            await this.reload();
+        },
+
+        async loadCanvases() {
+            try {
+                const r = await fetch('/beakbroodnest/todos/api/canvases');
+                if (r.ok) this.canvases = await r.json();
+            } catch (e) { console.error(e); }
+        },
+
+        async reload() {
+            this.loadingMsg = '載入中...';
+            this.selectedKeys = [];
+            const qs = new URLSearchParams({
+                include_project: this.includeProject ? '1' : '0',
+                include_free: this.includeFree ? '1' : '0',
+                include_done: this.includeDone ? '1' : '0',
+                order: this.order,
+            });
+            if (this.canvasSlug) qs.set('canvas_slug', this.canvasSlug);
+            try {
+                const r = await fetch('/beakbroodnest/todos/api/items?' + qs.toString());
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const data = await r.json();
+                this.items = data.items || [];
+            } catch (e) {
+                console.error(e);
+                this.items = [];
+            } finally {
+                this.loadingMsg = '';
+            }
+        },
+
+        toggleAll(checked) {
+            this.selectedKeys = checked ? this.items.map(it => this.rowKey(it)) : [];
+        },
+
+        _selectedItems() {
+            const set = new Set(this.selectedKeys);
+            return this.items.filter(it => set.has(this.rowKey(it)));
+        },
+
+        statusLabel(s) {
+            return {
+                planning: '規劃',
+                in_progress: '進行',
+                paused: '暫停',
+                completed: '完成',
+                cancelled: '取消',
+            }[s] || s || '-';
+        },
+
+        async doDelete() {
+            const sel = this._selectedItems();
+            if (sel.length === 0) return;
+            const atomCount = sel.filter(it => it.source === 'atom_entry').length;
+            const seCount = sel.filter(it => it.source === 'standalone_entry').length;
+            const msg = `將軟刪 ${sel.length} 筆（卡片 ${atomCount} / 白板 ${seCount}）。確定？`;
+            if (!confirm(msg)) return;
+            const body = {
+                items: sel.map(it => ({
+                    source: it.source,
+                    id: it.source === 'atom_entry' ? it.entry_id : it.entry_id,
+                })),
+            };
+            try {
+                const r = await fetch('/beakbroodnest/todos/api/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                await this.reload();
+            } catch (e) { alert('刪除失敗: ' + e.message); }
+        },
+
+        async doMove() {
+            const sel = this._selectedItems();
+            if (sel.length === 0 || !this.moveTargetSlug) return;
+            const target = this.canvases.find(c => c.slug === this.moveTargetSlug);
+            const msg = `將把 ${sel.length} 筆的 placement 移到「${target?.name || this.moveTargetSlug}」（碰多 placement 只移來源）。確定？`;
+            if (!confirm(msg)) return;
+            const body = {
+                target_canvas_slug: this.moveTargetSlug,
+                items: sel.map(it => ({
+                    source: it.source,
+                    id: it.entry_id,
+                    source_canvas_slug: it.canvas_slug,
+                })),
+            };
+            try {
+                const r = await fetch('/beakbroodnest/todos/api/move', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                await this.reload();
+            } catch (e) { alert('移動失敗: ' + e.message); }
+        },
+    };
+}
+</script>
+
+</body>
+</html>

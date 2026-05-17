@@ -9,6 +9,7 @@ from core.db import session_scope
 from core.models import (
     KnowledgeAtom, Canvas, CanvasAtom, UnifiedRelation,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
+    CanvasStandaloneEntry, StandaloneEntry,
 )
 
 bp = Blueprint('project', __name__)
@@ -155,6 +156,54 @@ def project_summary(slug):
                 'blockers': blockers,
             })
 
+        # ----- standalone_entries（白板獨立 task entry，P3a 新增物件） -----
+        se_rows = (
+            s.query(StandaloneEntry, CanvasStandaloneEntry)
+            .join(CanvasStandaloneEntry,
+                  CanvasStandaloneEntry.standalone_entry_id == StandaloneEntry.id)
+            .filter(
+                CanvasStandaloneEntry.canvas_id == canvas.id,
+                StandaloneEntry.is_deleted == False,  # noqa: E712
+                StandaloneEntry.schema_id == task_schema.id,
+            )
+            .all()
+        )
+        for se, _cse in se_rows:
+            fv = se.field_values or {}
+            status = str(fv.get('status') or 'planning')
+            urgency = str(fv.get('urgency') or 'M')
+            category = str(fv.get('category') or '')
+
+            if status in counts:
+                counts[status] += 1
+            urgency_counts[urgency] = urgency_counts.get(urgency, 0) + 1
+
+            entry_text = (se.raw_text or '').strip() or (se.summary or '').strip()
+            title = entry_text[:80] if entry_text else f'#se{se.id}'
+
+            items.append({
+                'atom_id': None,
+                'entry_id': se.id,
+                'standalone_entry_id': se.id,
+                'source': 'standalone_entry',
+                'title': title,
+                'description': se.raw_text or '',
+                'status': status,
+                'urgency': urgency,
+                'category': category,
+                'planned_start': str(fv.get('planned_start') or ''),
+                'planned_end': str(fv.get('planned_end') or ''),
+                'planned_duration': str(fv.get('planned_duration') or ''),
+                'actual_start': str(fv.get('actual_start') or ''),
+                'actual_end': str(fv.get('actual_end') or ''),
+                'is_blocked': False,
+                'blockers': [],
+            })
+
+        # 既有 atom-entry items 加 source 標記
+        for it in items:
+            it.setdefault('source', 'atom_entry')
+
         # urgency 排序: H > M > L, blocked 優先顯示
         urgency_order = {'H': 0, 'M': 1, 'L': 2}
         status_order = {'planning': 0, 'in_progress': 1, 'paused': 2,
@@ -200,8 +249,12 @@ def project_summary(slug):
             )
             children = []
             for item in group_items:
+                if item.get('source') == 'standalone_entry':
+                    node_id = f"se-{item['entry_id']}"
+                else:
+                    node_id = str(item['atom_id'])
                 children.append({
-                    'id': str(item['atom_id']),
+                    'id': node_id,
                     'label': item['title'],
                     'data': {
                         'status': item['status'],
@@ -210,7 +263,7 @@ def project_summary(slug):
                         'planned_end': item['planned_end'] or item['actual_end'] or item['planned_duration'] or None,
                         'actual_start': item['actual_start'] or None,
                         'actual_end': item['actual_end'] or None,
-                        'blocks': [str(tid) for tid in blocks_by_from.get(item['atom_id'], [])],
+                        'blocks': [str(tid) for tid in blocks_by_from.get(item['atom_id'], [])] if item.get('atom_id') else [],
                         'is_blocked': item['is_blocked'],
                         'category': item['category'],
                         'description': item['description'],
