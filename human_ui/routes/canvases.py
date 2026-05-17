@@ -14,7 +14,9 @@ from core.models import (
     CanvasGroup, CanvasTextbox, CanvasMindmapShell,
     Tag, atom_tags, canvas_group_members,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
+    StandaloneEntry, CanvasStandaloneEntry,
 )
+from core.tiptap_node_id import allocate_node_id
 from core import relations as rel_service
 
 bp = Blueprint('canvases', __name__)
@@ -174,6 +176,31 @@ def _build_canvas_snapshot(s, canvas_id):
             for r in tp_rows
         ]
 
+    # 獨立 entry（P3a：白板上與卡片同階層的 structuredEntry）
+    se_rows = (
+        s.query(CanvasStandaloneEntry, StandaloneEntry)
+        .join(StandaloneEntry, StandaloneEntry.id == CanvasStandaloneEntry.standalone_entry_id)
+        .filter(
+            CanvasStandaloneEntry.canvas_id == canvas_id,
+            StandaloneEntry.is_deleted == False,  # noqa: E712
+        )
+        .all()
+    )
+    snap_standalone_entries = []
+    for cse, se in se_rows:
+        snap_standalone_entries.append({
+            'id': cse.id,
+            'canvas_id': cse.canvas_id,
+            'standalone_entry_id': cse.standalone_entry_id,
+            'pos_x': cse.pos_x,
+            'pos_y': cse.pos_y,
+            'width': cse.width,
+            'height': cse.height,
+            'z_index': cse.z_index,
+            'visual_style': cse.visual_style,
+            'entry': se.to_dict(),
+        })
+
     return {
         'atoms': atoms,
         'groups': snap_groups,
@@ -181,6 +208,7 @@ def _build_canvas_snapshot(s, canvas_id):
         'textboxes': snap_textboxes,
         'mindmap_shells': snap_shells,
         'tree_parents': tree_parents,
+        'standalone_entries': snap_standalone_entries,
     }
 
 
@@ -469,6 +497,8 @@ def get_canvas(slug):
                 CanvasConnection.target_textbox_id,
                 CanvasConnection.source_entry_id,
                 CanvasConnection.target_entry_id,
+                CanvasConnection.source_standalone_entry_id,
+                CanvasConnection.target_standalone_entry_id,
                 CanvasConnection.unified_relation_id,
                 CanvasConnection.line_style,
                 CanvasConnection.color,
@@ -494,6 +524,8 @@ def get_canvas(slug):
             'target_textbox_id': cr.target_textbox_id,
             'source_entry_id': cr.source_entry_id,
             'target_entry_id': cr.target_entry_id,
+            'source_standalone_entry_id': cr.source_standalone_entry_id,
+            'target_standalone_entry_id': cr.target_standalone_entry_id,
             'unified_relation_id': cr.unified_relation_id,
             'line_style': cr.line_style,
             'color': cr.color,
@@ -537,6 +569,32 @@ def get_canvas(slug):
                 {'child_atom_id': r[0], 'parent_atom_id': r[1], 'sort_order': r[2]}
                 for r in tp_rows
             ]
+
+        # --- 9. 獨立 entry (P3a) ---
+        se_rows = (
+            s.query(CanvasStandaloneEntry, StandaloneEntry)
+            .join(StandaloneEntry, StandaloneEntry.id == CanvasStandaloneEntry.standalone_entry_id)
+            .filter(
+                CanvasStandaloneEntry.canvas_id == canvas_id,
+                StandaloneEntry.is_deleted == False,  # noqa: E712
+            )
+            .all()
+        )
+        result['standalone_entries'] = [
+            {
+                'id': cse.id,
+                'canvas_id': cse.canvas_id,
+                'standalone_entry_id': cse.standalone_entry_id,
+                'pos_x': cse.pos_x,
+                'pos_y': cse.pos_y,
+                'width': cse.width,
+                'height': cse.height,
+                'z_index': cse.z_index,
+                'visual_style': cse.visual_style,
+                'entry': se.to_dict(),
+            }
+            for cse, se in se_rows
+        ]
 
         return jsonify(result)
 
@@ -715,6 +773,97 @@ def remove_atom_from_canvas(ca_id):
         if not ca:
             return jsonify({'error': '不存在'}), 404
         s.delete(ca)
+        return jsonify({'message': '已從白板移除'})
+
+
+# ============================================================
+# Canvas Standalone Entries（P3a：白板獨立 structuredEntry placement）
+# ============================================================
+
+@bp.route('/api/canvases/<slug>/standalone-entries', methods=['POST'])
+def add_standalone_entry_to_canvas(slug):
+    """放置獨立 entry 到白板。
+
+    body 兩種模式：
+      A. {standalone_entry_id, pos_x, pos_y, ...}  -- 放置既有 entry
+      B. {schema_code, raw_text?, field_values?, pos_x, pos_y, ...}  -- 一次建立 + 放置
+    """
+    data = request.get_json() or {}
+    with session_scope() as s:
+        canvas = _get_canvas_by_slug(s, slug)
+        if not canvas:
+            return jsonify({'error': '白板不存在'}), 404
+
+        se_id = data.get('standalone_entry_id')
+        if se_id is None:
+            # 模式 B：一次建立 + 放置
+            schema_code = data.get('schema_code', 'freetext')
+            schema = s.query(EntrySchema).filter_by(code=schema_code).first()
+            if not schema:
+                return jsonify({'error': f'未知 schema_code: {schema_code}'}), 400
+            se = StandaloneEntry(
+                schema_id=schema.id,
+                schema_code=schema_code,
+                raw_text=data.get('raw_text', ''),
+                summary=data.get('summary', ''),
+                field_values=data.get('field_values', {}) or {},
+                node_id=allocate_node_id(s),
+                owner=data.get('owner', 'ethan'),
+            )
+            s.add(se)
+            s.flush()
+            se_id = se.id
+
+        existing = s.query(CanvasStandaloneEntry).filter(
+            CanvasStandaloneEntry.canvas_id == canvas.id,
+            CanvasStandaloneEntry.standalone_entry_id == se_id,
+        ).first()
+        if existing:
+            for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style'):
+                if field in data:
+                    setattr(existing, field, data[field])
+            s.flush()
+            return jsonify(existing.to_dict()), 200
+
+        cse = CanvasStandaloneEntry(
+            canvas_id=canvas.id,
+            standalone_entry_id=se_id,
+            pos_x=data.get('pos_x', 100),
+            pos_y=data.get('pos_y', 100),
+            width=data.get('width'),
+            height=data.get('height'),
+            z_index=data.get('z_index', 0),
+            visual_style=data.get('visual_style', '{}'),
+        )
+        s.add(cse)
+        s.flush()
+        s.refresh(cse)  # 確保 entry relationship 已載入供 to_dict 使用
+        return jsonify(cse.to_dict()), 201
+
+
+@bp.route('/api/canvas-standalone-entries/<int:cse_id>', methods=['PUT'])
+def update_canvas_standalone_entry(cse_id):
+    """更新獨立 entry 在白板上的位置／樣式"""
+    data = request.get_json() or {}
+    with session_scope() as s:
+        cse = s.get(CanvasStandaloneEntry, cse_id)
+        if not cse:
+            return jsonify({'error': '不存在'}), 404
+        for field in ('pos_x', 'pos_y', 'width', 'height', 'z_index', 'visual_style'):
+            if field in data:
+                setattr(cse, field, data[field])
+        s.flush()
+        return jsonify(cse.to_dict())
+
+
+@bp.route('/api/canvas-standalone-entries/<int:cse_id>', methods=['DELETE'])
+def remove_standalone_entry_from_canvas(cse_id):
+    """從白板移除獨立 entry placement（不刪 entry 本體）"""
+    with session_scope() as s:
+        cse = s.get(CanvasStandaloneEntry, cse_id)
+        if not cse:
+            return jsonify({'error': '不存在'}), 404
+        s.delete(cse)
         return jsonify({'message': '已從白板移除'})
 
 
@@ -1925,23 +2074,30 @@ def create_canvas_connection():
 
     from_kind = data.get('from_kind', 'atom')
     to_kind = data.get('to_kind', 'atom')
-    if from_kind not in ('atom', 'textbox') or to_kind not in ('atom', 'textbox'):
-        return jsonify({'error': "from_kind/to_kind 必須是 'atom' 或 'textbox'"}), 400
+    VALID_KINDS = ('atom', 'textbox', 'standalone_entry')
+    if from_kind not in VALID_KINDS or to_kind not in VALID_KINDS:
+        return jsonify({'error': f"from_kind/to_kind 必須是 {VALID_KINDS} 之一"}), 400
 
     # 端點 ID 一致性檢查
     src_atom_id = data.get('source_atom_id')
     tgt_atom_id = data.get('target_atom_id')
     src_tb_id = data.get('source_textbox_id')
     tgt_tb_id = data.get('target_textbox_id')
+    src_se_id = data.get('source_standalone_entry_id')
+    tgt_se_id = data.get('target_standalone_entry_id')
 
     if from_kind == 'atom' and not src_atom_id:
         return jsonify({'error': 'from_kind=atom 需要 source_atom_id'}), 400
     if from_kind == 'textbox' and not src_tb_id:
         return jsonify({'error': 'from_kind=textbox 需要 source_textbox_id'}), 400
+    if from_kind == 'standalone_entry' and not src_se_id:
+        return jsonify({'error': 'from_kind=standalone_entry 需要 source_standalone_entry_id'}), 400
     if to_kind == 'atom' and not tgt_atom_id:
         return jsonify({'error': 'to_kind=atom 需要 target_atom_id'}), 400
     if to_kind == 'textbox' and not tgt_tb_id:
         return jsonify({'error': 'to_kind=textbox 需要 target_textbox_id'}), 400
+    if to_kind == 'standalone_entry' and not tgt_se_id:
+        return jsonify({'error': 'to_kind=standalone_entry 需要 target_standalone_entry_id'}), 400
 
     is_pure_atom = (from_kind == 'atom' and to_kind == 'atom')
 
@@ -2017,6 +2173,8 @@ def create_canvas_connection():
             target_atom_id=tgt_atom_id if to_kind == 'atom' else None,
             source_textbox_id=src_tb_id if from_kind == 'textbox' else None,
             target_textbox_id=tgt_tb_id if to_kind == 'textbox' else None,
+            source_standalone_entry_id=src_se_id if from_kind == 'standalone_entry' else None,
+            target_standalone_entry_id=tgt_se_id if to_kind == 'standalone_entry' else None,
             source_entry_id=src_entry_id,
             target_entry_id=tgt_entry_id,
             unified_relation_id=relation.id if relation else None,

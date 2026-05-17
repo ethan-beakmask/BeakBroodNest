@@ -11,6 +11,7 @@ from core.db import session_scope
 from core.models import KnowledgeAtom, Tag, CanvasAtom, Canvas
 from core import relations as rel_service
 from core import embeddings as embed_service
+from core.tiptap_node_id import backfill_missing_node_ids
 
 bp = Blueprint('atoms', __name__)
 logger = logging.getLogger('beak_broodnest')
@@ -131,6 +132,11 @@ def create_atom():
         thumbnail_url = _extract_thumbnail_url(content_json)
 
     with session_scope() as s:
+        # 守門：對結構性節點缺 nodeId 自動補（容錯前端遺漏）
+        if isinstance(content_json, dict):
+            filled, content_json = backfill_missing_node_ids(s, content_json)
+            if filled:
+                logger.info(f'create_atom: 守門補了 {filled} 個 nodeId')
         atom = KnowledgeAtom(
             title=data.get('title', ''),
             content=data.get('content', ''),
@@ -217,6 +223,12 @@ def update_atom(atom_id):
                 'owner': atom.owner,
                 'readonly': True,
             }), 403
+
+        # 守門：對結構性節點缺 nodeId 自動補（容錯前端遺漏）
+        if 'content_json' in data and isinstance(data['content_json'], dict):
+            filled, data['content_json'] = backfill_missing_node_ids(s, data['content_json'])
+            if filled:
+                logger.info(f'update_atom({atom_id}): 守門補了 {filled} 個 nodeId')
 
         for field in ('title', 'content', 'content_json', 'content_type',
                        'atom_type', 'schema_id', 'lifecycle', 'source',

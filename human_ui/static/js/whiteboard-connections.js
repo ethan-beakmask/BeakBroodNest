@@ -10,15 +10,54 @@ function whiteboardConnectionsMixin() {
             this.connDragSourceKind = 'atom';
             this.connDragSourceAtomId = ca.atom_id;
             this.connDragSourceTextboxId = null;
+            this.connDragSourceStandaloneEntryId = null;
             this.connDragSourceAnchor = anchor;
             this.connDragSourceEntryId = null;
             this.connDragHoverAtomId = null;
             this.connDragHoverTextboxId = null;
+            this.connDragHoverStandaloneEntryId = null;
             this.connDragHoverEntryId = null;
             this.connDragShiftKey = e.shiftKey;
             this.connDragMouseX = e.clientX;
             this.connDragMouseY = e.clientY;
             this.updatePreviewLine();
+        },
+
+        // P3b：從獨立 entry 錨點起始
+        startSeConnDrag(e, cse, anchor) {
+            this.isConnDragging = true;
+            this.connDragSourceKind = 'standalone_entry';
+            this.connDragSourceStandaloneEntryId = cse.entry && cse.entry.id;
+            this.connDragSourceAtomId = null;
+            this.connDragSourceTextboxId = null;
+            this.connDragSourceEntryId = null;
+            this.connDragSourceAnchor = anchor;
+            this.connDragHoverAtomId = null;
+            this.connDragHoverTextboxId = null;
+            this.connDragHoverStandaloneEntryId = null;
+            this.connDragHoverEntryId = null;
+            this.connDragShiftKey = e.shiftKey;
+            this.connDragMouseX = e.clientX;
+            this.connDragMouseY = e.clientY;
+            this.updatePreviewLine();
+        },
+
+        onSeMouseEnterForConn(cse) {
+            if (!this.isConnDragging) return;
+            var seId = cse.entry && cse.entry.id;
+            if (!seId) return;
+            // 不允許同一個獨立 entry 自連
+            if (this.connDragSourceKind === 'standalone_entry' && this.connDragSourceStandaloneEntryId === seId) return;
+            this.connDragHoverStandaloneEntryId = seId;
+            this.connDragHoverAtomId = null;
+            this.connDragHoverTextboxId = null;
+        },
+
+        onSeMouseLeaveForConn(cse) {
+            var seId = cse.entry && cse.entry.id;
+            if (this.connDragHoverStandaloneEntryId === seId) {
+                this.connDragHoverStandaloneEntryId = null;
+            }
         },
 
         // Entry-level connection drag
@@ -61,20 +100,22 @@ function whiteboardConnectionsMixin() {
             }
 
             var srcKind = this.connDragSourceKind || 'atom';
-            var tgtKind = this.connDragHoverTextboxId ? 'textbox'
-                        : (this.connDragHoverAtomId ? 'atom' : null);
+            var tgtKind = null;
+            if (this.connDragHoverStandaloneEntryId) tgtKind = 'standalone_entry';
+            else if (this.connDragHoverTextboxId) tgtKind = 'textbox';
+            else if (this.connDragHoverAtomId) tgtKind = 'atom';
+
             var sameNode = (srcKind === tgtKind) && (
-                (srcKind === 'atom'    && this.connDragHoverAtomId    === this.connDragSourceAtomId) ||
-                (srcKind === 'textbox' && this.connDragHoverTextboxId === this.connDragSourceTextboxId)
+                (srcKind === 'atom'            && this.connDragHoverAtomId            === this.connDragSourceAtomId) ||
+                (srcKind === 'textbox'         && this.connDragHoverTextboxId         === this.connDragSourceTextboxId) ||
+                (srcKind === 'standalone_entry' && this.connDragHoverStandaloneEntryId === this.connDragSourceStandaloneEntryId)
             );
             var hasTarget = tgtKind && !sameNode;
-            var isEntryLevel = (srcKind === 'atom' && tgtKind === 'atom') &&
-                               (this.connDragSourceEntryId || this.connDragHoverEntryId);
             var isPureAtom = (srcKind === 'atom' && tgtKind === 'atom');
+            var isEntryLevel = isPureAtom && (this.connDragSourceEntryId || this.connDragHoverEntryId);
 
             if (hasTarget || (isPureAtom && this.connDragHoverAtomId && isEntryLevel)) {
                 if (isPureAtom && this.connDragShiftKey) {
-                    // Shift+拖拉：跳 modal 選擇型別（僅 atom-atom）
                     this.pendingConnection = {
                         sourceAtomId: this.connDragSourceAtomId,
                         targetAtomId: this.connDragHoverAtomId,
@@ -93,24 +134,74 @@ function whiteboardConnectionsMixin() {
                         this.connDragHoverEntryId || null
                     );
                 } else {
-                    // textbox 端點：純視覺連線，不掛 unified_relation
-                    this.createTextboxConnectionDirect(
-                        srcKind, this.connDragSourceAtomId, this.connDragSourceTextboxId,
-                        tgtKind, this.connDragHoverAtomId, this.connDragHoverTextboxId
-                    );
+                    // 非 atom-atom 純視覺連線（textbox、standalone_entry 任一端）
+                    this.createVisualConnectionDirect({
+                        srcKind: srcKind,
+                        srcAtomId: this.connDragSourceAtomId,
+                        srcTextboxId: this.connDragSourceTextboxId,
+                        srcStandaloneEntryId: this.connDragSourceStandaloneEntryId,
+                        tgtKind: tgtKind,
+                        tgtAtomId: this.connDragHoverAtomId,
+                        tgtTextboxId: this.connDragHoverTextboxId,
+                        tgtStandaloneEntryId: this.connDragHoverStandaloneEntryId,
+                    });
                 }
             }
             this.isConnDragging = false;
             this.connDragSourceKind = null;
             this.connDragSourceAtomId = null;
             this.connDragSourceTextboxId = null;
+            this.connDragSourceStandaloneEntryId = null;
             this.connDragSourceAnchor = null;
             this.connDragSourceEntryId = null;
             this.connDragHoverAtomId = null;
             this.connDragHoverTextboxId = null;
+            this.connDragHoverStandaloneEntryId = null;
             this.connDragHoverEntryId = null;
             this.connDragShiftKey = false;
             this.clearPreviewLine();
+        },
+
+        async createVisualConnectionDirect(opts) {
+            // 通用：textbox / standalone_entry 端點純視覺連線
+            try {
+                var payload = {
+                    canvas_id: this.canvasId,
+                    from_kind: opts.srcKind,
+                    to_kind: opts.tgtKind,
+                };
+                if (opts.srcKind === 'atom') payload.source_atom_id = opts.srcAtomId;
+                if (opts.srcKind === 'textbox') payload.source_textbox_id = opts.srcTextboxId;
+                if (opts.srcKind === 'standalone_entry') payload.source_standalone_entry_id = opts.srcStandaloneEntryId;
+                if (opts.tgtKind === 'atom') payload.target_atom_id = opts.tgtAtomId;
+                if (opts.tgtKind === 'textbox') payload.target_textbox_id = opts.tgtTextboxId;
+                if (opts.tgtKind === 'standalone_entry') payload.target_standalone_entry_id = opts.tgtStandaloneEntryId;
+
+                var resp = await API.post('/beakbroodnest/api/canvas-connections', payload);
+                if (resp && !resp.error) {
+                    var newConnId = resp.id;
+                    var self = this;
+                    this.pushUndo({
+                        type: 'create_connection',
+                        desc: '建立連線',
+                        undo: async function () {
+                            try { await API.deleteConnection(newConnId); } catch (e) {}
+                            await self.loadData();
+                            self.$nextTick(function () { self.renderConnections(); });
+                        },
+                        redo: async function () {
+                            try { await API.post('/beakbroodnest/api/canvas-connections', payload); } catch (e) {}
+                            await self.loadData();
+                            self.$nextTick(function () { self.renderConnections(); });
+                        },
+                    });
+                    await this.loadData();
+                    this.renderConnections();
+                }
+            } catch (e) {
+                this.showToast('連線建立失敗', 'error');
+            }
+            this.mode = 'select';
         },
 
         async createTextboxConnectionDirect(srcKind, srcAtomId, srcTbId, tgtKind, tgtAtomId, tgtTbId) {
@@ -246,6 +337,48 @@ function whiteboardConnectionsMixin() {
             return { x: ca.pos_x + sz.w - ANCHOR_INSET_R, y: entryMidY };
         },
 
+        // P3b: 獨立 entry anchor 計算
+        // standaloneEntryId 是 standalone_entries.id（不是 cse.id）
+        getStandaloneEntryAnchorPos(standaloneEntryId, anchor) {
+            var cse = (this.standaloneEntries || []).find(function (x) {
+                return x.entry && x.entry.id === standaloneEntryId;
+            });
+            if (!cse) return { x: 0, y: 0 };
+            var el = document.querySelector('[data-cse-id="' + cse.id + '"]');
+            var w = el ? el.offsetWidth : (cse.width || 280);
+            var h = el ? el.offsetHeight : (cse.height || 32);
+            switch (anchor) {
+                case 'top':    return { x: cse.pos_x + w / 2, y: cse.pos_y };
+                case 'bottom': return { x: cse.pos_x + w / 2, y: cse.pos_y + h };
+                case 'left':   return { x: cse.pos_x, y: cse.pos_y + h / 2 };
+                case 'right':  return { x: cse.pos_x + w, y: cse.pos_y + h / 2 };
+                default:       return { x: cse.pos_x + w / 2, y: cse.pos_y + h / 2 };
+            }
+        },
+
+        findNearestStandaloneEntryAnchor(standaloneEntryId, canvasX, canvasY) {
+            var cse = (this.standaloneEntries || []).find(function (x) {
+                return x.entry && x.entry.id === standaloneEntryId;
+            });
+            if (!cse) return null;
+            var el = document.querySelector('[data-cse-id="' + cse.id + '"]');
+            var w = el ? el.offsetWidth : (cse.width || 280);
+            var h = el ? el.offsetHeight : (cse.height || 32);
+            var anchors = [
+                { x: cse.pos_x + w / 2, y: cse.pos_y },
+                { x: cse.pos_x + w / 2, y: cse.pos_y + h },
+                { x: cse.pos_x, y: cse.pos_y + h / 2 },
+                { x: cse.pos_x + w, y: cse.pos_y + h / 2 },
+            ];
+            var nearest = anchors[0];
+            var minDist = Infinity;
+            for (var i = 0; i < anchors.length; i++) {
+                var d = Math.hypot(anchors[i].x - canvasX, anchors[i].y - canvasY);
+                if (d < minDist) { minDist = d; nearest = anchors[i]; }
+            }
+            return nearest;
+        },
+
         findNearestAnchor(atomId, canvasX, canvasY) {
             var ca = this.atoms.find(function(a) { return a.atom_id === atomId; });
             if (!ca) return { x: canvasX, y: canvasY };
@@ -270,10 +403,12 @@ function whiteboardConnectionsMixin() {
         updatePreviewLine() {
             var line = this.$refs.previewLine;
             if (!line || !this.isConnDragging) return;
-            // 起點：entry 級 -> entry 邊緣；card/textbox 級 -> 對應 anchor
+            // 起點
             var src;
             if (this.connDragSourceKind === 'textbox') {
                 src = this.getTextboxAnchorPos(this.connDragSourceTextboxId, this.connDragSourceAnchor);
+            } else if (this.connDragSourceKind === 'standalone_entry') {
+                src = this.getStandaloneEntryAnchorPos(this.connDragSourceStandaloneEntryId, this.connDragSourceAnchor);
             } else if (this.connDragSourceEntryId) {
                 src = this.getEntryEdgePos(this.connDragSourceAtomId, this.connDragSourceEntryId, 'right');
             } else {
@@ -281,7 +416,10 @@ function whiteboardConnectionsMixin() {
             }
             var tgt = this.screenToCanvas(this.connDragMouseX, this.connDragMouseY);
             // 終點 snap
-            if (this.connDragHoverEntryId && this.connDragHoverAtomId) {
+            if (this.connDragHoverStandaloneEntryId) {
+                var snapSe = this.findNearestStandaloneEntryAnchor(this.connDragHoverStandaloneEntryId, tgt.x, tgt.y);
+                if (snapSe) { tgt.x = snapSe.x; tgt.y = snapSe.y; }
+            } else if (this.connDragHoverEntryId && this.connDragHoverAtomId) {
                 var eSide = (tgt.x < src.x) ? 'right' : 'left';
                 var ep = this.getEntryEdgePos(this.connDragHoverAtomId, this.connDragHoverEntryId, eSide);
                 tgt.x = ep.x; tgt.y = ep.y;
@@ -332,30 +470,33 @@ function whiteboardConnectionsMixin() {
             };
         },
 
-        // 取得連線端點的「物件」(atom 卡片或文字框)
+        // 取得連線端點的「物件」(atom 卡片 / 文字框 / 獨立 entry)
         // 回傳統一形狀: { kind, id, pos_x, pos_y, w, h }
         _getConnEndpointObj(conn, side) {
-            if (side === 'source') {
-                if (conn.from_kind === 'textbox') {
-                    var tb = (this.textboxes || []).find(function(x) { return x.id === conn.source_textbox_id; });
-                    if (!tb) return null;
-                    return { kind: 'textbox', id: tb.id, pos_x: tb.pos_x, pos_y: tb.pos_y, w: tb.width, h: tb.height };
-                }
-                var srcCa = this.atoms.find(function(a) { return a.atom_id === conn.source_atom_id; });
-                if (!srcCa) return null;
-                var sz = this._getCardSize(srcCa);
-                return { kind: 'atom', id: srcCa.atom_id, pos_x: srcCa.pos_x, pos_y: srcCa.pos_y, w: sz.w, h: sz.h };
-            } else {
-                if (conn.to_kind === 'textbox') {
-                    var tb2 = (this.textboxes || []).find(function(x) { return x.id === conn.target_textbox_id; });
-                    if (!tb2) return null;
-                    return { kind: 'textbox', id: tb2.id, pos_x: tb2.pos_x, pos_y: tb2.pos_y, w: tb2.width, h: tb2.height };
-                }
-                var tgtCa = this.atoms.find(function(a) { return a.atom_id === conn.target_atom_id; });
-                if (!tgtCa) return null;
-                var sz2 = this._getCardSize(tgtCa);
-                return { kind: 'atom', id: tgtCa.atom_id, pos_x: tgtCa.pos_x, pos_y: tgtCa.pos_y, w: sz2.w, h: sz2.h };
+            var kind = side === 'source' ? conn.from_kind : conn.to_kind;
+            if (kind === 'textbox') {
+                var tbId = side === 'source' ? conn.source_textbox_id : conn.target_textbox_id;
+                var tb = (this.textboxes || []).find(function (x) { return x.id === tbId; });
+                if (!tb) return null;
+                return { kind: 'textbox', id: tb.id, pos_x: tb.pos_x, pos_y: tb.pos_y, w: tb.width, h: tb.height };
             }
+            if (kind === 'standalone_entry') {
+                var seId = side === 'source' ? conn.source_standalone_entry_id : conn.target_standalone_entry_id;
+                var cse = (this.standaloneEntries || []).find(function (x) {
+                    return x.entry && x.entry.id === seId;
+                });
+                if (!cse) return null;
+                var seEl = document.querySelector('[data-cse-id="' + cse.id + '"]');
+                var sew = seEl ? seEl.offsetWidth : (cse.width || 280);
+                var seh = seEl ? seEl.offsetHeight : (cse.height || 32);
+                return { kind: 'standalone_entry', id: seId, pos_x: cse.pos_x, pos_y: cse.pos_y, w: sew, h: seh };
+            }
+            // atom（default）
+            var atomId = side === 'source' ? conn.source_atom_id : conn.target_atom_id;
+            var ca = this.atoms.find(function (a) { return a.atom_id === atomId; });
+            if (!ca) return null;
+            var sz = this._getCardSize(ca);
+            return { kind: 'atom', id: atomId, pos_x: ca.pos_x, pos_y: ca.pos_y, w: sz.w, h: sz.h };
         },
 
         // 通用：接受 endpoint 物件 ({ pos_x, pos_y, w, h })
@@ -492,11 +633,13 @@ function whiteboardConnectionsMixin() {
             var visibleIds = this.filteredAtomIds;
             // 心智圖摺疊隱藏的後代 atom，連線需一併隱藏（展開時 renderConnections 會重繪恢復）
             var hiddenByCollapse = (this._collapsedHiddenAtomIds ? this._collapsedHiddenAtomIds() : {}) || {};
-            // 連線可見性：atom 端點受 filter 控制；textbox 端點一律可見
+            // 連線可見性：atom 端點受 filter 控制；textbox / standalone_entry 端點一律可見
             // 樹線(灰色)與 connection(彩色)並存,不去重
             var baseConns = this.connections.filter(function(c) {
-                var srcOk = (c.from_kind === 'textbox') || (visibleIds.includes(c.source_atom_id) && !hiddenByCollapse[c.source_atom_id]);
-                var tgtOk = (c.to_kind   === 'textbox') || (visibleIds.includes(c.target_atom_id) && !hiddenByCollapse[c.target_atom_id]);
+                var srcOk = (c.from_kind !== 'atom')
+                    || (visibleIds.includes(c.source_atom_id) && !hiddenByCollapse[c.source_atom_id]);
+                var tgtOk = (c.to_kind !== 'atom')
+                    || (visibleIds.includes(c.target_atom_id) && !hiddenByCollapse[c.target_atom_id]);
                 return srcOk && tgtOk;
             });
             var renderList = this.rtOptEnabled ? this._filterOptimizedConnections(baseConns) : baseConns;
@@ -510,10 +653,12 @@ function whiteboardConnectionsMixin() {
         // 計算同對端點的偏移量（多條線避重疊）
         // 端點 key 用 kind 與 id 組合，避免不同類型 ID 撞號
         _connEndpointKey(conn, side) {
-            if (side === 'source') {
-                return (conn.from_kind || 'atom') + ':' + (conn.from_kind === 'textbox' ? conn.source_textbox_id : conn.source_atom_id);
-            }
-            return (conn.to_kind || 'atom') + ':' + (conn.to_kind === 'textbox' ? conn.target_textbox_id : conn.target_atom_id);
+            var kind = (side === 'source' ? conn.from_kind : conn.to_kind) || 'atom';
+            var id;
+            if (kind === 'textbox') id = (side === 'source' ? conn.source_textbox_id : conn.target_textbox_id);
+            else if (kind === 'standalone_entry') id = (side === 'source' ? conn.source_standalone_entry_id : conn.target_standalone_entry_id);
+            else id = (side === 'source' ? conn.source_atom_id : conn.target_atom_id);
+            return kind + ':' + id;
         },
 
         _calcPairOffset(conn, renderList) {

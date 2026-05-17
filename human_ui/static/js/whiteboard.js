@@ -22,6 +22,8 @@ function whiteboardApp(canvasId) {
         connections: [],
         groups: [],
         textboxes: [],
+        standaloneEntries: [],
+        seMenuOpen: false,
         mindmapShells: [],
         treeParents: [],
         canvases: [],
@@ -411,6 +413,7 @@ function whiteboardApp(canvasId) {
             this.connections = canvas.connections || [];
             this.groups = canvas.groups || [];
             this.textboxes = canvas.textboxes || [];
+            this.standaloneEntries = canvas.standalone_entries || [];
             this.mindmapShells = canvas.mindmap_shells || [];
             this.treeParents = canvas.tree_parents || [];
             // 載入後重算心智圖樹的 layout（位置即時從關係樹推導）
@@ -544,6 +547,11 @@ function whiteboardApp(canvasId) {
                 this.renderConnections();
                 return;
             }
+            if (this.dragStandaloneEntry) {
+                this.onStandaloneEntryMouseMove(e);
+                this.renderConnections();
+                return;
+            }
             if (this.dragMindmapShell) {
                 var mdx = (e.clientX - this.mindmapShellDragStartX) / this.zoom;
                 var mdy = (e.clientY - this.mindmapShellDragStartY) / this.zoom;
@@ -631,6 +639,9 @@ function whiteboardApp(canvasId) {
                 this.dragTextbox.pos_y = this.snap10(this.dragTextbox.pos_y);
                 API.updateTextbox(this.dragTextbox.id, { pos_x: this.dragTextbox.pos_x, pos_y: this.dragTextbox.pos_y });
                 this.dragTextbox = null;
+            }
+            if (this.dragStandaloneEntry) {
+                this.onStandaloneEntryMouseUp();
                 this.renderConnections();
             }
             if (this.dragMindmapShell) {
@@ -728,7 +739,7 @@ function whiteboardApp(canvasId) {
 
         snap10(v) { return Math.round(v / 10) * 10; },
         get isObjectDragging() {
-            return !!(this.dragCard || this.dragTextbox || this.dragMindmapShell || this.dragGroup);
+            return !!(this.dragCard || this.dragTextbox || this.dragMindmapShell || this.dragGroup || this.dragStandaloneEntry);
         },
 
         // ============================================
@@ -1724,6 +1735,9 @@ function whiteboardApp(canvasId) {
     }
     if (typeof whiteboardMindmapMixin === 'function') {
         _mergeInto(app, whiteboardMindmapMixin());
+    }
+    if (typeof whiteboardStandaloneEntriesMixin === 'function') {
+        _mergeInto(app, whiteboardStandaloneEntriesMixin());
     }
 
     return app;

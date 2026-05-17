@@ -559,6 +559,13 @@ class CanvasConnection(Base):
     target_entry_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('atom_entries.id', ondelete='SET NULL'), nullable=True
     )
+    # standalone entry 端點（P3b：白板獨立 structuredEntry 連線）
+    source_standalone_entry_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('standalone_entries.id', ondelete='CASCADE'), nullable=True
+    )
+    target_standalone_entry_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('standalone_entries.id', ondelete='CASCADE'), nullable=True
+    )
     # deprecated: 舊 FK，保留向後相容但不再寫入
     relation_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('atom_relations.id'), nullable=True
@@ -589,6 +596,8 @@ class CanvasConnection(Base):
             'target_textbox_id': self.target_textbox_id,
             'source_entry_id': self.source_entry_id,
             'target_entry_id': self.target_entry_id,
+            'source_standalone_entry_id': self.source_standalone_entry_id,
+            'target_standalone_entry_id': self.target_standalone_entry_id,
             'unified_relation_id': self.unified_relation_id,
             'line_style': self.line_style,
             'color': self.color,
@@ -1676,4 +1685,100 @@ class TermAlias(Base):
             'enabled': self.enabled,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ============================================================
+# 白板獨立 structuredEntry（P3a）
+#   - 與卡片同階層，直接放在白板上的結構化條目
+#   - 不寄生於 atom，獨立資料表
+#   - 沿用 entry_schemas（;;td / ;;cal / ;;idcard 等）
+#   - field_values 採 JSONB 直接存（第一版簡化，不走 entry_field_values 多型別表）
+#   - node_id 取自 tiptap_node_id_seq（驗證 P1/P2 的 stable ID 機制）
+# ============================================================
+
+class StandaloneEntry(Base):
+    __tablename__ = 'standalone_entries'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    schema_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('entry_schemas.id'), nullable=False
+    )
+    schema_code: Mapped[str] = mapped_column(Text, nullable=False, default='freetext')
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False, default='')
+    summary: Mapped[str] = mapped_column(String(200), nullable=False, default='')
+    field_values: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    node_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    owner: Mapped[str] = mapped_column(Text, nullable=False, default='ethan')
+    sensitivity: Mapped[str] = mapped_column(Text, nullable=False, default='internal')
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now
+    )
+
+    schema: Mapped["EntrySchema"] = relationship()
+
+    __table_args__ = (
+        Index('idx_standalone_entries_schema', 'schema_id'),
+        Index('idx_standalone_entries_is_deleted', 'is_deleted'),
+        Index('idx_standalone_entries_owner', 'owner'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'schema_id': self.schema_id,
+            'schema_code': self.schema_code,
+            'raw_text': self.raw_text,
+            'summary': self.summary,
+            'field_values': self.field_values or {},
+            'node_id': self.node_id,
+            'owner': self.owner,
+            'sensitivity': self.sensitivity,
+            'is_deleted': self.is_deleted,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CanvasStandaloneEntry(Base):
+    __tablename__ = 'canvas_standalone_entries'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    canvas_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='CASCADE'), nullable=False
+    )
+    standalone_entry_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey('standalone_entries.id', ondelete='CASCADE'), nullable=False
+    )
+    pos_x: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    pos_y: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    width: Mapped[float | None] = mapped_column(Float, nullable=True)
+    height: Mapped[float | None] = mapped_column(Float, nullable=True)
+    z_index: Mapped[int] = mapped_column(Integer, default=0)
+    visual_style: Mapped[str] = mapped_column(Text, default='{}')
+
+    canvas: Mapped["Canvas"] = relationship()
+    entry: Mapped["StandaloneEntry"] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint('canvas_id', 'standalone_entry_id', name='uq_canvas_standalone_entry'),
+        Index('idx_canvas_standalone_entries_canvas', 'canvas_id'),
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'canvas_id': self.canvas_id,
+            'standalone_entry_id': self.standalone_entry_id,
+            'pos_x': self.pos_x,
+            'pos_y': self.pos_y,
+            'width': self.width,
+            'height': self.height,
+            'z_index': self.z_index,
+            'visual_style': self.visual_style,
+            'entry': self.entry.to_dict() if self.entry else None,
         }

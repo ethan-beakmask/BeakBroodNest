@@ -149,6 +149,7 @@ import { SelectionToolbar } from './selection-toolbar.js'
 import { PasteTextTable } from './paste-text-table.js'
 import { openSectionNav } from './section-nav.js'
 import { FindReplace, findKey } from './find-replace.js'
+import { NodeIdExtension } from './node-id-extension.js'
 
 class CardEditor {
     constructor() {
@@ -207,6 +208,7 @@ class CardEditor {
                 ListHotkeys,
                 PasteTextTable,
                 FindReplace,
+                NodeIdExtension,
             ],
             editorProps: {
                 attributes: {

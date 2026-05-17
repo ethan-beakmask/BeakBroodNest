@@ -18,6 +18,7 @@
 <script src="/beakbroodnest/static/js/whiteboard-export-md.js?v={{ cache_ver }}"></script>
 <script src="/beakbroodnest/static/js/whiteboard-exchange.js?v={{ cache_ver }}"></script>
 <script src="/beakbroodnest/static/js/whiteboard-mindmap.js?v={{ cache_ver }}"></script>
+<script src="/beakbroodnest/static/js/whiteboard-standalone-entries.js?v={{ cache_ver }}"></script>
 <script src="/beakbroodnest/static/js/whiteboard.js?v={{ cache_ver }}"></script>
 {% endblock %}
 
@@ -350,6 +351,42 @@
                               @click.stop="toggleMindmapCollapse(ca)"
                               @mousedown.stop
                               x-text="isMindmapCollapsed(ca) ? '▶' : '▼'"></span>
+                    </div>
+                </template>
+
+                <!-- 獨立 structuredEntry（P3a：與卡片同階層；P3b：可拉連線）
+                     必須放在 wb-canvas 內，才能與卡片/SVG 共用同一個 transform 座標系 -->
+                <template x-for="cse in standaloneEntries" :key="'se-' + cse.id">
+                    <div :class="getStandaloneEntryClass(cse)"
+                         :style="getStandaloneEntryStyle(cse)"
+                         :data-cse-id="cse.id"
+                         :data-se-id="cse.entry && cse.entry.id"
+                         :data-node-id="cse.entry && cse.entry.node_id"
+                         @mousedown="onStandaloneEntryMouseDown($event, cse)"
+                         @dblclick.stop="editStandaloneEntry(cse)"
+                         @mouseenter="onSeMouseEnterForConn(cse)"
+                         @mouseleave="onSeMouseLeaveForConn(cse)"
+                         @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'standalone_entry', cse: cse }">
+                        <!-- 連線錨點（同卡片：4 邊） -->
+                        <div class="wb-card-anchor top"    @mousedown.stop.prevent="startSeConnDrag($event, cse, 'top')"></div>
+                        <div class="wb-card-anchor bottom" @mousedown.stop.prevent="startSeConnDrag($event, cse, 'bottom')"></div>
+                        <div class="wb-card-anchor left"   @mousedown.stop.prevent="startSeConnDrag($event, cse, 'left')"></div>
+                        <div class="wb-card-anchor right"  @mousedown.stop.prevent="startSeConnDrag($event, cse, 'right')"></div>
+
+                        <div class="se-tag-row" style="display:flex;align-items:center;gap:6px;">
+                            <span class="se-badge"
+                                  x-text="(cse.entry && cse.entry.schema_code) || 'freetext'"></span>
+                            <span class="wb-se-label"
+                                  style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                                  x-text="getStandaloneEntryLabel(cse)"></span>
+                            <button class="wb-se-action se-edit-btn"
+                                    type="button"
+                                    title="編輯 (F2 / 雙擊)"
+                                    @click.stop="editStandaloneEntry(cse)">編輯</button>
+                            <span class="wb-se-action se-delete-btn"
+                                  title="從白板移除"
+                                  @click.stop="removeStandaloneEntryFromCanvas(cse)">x</span>
+                        </div>
                     </div>
                 </template>
             </div>

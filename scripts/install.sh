@@ -511,6 +511,39 @@ print('  ORM 結構同步完成')
             || log_warn "  基線 seed 補丁失敗"
     fi
 
+    # 白板獨立 structuredEntry 表（P3a）
+    if [ -f "$INSTALL_DIR/scripts/init_standalone_entries.sql" ]; then
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -f "$INSTALL_DIR/scripts/init_standalone_entries.sql" -v ON_ERROR_STOP=1 -q \
+            && log_info "  獨立 entry 表結構補丁完成" \
+            || log_warn "  獨立 entry 表結構補丁失敗"
+    fi
+
+    # 獨立 entry 連線欄位（P3b）
+    if [ -f "$INSTALL_DIR/scripts/init_standalone_entry_connections.sql" ]; then
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -f "$INSTALL_DIR/scripts/init_standalone_entry_connections.sql" -v ON_ERROR_STOP=1 -q \
+            && log_info "  獨立 entry 連線欄位補丁完成" \
+            || log_warn "  獨立 entry 連線欄位補丁失敗"
+    fi
+
+    # Tiptap nodeId sequence + 等冪回填（首次升級時補既有 atom 的 content_json nodeId）
+    if [ -f "$INSTALL_DIR/scripts/init_tiptap_node_id.sql" ]; then
+        SEQ_EXISTS=$(PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -tAc "SELECT to_regclass('public.tiptap_node_id_seq') IS NOT NULL" 2>/dev/null | tr -d ' \n')
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -f "$INSTALL_DIR/scripts/init_tiptap_node_id.sql" -v ON_ERROR_STOP=1 -q \
+            && log_info "  Tiptap nodeId sequence 補丁完成" \
+            || log_warn "  Tiptap nodeId sequence 補丁失敗"
+        if [ "$SEQ_EXISTS" != "t" ] && [ -f "$INSTALL_DIR/scripts/backfill_tiptap_node_id.py" ]; then
+            log_info "  偵測到首次建立 sequence，執行 nodeId 回填..."
+            "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/scripts/backfill_tiptap_node_id.py" --run \
+                >>/opt/tmp/scripts-backfill_tiptap_node_id.log 2>&1 \
+                && log_info "  nodeId 回填完成（詳見 /opt/tmp/scripts-backfill_tiptap_node_id.log）" \
+                || log_warn "  nodeId 回填失敗（請手動執行 backfill_tiptap_node_id.py --run）"
+        fi
+    fi
+
     # [4] 重啟服務
     log_step "4/4" "重啟服務..."
     systemctl restart "$SERVICE_NAME"

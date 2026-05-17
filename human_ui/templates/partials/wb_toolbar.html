@@ -5,6 +5,24 @@
                 <button @click="createTextboxAtViewportCenter()" title="新增文字框（標題在框外、內文純文字）">文字框</button>
                 <button @click="createMindmapShellAtViewportCenter()" title="新增心智圖（Tab=子節點、Enter=同層、Del=刪子樹）">心智圖</button>
                 <div class="separator"></div>
+                <div style="position:relative;display:inline-block;">
+                    <button @click="seMenuOpen = !seMenuOpen" title="新增白板獨立 structuredEntry（與卡片同階層）">+ Entry ▾</button>
+                    <div x-show="seMenuOpen" @click.away="seMenuOpen = false"
+                         style="position:absolute;top:100%;left:0;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;min-width:140px;">
+                        <template x-for="schema in (entrySchemas || [])" :key="schema.code">
+                            <div style="padding:6px 12px;cursor:pointer;display:flex;align-items:center;gap:6px;"
+                                 :style="'border-left:3px solid ' + (schema.color || '#6b7280') + ';'"
+                                 @mouseenter="$event.target.style.background='#f3f4f6'"
+                                 @mouseleave="$event.target.style.background=''"
+                                 @click="seMenuOpen = false; addStandaloneEntryAtViewportCenter(schema.code)">
+                                <span x-text="schema.icon || '●'"></span>
+                                <span x-text="schema.name"></span>
+                                <span style="color:#999;font-size:0.85em;" x-text="';;' + (schema.slash_alias || schema.code)"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div class="separator"></div>
                 <button @click="openExchangeModal()" title="交換卡片：寄存到交換包，或從交換包取出">交換</button>
                 <button @click="openTrashModal()" title="字紙簍">字紙簍</button>
                 <div class="separator"></div>

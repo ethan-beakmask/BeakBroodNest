@@ -788,6 +788,29 @@
 .wb-viewport.conn-dragging .wb-card { cursor: crosshair; }
 .wb-viewport.conn-dragging .wb-card-anchor { opacity: 0.4; }
 .wb-viewport.conn-dragging .wb-card:hover .wb-card-anchor { opacity: 1; }
+.wb-viewport.conn-dragging .wb-standalone-entry { cursor: crosshair; }
+.wb-viewport.conn-dragging .wb-standalone-entry:hover .wb-card-anchor { opacity: 1; }
+
+/* ---- P3a 白板獨立 structuredEntry：白板層級覆寫 ---- */
+/* .se-block 預設 position:relative + margin（PM 文件流內合適），白板上需 absolute */
+.wb-standalone-entry {
+    position: absolute !important;
+    margin: 0 !important;
+    box-sizing: border-box;
+    cursor: move;
+    background: var(--bg-secondary, #fff);
+    box-shadow: var(--card-shadow, 0 2px 4px rgba(0,0,0,0.08));
+}
+.wb-standalone-entry:hover .wb-card-anchor { opacity: 1; }
+.wb-standalone-entry.conn-drop-target {
+    outline: 3px solid var(--accent);
+    outline-offset: 1px;
+}
+.wb-standalone-entry.conn-drop-target .wb-card-anchor { opacity: 1; }
+.wb-se-action {
+    cursor: pointer;
+    user-select: none;
+}
 
 /* 連線放置目標卡片 */
 .wb-card.conn-drop-target {

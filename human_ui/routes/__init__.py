@@ -23,6 +23,8 @@ from .admin import bp as admin_bp
 from .preferences import bp as preferences_bp
 from .conversation_map import bp as conversation_map_bp
 from .calendar import bp as calendar_bp
+from .tiptap_node import bp as tiptap_node_bp
+from .standalone_entries import bp as standalone_entries_bp
 
 ALL_BLUEPRINTS = [
     atoms_bp,
@@ -47,4 +49,6 @@ ALL_BLUEPRINTS = [
     preferences_bp,
     conversation_map_bp,
     calendar_bp,
+    tiptap_node_bp,
+    standalone_entries_bp,
 ]
