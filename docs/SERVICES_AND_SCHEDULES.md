@@ -154,3 +154,28 @@ sudo -u postgres psql -c "DROP DATABASE beak_broodnest_test;"
 sudo -u postgres psql -c "DROP USER beak_broodnest_test;"
 sudo rm -rf /home/ethan/test-broodnest
 ```
+
+---
+
+## 開發常用指令
+
+### 正式服務控制
+
+```bash
+sudo systemctl {start|stop|restart|status} beakbroodnest.service
+sudo journalctl -u beakbroodnest -f
+```
+
+### 首次初始化資料庫
+
+```bash
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/human_ui/app.py --init-db --seed
+```
+
+### 開發 Flask dev server（hot reload，port 5175）
+
+```bash
+/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/human_ui/app.py --serve --port 5175 --host <HOST_IP>
+```
+
+與正式 gunicorn (5171) 並存，皆連同一個 `beak_broodnest` DB。
