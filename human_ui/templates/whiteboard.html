@@ -394,15 +394,6 @@
             <!-- 框選矩形 -->
             <div class="wb-box-select" :style="boxSelectStyle"></div>
 
-            <!-- Minimap -->
-            <div class="wb-minimap" x-show="_minimapVisible"
-                 @mousedown.stop.prevent="onMinimapMouseDown($event)"
-                 @mousemove.stop="onMinimapMouseMove($event)"
-                 @mouseup.stop="onMinimapMouseUp($event)"
-                 @mouseleave="onMinimapMouseUp($event)">
-                <canvas x-ref="minimapCanvas" width="200" height="140"></canvas>
-            </div>
-
         </div>
 
     </div>

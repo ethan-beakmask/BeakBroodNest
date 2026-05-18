@@ -8,7 +8,7 @@
                 <div style="position:relative;display:inline-block;">
                     <button @click="seMenuOpen = !seMenuOpen" title="新增白板獨立 structuredEntry（與卡片同階層）">+ Entry ▾</button>
                     <div x-show="seMenuOpen" @click.away="seMenuOpen = false"
-                         style="position:absolute;top:100%;left:0;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;min-width:140px;">
+                         style="position:absolute;top:100%;left:0;background:#fff;border:1px solid #ddd;border-radius:4px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:100;min-width:240px;">
                         <template x-for="schema in (entrySchemas || [])" :key="schema.code">
                             <div style="padding:6px 12px;cursor:pointer;display:flex;align-items:center;gap:6px;"
                                  :style="'border-left:3px solid ' + (schema.color || '#6b7280') + ';'"
@@ -151,15 +151,6 @@
                 <button class="btn-ghost btn-sm" style="color:var(--danger);" @click="deleteSelected()">移除</button>
             </div>
 
-            <!-- 縮放控制 -->
-            <div class="wb-zoom">
-                <button @click="toggleMinimap()" title="Minimap" style="font-size:11px;">M</button>
-                <div class="separator" style="width:1px; height:14px; background:var(--border-light); margin:0 2px;"></div>
-                <button @click="zoomOut()">-</button>
-                <span x-text="zoomPercent + '%'" style="min-width:36px; text-align:center;"></span>
-                <button @click="zoomIn()">+</button>
-                <button @click="resetZoom()" style="margin-left:4px; font-size:11px;">重置</button>
-            </div>
 
             <!-- Render Test Panel -->
             <div class="rt-panel" :class="{ 'rt-collapsed': !rtPanelOpen }"

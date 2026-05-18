@@ -17,6 +17,8 @@ function whiteboardMinimapMixin() {
             var mc = this.$refs.minimapCanvas;
             if (!mc) return;
             var ctx = mc.getContext('2d');
+            if (mc.clientWidth && mc.width !== mc.clientWidth) mc.width = mc.clientWidth;
+            if (mc.clientHeight && mc.height !== mc.clientHeight) mc.height = mc.clientHeight;
             var mw = mc.width, mh = mc.height;
             ctx.clearRect(0, 0, mw, mh);
             ctx.fillStyle = 'rgba(30, 30, 30, 0.85)';
@@ -34,6 +36,7 @@ function whiteboardMinimapMixin() {
                 minX = Math.min(minX, g.pos_x); minY = Math.min(minY, g.pos_y);
                 maxX = Math.max(maxX, g.pos_x + g.width); maxY = Math.max(maxY, g.pos_y + g.height);
             });
+            // 只依物件 bbox 縮放，方框獨立繪製。物件相對位置與大小穩定不隨拖拉變化
             var pad = 100;
             minX -= pad; minY -= pad; maxX += pad; maxY += pad;
             var cw = maxX - minX, ch = maxY - minY;

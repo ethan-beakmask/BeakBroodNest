@@ -712,9 +712,20 @@ function whiteboardApp(canvasId) {
         },
 
         saveViewport() { if (this.isSnapshot) return; API.updateCanvas(this.canvasId, { viewport_x: this.panX, viewport_y: this.panY, viewport_zoom: this.zoom }); },
-        zoomIn() { this.zoom = Math.min(3, this.zoom * 1.2); this.updateTransform(); this.renderConnections(); },
-        zoomOut() { this.zoom = Math.max(0.15, this.zoom / 1.2); this.updateTransform(); this.renderConnections(); },
-        resetZoom() { this.zoom = 1; this.panX = 0; this.panY = 0; this.updateTransform(); this.renderConnections(); this.saveViewport(); },
+        _zoomAround(newZoom) {
+            const vp = this.$refs.viewport;
+            const rect = vp ? vp.getBoundingClientRect() : { width: 0, height: 0 };
+            const cx = rect.width / 2, cy = rect.height / 2;
+            const wx = (cx - this.panX) / this.zoom;
+            const wy = (cy - this.panY) / this.zoom;
+            this.zoom = newZoom;
+            this.panX = cx - wx * newZoom;
+            this.panY = cy - wy * newZoom;
+            this.updateTransform(); this.renderConnections(); this.saveViewport();
+        },
+        zoomIn() { this._zoomAround(Math.min(3, this.zoom * 1.2)); },
+        zoomOut() { this._zoomAround(Math.max(0.15, this.zoom / 1.2)); },
+        resetZoom() { this.fitView(); },
 
         fitView() {
             if (this.atoms.length === 0) return;

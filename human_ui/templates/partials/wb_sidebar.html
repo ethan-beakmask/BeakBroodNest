@@ -100,4 +100,23 @@
                     <div x-show="atoms.length === 0" class="text-sm text-muted" style="padding:4px 8px;">白板上沒有卡片</div>
                 </div>
             </div>
+
+            <!-- Minimap + 縮放控制（置底固定） -->
+            <div class="sidebar-section sidebar-minimap-section">
+                <div class="wb-minimap" x-show="_minimapVisible"
+                     @mousedown.stop.prevent="onMinimapMouseDown($event)"
+                     @mousemove.stop="onMinimapMouseMove($event)"
+                     @mouseup.stop="onMinimapMouseUp($event)"
+                     @mouseleave="onMinimapMouseUp($event)">
+                    <canvas x-ref="minimapCanvas" width="216" height="140"></canvas>
+                </div>
+                <div class="wb-zoom">
+                    <button @click="toggleMinimap()" title="Minimap" style="font-size:11px;">M</button>
+                    <div class="separator" style="width:1px; height:14px; background:var(--border-light); margin:0 2px;"></div>
+                    <button @click="zoomOut()">-</button>
+                    <span x-text="zoomPercent + '%'" style="min-width:36px; text-align:center;"></span>
+                    <button @click="zoomIn()">+</button>
+                    <button @click="resetZoom()" style="margin-left:4px; font-size:11px;">重置</button>
+                </div>
+            </div>
         </div>
