@@ -1348,7 +1348,26 @@ function whiteboardApp(canvasId) {
 
         async createTag() {
             if (!this.newTagName.trim()) return;
-            const created = await API.createTag({ name: this.newTagName.trim(), color: this.newTagColor, source: 'human' });
+            let created;
+            try {
+                created = await API.createTag({ name: this.newTagName.trim(), color: this.newTagColor, source: 'human' });
+            } catch (e) {
+                // 409 = 撞名，後端會回既有 tag，提示使用者並直接套用既有的（含顏色變更）
+                const status = e && (e.status || (e.response && e.response.status));
+                const body = e && (e.body || e.data || (e.response && e.response.data));
+                if (status === 409 && body && body.existing) {
+                    const ex = body.existing;
+                    if (ex.color !== this.newTagColor && confirm('同名標籤已存在（id=' + ex.id + '），要把顏色改為新選的色嗎？')) {
+                        await API.updateTag(ex.id, { color: this.newTagColor });
+                    } else {
+                        alert('同名標籤已存在，沿用既有的（id=' + ex.id + '）。');
+                    }
+                    this.tags = await API.getTags();
+                    this.newTagName = '';
+                    return;
+                }
+                throw e;
+            }
             // 若使用者目前已勾選分類，新標籤自動歸入所選分類
             if (created && created.id && Array.isArray(this.selectedCategoryIds) && this.selectedCategoryIds.length > 0) {
                 const catIds = this.selectedCategoryIds.filter(function(id) { return id !== 0; });
@@ -1358,6 +1377,11 @@ function whiteboardApp(canvasId) {
             }
             this.tags = await API.getTags();
             this.newTagName = '';
+        },
+
+        async updateTagColor(tagId, color) {
+            await API.updateTag(tagId, { color: color });
+            this.tags = await API.getTags();
         },
 
         filterTagsBySource(arr) {

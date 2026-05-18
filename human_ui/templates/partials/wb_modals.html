@@ -592,8 +592,12 @@
                         <label style="cursor:pointer;"><input type="radio" value="all" x-model="tagSourceFilter"> 全部</label>
                     </div>
                     <template x-for="t in filterTagsBySource(tags)" :key="t.id">
-                        <div class="flex items-center justify-between" style="padding:6px 0; border-bottom:1px solid var(--border-light);">
-                            <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
+                        <div class="flex items-center justify-between" style="padding:6px 0; border-bottom:1px solid var(--border-light); gap:8px;">
+                            <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name" style="flex:1;"></span>
+                            <input type="color" :value="t.color"
+                                   @change="updateTagColor(t.id, $event.target.value)"
+                                   title="變更顏色"
+                                   style="width:32px; height:28px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer; padding:0;">
                             <button class="btn-ghost btn-sm" @click="if(confirm('刪除標籤?')) deleteTag(t.id)">刪除</button>
                         </div>
                     </template>

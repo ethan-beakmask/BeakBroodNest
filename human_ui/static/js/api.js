@@ -10,8 +10,11 @@ const API = {
             throw new Error('未登入');
         }
         if (!resp.ok) {
-            const err = await resp.json().catch(() => ({ error: resp.statusText }));
-            throw new Error(err.error || resp.statusText);
+            const body = await resp.json().catch(() => ({ error: resp.statusText }));
+            const err = new Error(body.error || resp.statusText);
+            err.status = resp.status;
+            err.body = body;
+            throw err;
         }
         return resp.json();
     },

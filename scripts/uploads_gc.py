@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core.db import init_engine, session_scope
 from core.models import (
     UploadedFile, KnowledgeAtom, Canvas,
-    EntrySchema, EntrySchemaField, EntryFieldValue, AtomEntry,
+    EntryFieldValue, AtomEntry,
 )
 
 # ============================================================
@@ -49,6 +49,8 @@ LOG_PATH = '/opt/tmp/scripts-uploads_gc.log'
 
 # /beakbroodnest/files/<token> 的 token 抓取（與 routes/files.py 的 TOKEN_RE 一致）
 TOKEN_URL_RE = re.compile(r'/beakbroodnest/files/([A-Za-z0-9_-]{16,64})')
+# 純 token 比對(structuredEntry fieldValues 內常見格式，例如 idcard.image_token)
+TOKEN_BARE_RE = re.compile(r'^[A-Za-z0-9_-]{16,64}$')
 
 # 預設參數
 DEFAULT_GRACE_DAYS = 7        # 孤兒檔案保留天數（軟刪除窗口）
@@ -85,6 +87,16 @@ def _walk_image_tokens(node, out: set):
             out.add(attrs['token'])
         if attrs.get('thumbnailToken'):
             out.add(attrs['thumbnailToken'])
+    elif ntype == 'structuredEntry':
+        # structuredEntry 將 schema 欄位值存於 attrs.fieldValues，
+        # 部分 schema（如 idcard.image_token、未來新 schema）會把 uploaded_files
+        # 的 token 直接塞進欄位字串。這裡用寬鬆比對：任何符合 token 格式的字串
+        # 都視為引用，避免漏掃導致 GC 誤刪。
+        fvs = attrs.get('fieldValues') or {}
+        if isinstance(fvs, dict):
+            for v in fvs.values():
+                if isinstance(v, str) and TOKEN_BARE_RE.match(v):
+                    out.add(v)
     # 遞迴子節點
     children = node.get('content')
     if isinstance(children, list):
@@ -116,33 +128,31 @@ def _scan_canvas_snapshot_tokens(session) -> set:
 
 
 def _scan_file_token_field_values(session) -> set:
-    """掃描 file schema 的 file_token 欄位值，回傳所有被引用的 token。
+    """掃描 entry_field_values 內所有符合 token 格式的字串值，視為引用。
+
+    放寬策略：不再侷限 file schema 的 file_token 欄位。任何 schema
+    (file.file_token / idcard.image_token / 未來新 schema 的 token 欄位)
+    只要值符合 TOKEN_BARE_RE 都算引用，避免 GC 因不認得新 schema 而誤刪。
+    誤報只會「多保留」幾筆已棄置的 uploaded_files，無資料安全風險。
 
     跳過所屬 atom 已被 hard delete 的 entry（依靠 cascade 已清掉，
     這裡只看 active entry 的引用 -- soft delete 的 atom 仍視為引用，避免提前清理）。
     """
-    # 先找 file schema 的 file_token field id
-    field = (
-        session.query(EntrySchemaField)
-        .join(EntrySchema, EntrySchema.id == EntrySchemaField.schema_id)
-        .filter(EntrySchema.code == 'file', EntrySchemaField.name == 'file_token')
-        .first()
-    )
-    if not field:
-        return set()
-
     rows = (
         session.query(EntryFieldValue.value)
         .join(AtomEntry, AtomEntry.id == EntryFieldValue.entry_id)
         .join(KnowledgeAtom, KnowledgeAtom.id == AtomEntry.atom_id)
         .filter(
-            EntryFieldValue.field_id == field.id,
             EntryFieldValue.value.isnot(None),
             KnowledgeAtom.is_deleted == False,
         )
         .all()
     )
-    return {r[0] for r in rows if r[0]}
+    tokens = set()
+    for (v,) in rows:
+        if isinstance(v, str) and TOKEN_BARE_RE.match(v):
+            tokens.add(v)
+    return tokens
 
 
 def collect_referenced_tokens(session) -> set:
