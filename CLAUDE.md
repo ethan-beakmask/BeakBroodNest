@@ -80,13 +80,10 @@
 - `;;物件` 是 atomic block，刪除只能透過 `[x]`，鍵盤的 Backspace/Delete 在邊界要吃掉
 
 ## 每次對話必做
-1. 呼叫 `note_inbox` 檢查未讀訊息，有未讀則摘要告知用戶，並標記已讀
-2. 呼叫 `note_overview` 取得知識庫概覽（原子數、標籤、最近更新、阻塞項目）
-3. 呼叫 `note_search` 搜尋 tag=「待辦」+ tag=「BeakBroodNest」取得當前專案待辦
-4. 根據知識庫回傳的內容理解專案狀態，不要重新掃描目錄結構
-5. 若用戶指定任務，用 `note_get` 讀取對應原子的完整內容再開工
-6. 開工前搜尋方法論紀錄：`note_search(schema_id=2, query="任務相關關鍵字")`，若有命中則閱讀 improved_approach 和 applicable_when 判斷是否適用
-7. 完成任務後用 `note_update` 更新對應原子狀態，或用 `note_forget` 歸檔已完成項目
+1. 根據知識庫回傳的內容理解專案狀態，不要重新掃描目錄結構
+2. 若用戶指定任務，用 `note_get` 讀取對應原子的完整內容再開工
+3. 開工前搜尋方法論紀錄：`note_search(schema_id=2, query="任務相關關鍵字")`，若有命中則閱讀 improved_approach 和 applicable_when 判斷是否適用
+4. 完成任務後用 `note_update` 更新對應原子狀態，或用 `note_forget` 歸檔已完成項目
 
 ## 知識庫使用原則
 - 新的設計決策、待辦、里程碑 -> `note_store` 存入知識庫

@@ -184,6 +184,8 @@ def register(mcp):
                         'title': ba.title,
                         'blocked_by': [{'id': b.id, 'title': b.title} for b in blockers],
                     })
+            blocked_total = len(truly_blocked)
+            truly_blocked = truly_blocked[:10]
 
             tag_counts = (
                 s.query(Tag.name, func.count(atom_tags.c.atom_id))
@@ -216,4 +218,5 @@ def register(mcp):
                     for a in recent
                 ],
                 'blocked_items': truly_blocked,
+                'blocked_items_total': blocked_total,
             }, ensure_ascii=False)

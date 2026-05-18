@@ -110,6 +110,14 @@ def _emit_inbox_alert(item: dict, result: dict, logger: logging.Logger):
     )
     try:
         with session_scope() as s:
+            existing = s.query(Message).filter(
+                Message.recipient == 'project:beakbroodnest',
+                Message.subject == subject,
+                Message.is_read == False,
+            ).first()
+            if existing:
+                logger.info(f'  {item["name"]}: 已有未讀 alert（id={existing.id}），跳過重複發送')
+                return False
             msg = Message(
                 sender='task:heartbeat-monitor',
                 sender_cwd=str(BASE_DIR),
