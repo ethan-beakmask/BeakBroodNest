@@ -91,7 +91,6 @@ function whiteboardApp(canvasId) {
         exchangeFollowMouseX: 0,
         exchangeFollowMouseY: 0,
         showNewCanvasModal: false,
-        showTagModal: false,
         showRelationModal: false,
         showConnTypeModal: false,
         connTypeChangeTarget: null,
@@ -150,6 +149,10 @@ function whiteboardApp(canvasId) {
         newTagName: '',
         newTagColor: '#6b7280',
         tagSourceFilter: 'human',  // 'human' | 'ai' | 'all'，預設只看自己建立的
+        tagIncludeHidden: false,
+        tagManageMode: false,
+        tagEditingId: null,
+        tagEditingName: '',
         // Canvas sidebar：最近開啟（localStorage）與下拉清單 + 標籤多選過濾
         recentCanvasSlugs: [],
         canvasDropdownOpen: false,
@@ -1363,17 +1366,27 @@ function whiteboardApp(canvasId) {
             try {
                 created = await API.createTag({ name: this.newTagName.trim(), color: this.newTagColor, source: 'human' });
             } catch (e) {
-                // 409 = 撞名，後端會回既有 tag，提示使用者並直接套用既有的（含顏色變更）
+                // 409 = 撞名，後端會回既有 tag。若該 tag 已被隱藏，提示是否重新啟用；否則沿用既有。
                 const status = e && (e.status || (e.response && e.response.status));
                 const body = e && (e.body || e.data || (e.response && e.response.data));
                 if (status === 409 && body && body.existing) {
                     const ex = body.existing;
+                    if (ex.hidden) {
+                        if (confirm('已存在同名的隱藏標籤（id=' + ex.id + '）。\n按「確定」恢復舊標籤（連同所有舊關聯）；按「取消」請改用其他名稱。')) {
+                            await API.updateTag(ex.id, { hidden: false, color: this.newTagColor });
+                            await this.reloadTags();
+                            this.newTagName = '';
+                            return;
+                        }
+                        // 用戶選取消：不沿用，保留輸入讓用戶改名
+                        return;
+                    }
                     if (ex.color !== this.newTagColor && confirm('同名標籤已存在（id=' + ex.id + '），要把顏色改為新選的色嗎？')) {
                         await API.updateTag(ex.id, { color: this.newTagColor });
                     } else {
                         alert('同名標籤已存在，沿用既有的（id=' + ex.id + '）。');
                     }
-                    this.tags = await API.getTags();
+                    await this.reloadTags();
                     this.newTagName = '';
                     return;
                 }
@@ -1401,7 +1414,56 @@ function whiteboardApp(canvasId) {
             return arr.filter(function(t) { return (t.source || 'ai') === f; });
         },
 
-        async deleteTag(tagId) { await API.deleteTag(tagId); this.tags = await API.getTags(); },
+        async reloadTags() {
+            this.tags = await API.getTags({ include_hidden: this.tagIncludeHidden ? 1 : 0 });
+        },
+
+        async setTagHidden(tagId, hidden) {
+            await API.updateTag(tagId, { hidden: !!hidden });
+            await this.reloadTags();
+        },
+
+        startEditTag(t) {
+            this.tagEditingId = t.id;
+            this.tagEditingName = t.name;
+        },
+
+        cancelEditTag() {
+            this.tagEditingId = null;
+            this.tagEditingName = '';
+        },
+
+        async commitEditTag(t) {
+            const newName = (this.tagEditingName || '').trim();
+            if (!newName || newName === t.name) {
+                this.cancelEditTag();
+                return;
+            }
+            try {
+                await API.updateTag(t.id, { name: newName });
+            } catch (e) {
+                const status = e && (e.status || (e.response && e.response.status));
+                const body = e && (e.body || e.data || (e.response && e.response.data));
+                if (status === 409 && body && body.existing) {
+                    const ex = body.existing;
+                    const flags = [];
+                    if (ex.hidden) flags.push('已隱藏');
+                    if (ex.source && ex.source !== 'human') flags.push('來源=' + ex.source);
+                    const suffix = flags.length ? '（' + flags.join('、') + '）' : '';
+                    let msg = '已存在同名標籤「' + ex.name + '」' + suffix + '，id=' + ex.id + '。';
+                    if (ex.hidden) msg += '\n（提示：勾選「顯示已隱藏」可看見並恢復它，或改用其他名稱）';
+                    else if (ex.source !== 'human') msg += '\n（提示：把「來源」切到「全部」可看見該標籤）';
+                    else msg += '\n請改用其他名稱。';
+                    alert(msg);
+                    return;
+                }
+                throw e;
+            }
+            this.cancelEditTag();
+            await this.reloadTags();
+            // 改名後既有關聯仍指向同一 id，重新載入卡片資料讓 UI 反映新名稱
+            await this.loadData();
+        },
 
         // ============================================
         // Tag Categories

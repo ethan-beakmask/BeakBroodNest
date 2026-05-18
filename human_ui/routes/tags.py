@@ -82,10 +82,13 @@ def delete_tag_category(cat_id):
 @bp.route('/api/tags', methods=['GET'])
 def list_tags():
     src = request.args.get('source')  # human | ai | None(all)
+    include_hidden = request.args.get('include_hidden', '').lower() in ('1', 'true', 'yes')
     with session_scope() as s:
         q = s.query(Tag).options(joinedload(Tag.categories))
         if src in ('human', 'ai'):
             q = q.filter(Tag.source == src)
+        if not include_hidden:
+            q = q.filter(Tag.hidden.is_(False))
         tags = q.order_by(Tag.tag_type, Tag.name).all()
         return jsonify([t.to_dict() for t in tags])
 
@@ -137,6 +140,8 @@ def update_tag(tag_id):
         for field in ('color', 'parent_tag_id', 'tag_type', 'source'):
             if field in data:
                 setattr(tag, field, data[field])
+        if 'hidden' in data:
+            tag.hidden = bool(data['hidden'])
         # 多對多分類更新
         if 'category_ids' in data:
             cat_ids = data['category_ids'] or []

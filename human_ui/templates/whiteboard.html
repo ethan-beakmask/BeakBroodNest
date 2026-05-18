@@ -25,7 +25,7 @@
 {% block body %}
 <div x-data="whiteboardApp('{{ canvas_slug }}')" x-init="init()"
      @click="closeContextMenu()"
-     @keydown.escape.window="if(exchangeFollowItem){ cancelExchangeFollow(); return; } if(showHardDeleteModal){ closeHardDeleteModal(); return; } if(cardEditorOpen){ if(ceCancelAllContinuous()) return; closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } if(showTextboxModal){ closeTextboxModal(); return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showExchangeModal=false; showNewCanvasModal=false; showTagModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
+     @keydown.escape.window="if(exchangeFollowItem){ cancelExchangeFollow(); return; } if(showHardDeleteModal){ closeHardDeleteModal(); return; } if(cardEditorOpen){ if(ceCancelAllContinuous()) return; closeCardEditor(); return; } if(showAtomInfoModal){ showAtomInfoModal=false; return; } if(showTextboxModal){ closeTextboxModal(); return; } cancelConnDrag(); cancelInlineEdit(); deselectCard(); closeContextMenu(); showNewAtomModal=false; showExchangeModal=false; showNewCanvasModal=false; showRelationModal=false; showGroupModal=false; showUISettingsModal=false; showBatchTagModal=false">
 
     <!-- Toast -->
     <div class="toast-container">

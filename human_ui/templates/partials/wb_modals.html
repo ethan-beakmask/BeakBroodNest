@@ -569,45 +569,6 @@
         </div>
     </template>
 
-    <!-- 標籤管理 -->
-    <template x-if="showTagModal">
-        <div class="modal-overlay">
-            <div class="modal">
-                <div class="modal-header">
-                    <h3>標籤管理</h3>
-                    <button class="modal-close" @click="showTagModal=false">x</button>
-                </div>
-                <div class="modal-body">
-                    <div class="flex gap-2 mb-4">
-                        <input class="form-control" x-model="newTagName" placeholder="新標籤名稱..."
-                               @keydown.enter="createTag()" style="flex:1;">
-                        <input type="color" x-model="newTagColor"
-                               style="width:36px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
-                        <button class="btn btn-primary" @click="createTag()">建立</button>
-                    </div>
-                    <div class="flex gap-2 mb-3" style="font-size:12px;align-items:center;">
-                        <span style="color:var(--text-muted);">來源：</span>
-                        <label style="cursor:pointer;"><input type="radio" value="human" x-model="tagSourceFilter"> 我的</label>
-                        <label style="cursor:pointer;"><input type="radio" value="ai" x-model="tagSourceFilter"> AI</label>
-                        <label style="cursor:pointer;"><input type="radio" value="all" x-model="tagSourceFilter"> 全部</label>
-                    </div>
-                    <template x-for="t in filterTagsBySource(tags)" :key="t.id">
-                        <div class="flex items-center justify-between" style="padding:6px 0; border-bottom:1px solid var(--border-light); gap:8px;">
-                            <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name" style="flex:1;"></span>
-                            <input type="color" :value="t.color"
-                                   @change="updateTagColor(t.id, $event.target.value)"
-                                   title="變更顏色"
-                                   style="width:32px; height:28px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer; padding:0;">
-                            <button class="btn-ghost btn-sm" @click="if(confirm('刪除標籤?')) deleteTag(t.id)">刪除</button>
-                        </div>
-                    </template>
-                </div>
-                <div class="modal-footer">
-                    <button class="btn btn-secondary" @click="showTagModal=false">關閉</button>
-                </div>
-            </div>
-        </div>
-    </template>
 
     <!-- 關係類型選擇（Shift+拖拉時） -->
     <template x-if="showRelationModal">
@@ -1374,26 +1335,73 @@
                                 <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
                                     新標籤會自動歸入目前左側勾選的分類；建立後即為「我的」標籤
                                 </div>
-                                <div style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;align-items:center;">
+                                <div style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                                     <span style="color:var(--text-muted);">來源：</span>
                                     <label style="cursor:pointer;"><input type="radio" value="human" x-model="tagSourceFilter"> 我的</label>
                                     <label style="cursor:pointer;"><input type="radio" value="ai" x-model="tagSourceFilter"> AI</label>
                                     <label style="cursor:pointer;"><input type="radio" value="all" x-model="tagSourceFilter"> 全部</label>
+                                    <span style="margin-left:8px;color:var(--text-muted);">|</span>
+                                    <label style="cursor:pointer;"><input type="checkbox" x-model="tagIncludeHidden" @change="reloadTags()"> 顯示已隱藏</label>
+                                    <span style="margin-left:8px;color:var(--text-muted);">|</span>
+                                    <label style="cursor:pointer;"><input type="checkbox" x-model="tagManageMode"> 管理模式（改名／隱藏）</label>
                                 </div>
-                                <template x-if="selectedCategoryIds.length > 0">
+                                <!-- chip 模式：點擊切換分類歸屬 -->
+                                <template x-if="!tagManageMode && selectedCategoryIds.length > 0">
                                     <div style="display:flex;flex-wrap:wrap;gap:4px;">
                                         <template x-for="t in filterTagsBySource(tags)" :key="'tcr-'+t.id">
                                             <span class="tag-badge tag-cat-tag"
-                                                  :style="getTagStyle(t.color)"
+                                                  :style="getTagStyle(t.color) + (t.hidden ? ';opacity:0.45;' : '')"
                                                   :class="{ 'tag-in-cat': isTagInSelectedCats(t) }"
                                                   @click="toggleTagInCategory(t)"
-                                                  x-text="t.name"></span>
+                                                  x-text="t.name + (t.hidden ? '（已隱藏）' : '')"></span>
                                         </template>
                                     </div>
                                 </template>
-                                <template x-if="selectedCategoryIds.length === 0">
+                                <template x-if="!tagManageMode && selectedCategoryIds.length === 0">
                                     <div style="font-size:12px;color:var(--text-muted);padding:20px 0;text-align:center;">
-                                        勾選左側分類後，點擊標籤可增減歸屬
+                                        勾選左側分類後，點擊標籤可增減歸屬；或勾選「管理模式」改名／隱藏標籤
+                                    </div>
+                                </template>
+                                <!-- 管理模式：列表形式，每行可改名/改色/隱藏-->
+                                <template x-if="tagManageMode">
+                                    <div>
+                                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">
+                                            隱藏 = 從介面移除但保留所有關聯（卡片、白板仍掛此標籤）；用同名再次建立時會提示恢復
+                                        </div>
+                                        <template x-for="t in filterTagsBySource(tags)" :key="'tmr-'+t.id">
+                                            <div class="flex items-center" style="padding:6px 0;border-bottom:1px solid var(--border-light);gap:8px;"
+                                                 :style="t.hidden ? 'opacity:0.55;' : ''">
+                                                <template x-if="tagEditingId !== t.id">
+                                                    <span class="tag-badge" :style="getTagStyle(t.color)" style="flex:1;cursor:text;" @dblclick="startEditTag(t)" title="雙擊改名"
+                                                          x-text="t.name + (t.hidden ? '（已隱藏）' : '')"></span>
+                                                </template>
+                                                <template x-if="tagEditingId === t.id">
+                                                    <input class="form-control" x-model="tagEditingName" style="flex:1;font-size:12px;"
+                                                           @keydown.enter="commitEditTag(t)"
+                                                           @keydown.escape="cancelEditTag()"
+                                                           x-init="$nextTick(() => $el.focus())">
+                                                </template>
+                                                <input type="color" :value="t.color"
+                                                       @change="updateTagColor(t.id, $event.target.value)"
+                                                       title="變更顏色"
+                                                       style="width:28px;height:24px;border:1px solid var(--border-light);border-radius:4px;cursor:pointer;padding:0;">
+                                                <template x-if="tagEditingId !== t.id">
+                                                    <button class="btn-ghost btn-sm" @click="startEditTag(t)" title="改名" style="font-size:11px;">改名</button>
+                                                </template>
+                                                <template x-if="tagEditingId === t.id">
+                                                    <button class="btn-ghost btn-sm" @click="commitEditTag(t)" style="font-size:11px;">儲存</button>
+                                                </template>
+                                                <template x-if="!t.hidden">
+                                                    <button class="btn-ghost btn-sm" @click="setTagHidden(t.id, true)" title="從介面隱藏" style="font-size:11px;">隱藏</button>
+                                                </template>
+                                                <template x-if="t.hidden">
+                                                    <button class="btn-ghost btn-sm" @click="setTagHidden(t.id, false)" title="重新啟用" style="font-size:11px;">恢復</button>
+                                                </template>
+                                            </div>
+                                        </template>
+                                        <div x-show="filterTagsBySource(tags).length === 0" style="font-size:12px;color:var(--text-muted);padding:20px 0;text-align:center;">
+                                            尚無此來源的標籤
+                                        </div>
                                     </div>
                                 </template>
                             </div>

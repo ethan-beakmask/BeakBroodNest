@@ -107,7 +107,10 @@ const API = {
     },
 
     // Tags
-    getTags()               { return this.get('/beakbroodnest/api/tags'); },
+    getTags(params = {}) {
+        const q = new URLSearchParams(params).toString();
+        return this.get('/beakbroodnest/api/tags' + (q ? '?' + q : ''));
+    },
     createTag(data)         { return this.post('/beakbroodnest/api/tags', data); },
     updateTag(id, data)     { return this.put('/beakbroodnest/api/tags/' + id, data); },
     deleteTag(id)           { return this.del('/beakbroodnest/api/tags/' + id); },

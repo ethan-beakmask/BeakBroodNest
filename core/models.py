@@ -841,6 +841,7 @@ class Tag(Base):
     category_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('tag_categories.id', ondelete='SET NULL'), nullable=True
     )
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, default=datetime.datetime.now
     )
@@ -861,6 +862,7 @@ class Tag(Base):
             'parent_tag_id': self.parent_tag_id,
             'tag_type': self.tag_type,
             'source': self.source,
+            'hidden': bool(self.hidden),
             'category_ids': [c.id for c in self.categories] if self.categories else [],
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
