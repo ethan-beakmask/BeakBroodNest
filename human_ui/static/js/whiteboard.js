@@ -149,6 +149,12 @@ function whiteboardApp(canvasId) {
         newCanvasName: '',
         newTagName: '',
         newTagColor: '#6b7280',
+        tagSourceFilter: 'human',  // 'human' | 'ai' | 'all'，預設只看自己建立的
+        // Canvas sidebar：最近開啟（localStorage）與下拉清單 + 標籤多選過濾
+        recentCanvasSlugs: [],
+        canvasDropdownOpen: false,
+        canvasTagFilter: [],       // 選中的人類標籤 id 陣列；空=不過濾
+        RECENT_CANVAS_MAX: 7,
         pendingConnection: null,
         selectedRelationType: 'follows',
         relationLabel: '',
@@ -331,11 +337,14 @@ function whiteboardApp(canvasId) {
             if (rm === 'opt-straight')  { this.rtLineStyle = 'straight'; this.rtOptEnabled = true; }
 
             this.initMarked();
+            this.loadRecentCanvases();
+            this.loadCanvasTagFilter();
             await this.loadData();
             // 記錄最後活躍的白板 slug,讓其他頁面(如 Backlog)能預設聚焦此專案
             try {
                 if (this.canvasId) {
                     API.setPreference('last_active_canvas_slug', this.canvasId).catch(function() {});
+                    this.pushRecentCanvas(this.canvasId);
                 }
             } catch (e) {}
             this.$nextTick(() => {
@@ -1339,7 +1348,22 @@ function whiteboardApp(canvasId) {
 
         async createTag() {
             if (!this.newTagName.trim()) return;
-            await API.createTag({ name: this.newTagName.trim(), color: this.newTagColor }); this.tags = await API.getTags(); this.newTagName = '';
+            const created = await API.createTag({ name: this.newTagName.trim(), color: this.newTagColor, source: 'human' });
+            // 若使用者目前已勾選分類，新標籤自動歸入所選分類
+            if (created && created.id && Array.isArray(this.selectedCategoryIds) && this.selectedCategoryIds.length > 0) {
+                const catIds = this.selectedCategoryIds.filter(function(id) { return id !== 0; });
+                if (catIds.length > 0) {
+                    await API.updateTag(created.id, { category_ids: catIds });
+                }
+            }
+            this.tags = await API.getTags();
+            this.newTagName = '';
+        },
+
+        filterTagsBySource(arr) {
+            const f = this.tagSourceFilter;
+            if (f === 'all') return arr;
+            return arr.filter(function(t) { return (t.source || 'ai') === f; });
         },
 
         async deleteTag(tagId) { await API.deleteTag(tagId); this.tags = await API.getTags(); },
@@ -1590,6 +1614,85 @@ function whiteboardApp(canvasId) {
             order.forEach(o => { if (map[o]) { result.push({ owner: o, items: map[o] }); delete map[o]; } });
             Object.keys(map).sort().forEach(o => { result.push({ owner: o, items: map[o] }); });
             return result;
+        },
+
+        // ============================================
+        // Canvas sidebar：最近 / 下拉 / 標籤過濾
+        // ============================================
+        loadRecentCanvases() {
+            try {
+                var raw = localStorage.getItem('bb_recent_canvas_slugs');
+                this.recentCanvasSlugs = raw ? JSON.parse(raw) : [];
+                if (!Array.isArray(this.recentCanvasSlugs)) this.recentCanvasSlugs = [];
+            } catch (e) { this.recentCanvasSlugs = []; }
+        },
+        pushRecentCanvas(slug) {
+            if (!slug) return;
+            var arr = (this.recentCanvasSlugs || []).filter(function(s) { return s !== slug; });
+            arr.unshift(slug);
+            if (arr.length > this.RECENT_CANVAS_MAX) arr = arr.slice(0, this.RECENT_CANVAS_MAX);
+            this.recentCanvasSlugs = arr;
+            try { localStorage.setItem('bb_recent_canvas_slugs', JSON.stringify(arr)); } catch (e) {}
+        },
+        loadCanvasTagFilter() {
+            try {
+                var raw = localStorage.getItem('bb_canvas_tag_filter');
+                this.canvasTagFilter = raw ? JSON.parse(raw) : [];
+                if (!Array.isArray(this.canvasTagFilter)) this.canvasTagFilter = [];
+            } catch (e) { this.canvasTagFilter = []; }
+        },
+        saveCanvasTagFilter() {
+            try { localStorage.setItem('bb_canvas_tag_filter', JSON.stringify(this.canvasTagFilter || [])); } catch (e) {}
+        },
+        toggleCanvasTagFilter(tagId) {
+            var arr = this.canvasTagFilter || [];
+            if (arr.includes(tagId)) {
+                this.canvasTagFilter = arr.filter(function(id) { return id !== tagId; });
+            } else {
+                this.canvasTagFilter = arr.concat([tagId]);
+            }
+            this.saveCanvasTagFilter();
+        },
+        clearCanvasTagFilter() {
+            this.canvasTagFilter = [];
+            this.saveCanvasTagFilter();
+        },
+        get humanTags() {
+            return (this.tags || []).filter(function(t) { return (t.source || 'ai') === 'human'; });
+        },
+        get recentCanvases() {
+            var slugs = this.recentCanvasSlugs || [];
+            var byslug = {};
+            (this.canvases || []).forEach(function(c) { byslug[c.slug] = c; });
+            var out = [];
+            slugs.forEach(function(s) { if (byslug[s]) out.push(byslug[s]); });
+            // 若目前白板不在 recent（剛從 URL 進來尚未 push 完），補一筆
+            if (this.canvasId && !slugs.includes(this.canvasId) && byslug[this.canvasId]) {
+                out.unshift(byslug[this.canvasId]);
+            }
+            return out.slice(0, this.RECENT_CANVAS_MAX);
+        },
+        get filteredOtherCanvases() {
+            var recent = new Set((this.recentCanvases || []).map(function(c) { return c.slug; }));
+            var tagFilter = this.canvasTagFilter || [];
+            return (this.canvases || []).filter(function(c) {
+                if (recent.has(c.slug)) return false;
+                if (tagFilter.length === 0) return true;
+                var ids = c.tag_ids || [];
+                return tagFilter.some(function(id) { return ids.includes(id); });
+            });
+        },
+        async toggleCanvasTag(tagId) {
+            // 在「設定 → 白板」頁切換目前白板的標籤歸屬
+            if (!this.canvas) return;
+            var cur = (this.canvas.tag_ids || []).slice();
+            var idx = cur.indexOf(tagId);
+            if (idx >= 0) cur.splice(idx, 1); else cur.push(tagId);
+            var updated = await API.updateCanvas(this.canvasId, { tag_ids: cur });
+            this.canvas.tag_ids = updated.tag_ids || cur;
+            // 同步 canvases 清單中的對應項
+            var idx2 = (this.canvases || []).findIndex(c => c.slug === this.canvasId);
+            if (idx2 >= 0) this.canvases[idx2].tag_ids = this.canvas.tag_ids;
         },
 
         ownerDisplayName(owner) {

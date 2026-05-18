@@ -6,26 +6,73 @@
                     <button class="btn-ghost btn-sm" @click="showNewCanvasModal=true">+</button>
                 </div>
 
-                <!-- 依 owner 分組 -->
-                <template x-for="group in canvasGroups" :key="group.owner">
-                    <div class="sidebar-owner-group">
-                        <div class="sidebar-owner-label" x-text="ownerDisplayName(group.owner)"></div>
-                        <template x-for="c in group.items" :key="c.slug">
+                <!-- 最近 7 個 -->
+                <template x-for="c in recentCanvases" :key="'rc-'+c.slug">
+                    <a :href="'/beakbroodnest/canvas/' + c.slug"
+                       class="sidebar-item"
+                       :class="{ active: c.slug == canvasId }">
+                        <span class="icon icon-wb">W</span>
+                        <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                        <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
+                                @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.slug)"
+                                x-show="canvases.length > 1">x</button>
+                    </a>
+                </template>
+
+                <!-- 其他白板：下拉清單（含標籤篩選） -->
+                <div class="sidebar-canvas-dropdown" style="position:relative;margin-top:4px;"
+                     @click.outside="canvasDropdownOpen = false">
+                    <button class="btn-ghost"
+                            style="width:100%;text-align:left;font-size:12px;padding:4px 6px;border:1px solid var(--border-light);border-radius:4px;display:flex;align-items:center;gap:6px;"
+                            @click="canvasDropdownOpen = !canvasDropdownOpen">
+                        <span style="flex:1;color:var(--text-muted);">
+                            其他白板
+                            <span x-show="canvasTagFilter.length > 0"
+                                  style="color:var(--accent);"
+                                  x-text="'(過濾 '+canvasTagFilter.length+')'"></span>
+                        </span>
+                        <span style="font-size:10px;" x-text="canvasDropdownOpen ? 'v' : '>'"></span>
+                    </button>
+                    <div x-show="canvasDropdownOpen" x-cloak
+                         style="position:absolute;left:0;right:0;top:100%;z-index:50;margin-top:2px;background:var(--bg-secondary);border:1px solid var(--border-light);border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);max-height:60vh;overflow-y:auto;">
+                        <!-- 篩選區 -->
+                        <div style="padding:6px 8px;border-bottom:1px solid var(--border-light);background:var(--bg-tertiary);">
+                            <div style="font-size:11px;font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;">
+                                <span>篩選（多選＝OR）</span>
+                                <button class="btn-ghost" style="font-size:10px;padding:0 4px;"
+                                        x-show="canvasTagFilter.length > 0"
+                                        @click="clearCanvasTagFilter()">清除</button>
+                            </div>
+                            <div style="display:flex;flex-wrap:wrap;gap:3px;">
+                                <template x-for="t in humanTags" :key="'cf-'+t.id">
+                                    <span class="tag-badge"
+                                          :style="getTagStyle(t.color) + ';cursor:pointer;font-size:10px;padding:1px 6px;' + (canvasTagFilter.includes(t.id) ? '' : 'opacity:0.4;')"
+                                          @click="toggleCanvasTagFilter(t.id)"
+                                          x-text="t.name"></span>
+                                </template>
+                                <span x-show="humanTags.length === 0" style="font-size:10px;color:var(--text-muted);">尚無人類標籤，請至 設定→標籤分類 建立</span>
+                            </div>
+                        </div>
+                        <!-- 清單 -->
+                        <template x-for="c in filteredOtherCanvases" :key="'oc-'+c.slug">
                             <a :href="'/beakbroodnest/canvas/' + c.slug"
                                class="sidebar-item"
+                               style="border-radius:0;"
                                :class="{ active: c.slug == canvasId }">
                                 <span class="icon icon-wb">W</span>
                                 <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
-                                <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
-                                        @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.slug)"
-                                        x-show="canvases.length > 1">x</button>
                             </a>
                         </template>
+                        <div x-show="filteredOtherCanvases.length === 0"
+                             style="padding:8px;text-align:center;font-size:11px;color:var(--text-muted);">
+                            <span x-show="canvasTagFilter.length > 0">無符合過濾的白板</span>
+                            <span x-show="canvasTagFilter.length === 0">沒有其他白板</span>
+                        </div>
                     </div>
-                </template>
+                </div>
 
                 <!-- 歸檔白板開關 -->
-                <div class="sidebar-archived-toggle" x-show="archivedCanvasCount > 0">
+                <div class="sidebar-archived-toggle" x-show="archivedCanvasCount > 0" style="margin-top:6px;">
                     <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:var(--text-muted);">
                         <input type="checkbox" x-model="showArchivedCanvases" @change="loadCanvases()">
                         <span>已歸檔 (<span x-text="archivedCanvasCount"></span>)</span>

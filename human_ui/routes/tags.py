@@ -68,10 +68,12 @@ def delete_tag_category(cat_id):
 
 @bp.route('/api/tags', methods=['GET'])
 def list_tags():
+    src = request.args.get('source')  # human | ai | None(all)
     with session_scope() as s:
-        tags = (s.query(Tag)
-                .options(joinedload(Tag.categories))
-                .order_by(Tag.tag_type, Tag.name).all())
+        q = s.query(Tag).options(joinedload(Tag.categories))
+        if src in ('human', 'ai'):
+            q = q.filter(Tag.source == src)
+        tags = q.order_by(Tag.tag_type, Tag.name).all()
         return jsonify([t.to_dict() for t in tags])
 
 
@@ -87,6 +89,7 @@ def create_tag():
             color=data.get('color', '#6b7280'),
             parent_tag_id=data.get('parent_tag_id'),
             tag_type=data.get('tag_type', 'tag'),
+            source=data.get('source', 'human'),
             category_id=data.get('category_id'),
         )
         s.add(tag)
@@ -101,7 +104,7 @@ def update_tag(tag_id):
         tag = s.query(Tag).options(joinedload(Tag.categories)).filter(Tag.id == tag_id).first()
         if not tag:
             return jsonify({'error': '標籤不存在'}), 404
-        for field in ('name', 'color', 'parent_tag_id', 'tag_type'):
+        for field in ('name', 'color', 'parent_tag_id', 'tag_type', 'source'):
             if field in data:
                 setattr(tag, field, data[field])
         # 多對多分類更新

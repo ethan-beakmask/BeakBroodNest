@@ -12,7 +12,7 @@ from core.models import (
     KnowledgeAtom, UnifiedRelation, RelationTypeRegistry,
     Canvas, CanvasAtom, CanvasConnection, CanvasTrash,
     CanvasGroup, CanvasTextbox, CanvasMindmapShell,
-    Tag, atom_tags, canvas_group_members,
+    Tag, atom_tags, canvas_group_members, canvas_tags,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
     StandaloneEntry, CanvasStandaloneEntry,
 )
@@ -218,14 +218,20 @@ def _build_canvas_snapshot(s, canvas_id):
 
 @bp.route('/api/canvases', methods=['GET'])
 def list_canvases():
+    from sqlalchemy.orm import joinedload
     include_archived = request.args.get('include_archived', '0') == '1'
     only_projects = request.args.get('only_projects', '0') == '1'
+    # tag_ids=1,2,3 -> ANY 命中即列入（多選 OR 語意）
+    tag_ids_raw = request.args.get('tag_ids', '').strip()
+    tag_ids = [int(x) for x in tag_ids_raw.split(',') if x.strip().isdigit()] if tag_ids_raw else []
     with session_scope() as s:
-        q = s.query(Canvas)
+        q = s.query(Canvas).options(joinedload(Canvas.tags))
         if not include_archived:
             q = q.filter(Canvas.is_archived == False)
         if only_projects:
             q = q.filter(Canvas.is_project == True)
+        if tag_ids:
+            q = q.filter(Canvas.tags.any(Tag.id.in_(tag_ids)))
         canvases = q.order_by(Canvas.updated_at.desc()).all()
         return jsonify([c.to_dict() for c in canvases])
 
@@ -692,6 +698,10 @@ def update_canvas(slug):
                        'viewport_x', 'viewport_y', 'viewport_zoom', 'settings'):
             if field in data:
                 setattr(canvas, field, data[field])
+        if 'tag_ids' in data:
+            ids = data['tag_ids'] or []
+            tags = s.query(Tag).filter(Tag.id.in_(ids)).all() if ids else []
+            canvas.tags = tags
         s.flush()
         return jsonify(canvas.to_dict())
 

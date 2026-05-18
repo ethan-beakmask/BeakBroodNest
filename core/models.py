@@ -378,6 +378,9 @@ class Canvas(Base):
     mindmap_shells: Mapped[list["CanvasMindmapShell"]] = relationship(
         back_populates='canvas', cascade='all, delete-orphan'
     )
+    tags: Mapped[list["Tag"]] = relationship(
+        secondary='canvas_tags'
+    )
 
     def to_dict(self):
         return {
@@ -393,6 +396,7 @@ class Canvas(Base):
             'viewport_y': self.viewport_y,
             'viewport_zoom': self.viewport_zoom,
             'settings': self.settings,
+            'tag_ids': [t.id for t in self.tags] if self.tags else [],
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
@@ -830,6 +834,9 @@ class Tag(Base):
     tag_type: Mapped[str] = mapped_column(
         String(20), default='tag'
     )  # tag, group, domain
+    source: Mapped[str] = mapped_column(
+        String(20), default='ai', nullable=False
+    )  # human, ai
     # category_id 保留欄位但不再使用（多對多取代）
     category_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('tag_categories.id', ondelete='SET NULL'), nullable=True
@@ -853,6 +860,7 @@ class Tag(Base):
             'color': self.color,
             'parent_tag_id': self.parent_tag_id,
             'tag_type': self.tag_type,
+            'source': self.source,
             'category_ids': [c.id for c in self.categories] if self.categories else [],
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
@@ -871,6 +879,12 @@ tag_category_members = Table(
     'tag_category_members', Base.metadata,
     Column('tag_id', Integer, ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True),
     Column('category_id', Integer, ForeignKey('tag_categories.id', ondelete='CASCADE'), primary_key=True),
+)
+
+canvas_tags = Table(
+    'canvas_tags', Base.metadata,
+    Column('canvas_id', Integer, ForeignKey('canvases.id', ondelete='CASCADE'), primary_key=True),
+    Column('tag_id',    Integer, ForeignKey('tags.id',     ondelete='CASCADE'), primary_key=True),
 )
 
 canvas_group_members = Table(

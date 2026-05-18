@@ -585,7 +585,13 @@
                                style="width:36px; height:32px; border:1px solid var(--border-light); border-radius:4px; cursor:pointer;">
                         <button class="btn btn-primary" @click="createTag()">建立</button>
                     </div>
-                    <template x-for="t in tags" :key="t.id">
+                    <div class="flex gap-2 mb-3" style="font-size:12px;align-items:center;">
+                        <span style="color:var(--text-muted);">來源：</span>
+                        <label style="cursor:pointer;"><input type="radio" value="human" x-model="tagSourceFilter"> 我的</label>
+                        <label style="cursor:pointer;"><input type="radio" value="ai" x-model="tagSourceFilter"> AI</label>
+                        <label style="cursor:pointer;"><input type="radio" value="all" x-model="tagSourceFilter"> 全部</label>
+                    </div>
+                    <template x-for="t in filterTagsBySource(tags)" :key="t.id">
                         <div class="flex items-center justify-between" style="padding:6px 0; border-bottom:1px solid var(--border-light);">
                             <span class="tag-badge" :style="getTagStyle(t.color)" x-text="t.name"></span>
                             <button class="btn-ghost btn-sm" @click="if(confirm('刪除標籤?')) deleteTag(t.id)">刪除</button>
@@ -1272,6 +1278,20 @@
                             </div>
 
                             <div class="form-group" style="margin-top:16px;">
+                                <label style="font-size:12px;font-weight:600;">白板標籤</label>
+                                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">點擊切換歸屬；側邊欄「其他白板」會用這些標籤過濾</div>
+                                <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                                    <template x-for="t in humanTags" :key="'cst-'+t.id">
+                                        <span class="tag-badge"
+                                              :style="getTagStyle(t.color) + ';cursor:pointer;' + ((canvas && (canvas.tag_ids||[]).includes(t.id)) ? '' : 'opacity:0.35;')"
+                                              @click="toggleCanvasTag(t.id)"
+                                              x-text="t.name"></span>
+                                    </template>
+                                    <span x-show="humanTags.length === 0" style="font-size:11px;color:var(--text-muted);">尚無人類標籤，請至「標籤分類」分頁建立</span>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-top:16px;">
                                 <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer;">
                                     <input type="checkbox" :checked="showDragGrid"
                                            @change="toggleShowDragGrid()">
@@ -1314,7 +1334,7 @@
                                                style="margin:0;">
                                         <span style="flex:1;font-size:12px;" x-text="cat.name"></span>
                                         <span style="font-size:10px;color:var(--text-muted);"
-                                              x-text="tags.filter(t => (t.category_ids || []).includes(cat.id)).length"></span>
+                                              x-text="filterTagsBySource(tags).filter(t => (t.category_ids || []).includes(cat.id)).length"></span>
                                         <button class="btn-ghost" style="padding:0 2px;font-size:10px;color:var(--danger);opacity:0.6;"
                                                 @click.stop="if(confirm('刪除分類: '+cat.name+'?')) deleteCategory(cat.id)">x</button>
                                     </div>
@@ -1327,7 +1347,7 @@
                                            style="margin:0;">
                                     <span style="flex:1;font-size:12px;color:var(--text-muted);">未分類</span>
                                     <span style="font-size:10px;color:var(--text-muted);"
-                                          x-text="tags.filter(t => !t.category_ids || t.category_ids.length === 0).length"></span>
+                                          x-text="filterTagsBySource(tags).filter(t => !t.category_ids || t.category_ids.length === 0).length"></span>
                                 </div>
                             </div>
                             <!-- 右欄：標籤 -->
@@ -1340,9 +1360,25 @@
                                         <span>已選 <span x-text="selectedCategoryIds.length"></span> 個分類 -- 點擊標籤增減歸屬</span>
                                     </template>
                                 </div>
+                                <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;">
+                                    <input class="form-control" x-model="newTagName" placeholder="新標籤名稱..."
+                                           @keydown.enter="createTag()" style="flex:1;font-size:12px;">
+                                    <input type="color" x-model="newTagColor"
+                                           style="width:32px;height:28px;padding:1px;border:1px solid var(--border-light);border-radius:4px;cursor:pointer;">
+                                    <button class="btn btn-primary btn-sm" @click="createTag()" style="padding:2px 10px;">+</button>
+                                </div>
+                                <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+                                    新標籤會自動歸入目前左側勾選的分類；建立後即為「我的」標籤
+                                </div>
+                                <div style="font-size:11px;margin-bottom:8px;display:flex;gap:10px;align-items:center;">
+                                    <span style="color:var(--text-muted);">來源：</span>
+                                    <label style="cursor:pointer;"><input type="radio" value="human" x-model="tagSourceFilter"> 我的</label>
+                                    <label style="cursor:pointer;"><input type="radio" value="ai" x-model="tagSourceFilter"> AI</label>
+                                    <label style="cursor:pointer;"><input type="radio" value="all" x-model="tagSourceFilter"> 全部</label>
+                                </div>
                                 <template x-if="selectedCategoryIds.length > 0">
                                     <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                                        <template x-for="t in tags" :key="'tcr-'+t.id">
+                                        <template x-for="t in filterTagsBySource(tags)" :key="'tcr-'+t.id">
                                             <span class="tag-badge tag-cat-tag"
                                                   :style="getTagStyle(t.color)"
                                                   :class="{ 'tag-in-cat': isTagInSelectedCats(t) }"
