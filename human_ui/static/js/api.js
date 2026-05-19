@@ -175,6 +175,18 @@ const API = {
         var body = Object.assign({ atom_id: atomId }, opts || {});
         return this.post('/beakbroodnest/api/canvas-mindmap-shells/' + shellId + '/extract', body);
     },
+    transferMindmapShell(shellId, targetSlug, mode) {
+        return this.post('/beakbroodnest/api/canvas-mindmap-shells/' + shellId + '/transfer', {
+            target_canvas_slug: targetSlug,
+            mode: mode,
+        });
+    },
+    transferTextbox(tbId, targetSlug, mode) {
+        return this.post('/beakbroodnest/api/canvas-textboxes/' + tbId + '/transfer', {
+            target_canvas_slug: targetSlug,
+            mode: mode,
+        });
+    },
 
     // Promote entry to atom
     promoteEntry(entryId)           { return this.post('/beakbroodnest/api/entries/' + entryId + '/promote', {}); },

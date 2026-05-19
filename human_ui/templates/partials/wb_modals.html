@@ -1672,6 +1672,8 @@
                 <div>
                     <div class="context-menu-item" @click="openTextboxEditModal(contextMenu.tb); closeContextMenu()">編輯（標題/顏色/框線）</div>
                     <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="openTextboxTransferModal(contextMenu.tb); closeContextMenu()">轉移到其他白板...</div>
+                    <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="sendTextboxToTrash(contextMenu.tb); closeContextMenu()">丟到字紙簍（可救回）</div>
                 </div>
             </template>
@@ -1714,6 +1716,8 @@
                     <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellBorderStyle(contextMenu.sh.id, 'transparent'), closeContextMenu())">
                         <span x-text="(contextMenu && contextMenu.sh && contextMenu.sh.border_style === 'transparent' ? '✓ 全透明（殼隱形）' : '全透明（殼隱形）')"></span>
                     </div>
+                    <div class="context-menu-separator"></div>
+                    <div class="context-menu-item" @click="openMindmapTransferModal(contextMenu.sh); closeContextMenu()">轉移到其他白板...</div>
                     <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'shell_only'); closeContextMenu()">解除殼（節點留在白板上）</div>
                     <div class="context-menu-item" @click="deleteMindmapShell(contextMenu.sh.id, 'with_atoms'); closeContextMenu()" style="color:var(--danger);">刪除殼+所有節點（送字紙簍）</div>
@@ -1777,6 +1781,54 @@
             </div>
         </div>
     </template>
+
+    <!-- 物件轉移 Modal（心智圖 / 文字框共用） -->
+    <template x-if="transferModal.open">
+        <div class="modal-overlay" @click.self="transferModal.open = false">
+            <div class="modal" style="max-width:420px;">
+                <div class="modal-header">
+                    <span x-text="'轉移' + (transferModal.kind === 'mindmap' ? '心智圖' : '文字框') + '：' + transferModal.label"></span>
+                    <button class="modal-close" @click="transferModal.open = false" tabindex="-1">x</button>
+                </div>
+                <div class="modal-body" style="padding:16px;">
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;margin-bottom:6px;">目標白板</label>
+                        <select x-model="transferModal.targetSlug" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;">
+                            <option value="">-- 請選擇 --</option>
+                            <template x-for="cv in transferModal.canvases" :key="cv.slug">
+                                <option :value="cv.slug" x-text="cv.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div style="margin-bottom:12px;">
+                        <label style="display:block;font-weight:600;margin-bottom:6px;">操作模式</label>
+                        <div style="display:flex;gap:12px;">
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                                <input type="radio" x-model="transferModal.mode" value="move">
+                                移動（來源白板移除）
+                            </label>
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                                <input type="radio" x-model="transferModal.mode" value="copy">
+                                複製（來源白板保留）
+                            </label>
+                        </div>
+                    </div>
+                    <template x-if="transferModal.error">
+                        <div style="color:var(--danger);font-size:13px;" x-text="transferModal.error"></div>
+                    </template>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @click="transferModal.open = false" tabindex="-1">取消</button>
+                    <button class="btn btn-primary"
+                            :disabled="!transferModal.targetSlug || transferModal.loading"
+                            @click="doTransfer()"
+                            x-text="transferModal.loading ? '處理中...' : (transferModal.mode === 'copy' ? '複製' : '移動')">
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
 <!-- ============================================
      Toolbar 按鈕標 tabindex=-1,避免 contenteditable 的 Tab 跑到 toolbar
      觸發如「-表(刪除整張表)」之類的危險按鈕。

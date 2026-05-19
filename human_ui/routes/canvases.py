@@ -1038,6 +1038,88 @@ def delete_canvas_textbox(tb_id):
         return jsonify({'message': f'文字框 {tb_id} 已刪除'})
 
 
+@bp.route('/api/canvas-textboxes/<int:tb_id>/transfer', methods=['POST'])
+def transfer_canvas_textbox(tb_id):
+    """轉移文字框到另一個白板。
+
+    mode='move': 更新 canvas_id（文字框本身及其連線移到目標白板）
+    mode='copy': 在目標白板建立一份複本（原白板保留）
+
+    body: { target_canvas_slug: str, mode: 'move'|'copy' }
+    """
+    data = request.get_json() or {}
+    target_slug = data.get('target_canvas_slug')
+    mode = data.get('mode', 'move')
+
+    if not target_slug:
+        return jsonify({'error': '缺少 target_canvas_slug'}), 400
+    if mode not in ('move', 'copy'):
+        return jsonify({'error': 'mode 必須是 move 或 copy'}), 400
+
+    with session_scope() as s:
+        tb = s.get(CanvasTextbox, tb_id)
+        if not tb:
+            return jsonify({'error': '文字框不存在'}), 404
+
+        target_canvas = _get_canvas_by_slug(s, target_slug)
+        if not target_canvas:
+            return jsonify({'error': '目標白板不存在'}), 404
+
+        if target_canvas.id == tb.canvas_id:
+            return jsonify({'error': '來源與目標白板相同'}), 400
+
+        src_canvas_id = tb.canvas_id
+
+        if mode == 'move':
+            # 移動文字框相關 CanvasConnection 到目標白板
+            conns = (
+                s.query(CanvasConnection)
+                .filter(
+                    CanvasConnection.canvas_id == src_canvas_id,
+                    CanvasConnection.from_kind == 'textbox',
+                    CanvasConnection.to_kind == 'textbox',
+                    CanvasConnection.source_textbox_id == tb_id,
+                    CanvasConnection.target_textbox_id == tb_id,
+                )
+                .all()
+            )
+            # 也包含只有一端是此 textbox 的連線（與 atom 的跨類型連線）
+            mixed_conns = (
+                s.query(CanvasConnection)
+                .filter(
+                    CanvasConnection.canvas_id == src_canvas_id,
+                    (CanvasConnection.source_textbox_id == tb_id) |
+                    (CanvasConnection.target_textbox_id == tb_id),
+                )
+                .all()
+            )
+            for conn in mixed_conns:
+                conn.canvas_id = target_canvas.id
+
+            tb.canvas_id = target_canvas.id
+            s.flush()
+            return jsonify({'message': f'文字框已移動到白板 {target_slug}', 'textbox': tb.to_dict()})
+
+        else:  # copy
+            new_tb = CanvasTextbox(
+                canvas_id=target_canvas.id,
+                title=tb.title,
+                content=tb.content,
+                pos_x=tb.pos_x,
+                pos_y=tb.pos_y,
+                width=tb.width,
+                height=tb.height,
+                z_index=tb.z_index,
+                bg_color=tb.bg_color,
+                border_color=tb.border_color,
+                border_style=tb.border_style,
+                text_color=tb.text_color,
+            )
+            s.add(new_tb)
+            s.flush()
+            return jsonify({'message': f'文字框已複製到白板 {target_slug}', 'textbox': new_tb.to_dict()}), 201
+
+
 # ============================================================
 # Canvas Mindmap Shells + Tree Operations
 # 殼 = 視覺容器（canvas_mindmap_shells）
@@ -1253,6 +1335,193 @@ def delete_mindmap_shell(shell_id):
 
         s.delete(shell)
         return jsonify({'message': f'心智圖殼 {shell_id} 已刪除', 'mode': mode})
+
+
+@bp.route('/api/canvas-mindmap-shells/<int:shell_id>/transfer', methods=['POST'])
+def transfer_mindmap_shell(shell_id):
+    """轉移心智圖殼到另一個白板。
+
+    mode='move': 整個殼 + 所有節點遷移到目標白板（來源白板移除）
+    mode='copy': 深度複製殼 + 所有節點到目標白板（來源白板保留，建立全新 atoms）
+
+    body: { target_canvas_slug: str, mode: 'move'|'copy' }
+    回傳: { message, shell (新殼 dict) }
+    """
+    data = request.get_json() or {}
+    target_slug = data.get('target_canvas_slug')
+    mode = data.get('mode', 'move')
+
+    if not target_slug:
+        return jsonify({'error': '缺少 target_canvas_slug'}), 400
+    if mode not in ('move', 'copy'):
+        return jsonify({'error': 'mode 必須是 move 或 copy'}), 400
+
+    with session_scope() as s:
+        shell = s.get(CanvasMindmapShell, shell_id)
+        if not shell:
+            return jsonify({'error': '心智圖殼不存在'}), 404
+
+        target_canvas = _get_canvas_by_slug(s, target_slug)
+        if not target_canvas:
+            return jsonify({'error': '目標白板不存在'}), 404
+
+        if target_canvas.id == shell.canvas_id:
+            return jsonify({'error': '來源與目標白板相同'}), 400
+
+        members = (
+            s.query(CanvasAtom)
+            .filter(CanvasAtom.mindmap_shell_id == shell_id)
+            .all()
+        )
+        atom_ids = [ca.atom_id for ca in members]
+        src_canvas_id = shell.canvas_id
+
+        if mode == 'move':
+            # 在目標白板建立新殼（複製所有殼屬性）
+            new_shell = CanvasMindmapShell(canvas_id=target_canvas.id)
+            for f in _SHELL_FIELDS:
+                setattr(new_shell, f, getattr(shell, f))
+            s.add(new_shell)
+            s.flush()
+
+            # 移動所有 CanvasAtom 到目標白板
+            for ca in members:
+                ca.canvas_id = target_canvas.id
+                ca.mindmap_shell_id = new_shell.id
+
+            # 移動來源白板上連接心智圖節點間的 CanvasConnection
+            if atom_ids:
+                conns = (
+                    s.query(CanvasConnection)
+                    .filter(
+                        CanvasConnection.canvas_id == src_canvas_id,
+                        CanvasConnection.from_kind == 'atom',
+                        CanvasConnection.to_kind == 'atom',
+                        CanvasConnection.source_atom_id.in_(atom_ids),
+                        CanvasConnection.target_atom_id.in_(atom_ids),
+                    )
+                    .all()
+                )
+                for conn in conns:
+                    conn.canvas_id = target_canvas.id
+
+            s.delete(shell)
+            s.flush()
+            return jsonify({
+                'message': f'心智圖殼已移動到白板 {target_slug}',
+                'shell': new_shell.to_dict(),
+            })
+
+        else:  # copy
+            # 建立 old_atom_id -> new KnowledgeAtom 映射
+            atom_map = {}
+            for ca in members:
+                old_atom = s.get(KnowledgeAtom, ca.atom_id)
+                if not old_atom:
+                    continue
+                new_atom = KnowledgeAtom(
+                    title=old_atom.title,
+                    content=old_atom.content,
+                    content_plain=old_atom.content_plain,
+                    content_json=old_atom.content_json,
+                    content_type=old_atom.content_type,
+                    atom_type=old_atom.atom_type,
+                    source='human',
+                    owner=old_atom.owner,
+                    sensitivity=old_atom.sensitivity,
+                )
+                s.add(new_atom)
+                atom_map[ca.atom_id] = new_atom
+            s.flush()
+
+            new_root_atom = atom_map.get(shell.root_atom_id)
+            if not new_root_atom:
+                return jsonify({'error': '無法複製 root 節點'}), 500
+
+            # 建立新殼
+            new_shell = CanvasMindmapShell(canvas_id=target_canvas.id)
+            for f in _SHELL_FIELDS:
+                if f != 'root_atom_id':
+                    setattr(new_shell, f, getattr(shell, f))
+            new_shell.root_atom_id = new_root_atom.id
+            s.add(new_shell)
+            s.flush()
+
+            # 取 tree_parent relations
+            tree_rels = (
+                s.query(UnifiedRelation)
+                .filter(
+                    UnifiedRelation.relation_type == 'tree_parent',
+                    UnifiedRelation.is_deleted == False,
+                    UnifiedRelation.from_atom_id.in_(atom_ids),
+                )
+                .all()
+            ) if atom_ids else []
+
+            # 建立新 CanvasAtom
+            for ca in members:
+                new_atom = atom_map.get(ca.atom_id)
+                if not new_atom:
+                    continue
+                s.add(CanvasAtom(
+                    canvas_id=target_canvas.id,
+                    atom_id=new_atom.id,
+                    pos_x=ca.pos_x,
+                    pos_y=ca.pos_y,
+                    width=ca.width,
+                    height=ca.height,
+                    z_index=ca.z_index,
+                    visual_style=ca.visual_style,
+                    mindmap_shell_id=new_shell.id,
+                ))
+
+            # 複製 tree_parent relations（舊 id -> 新 id）
+            for rel in tree_rels:
+                from_new = atom_map.get(rel.from_atom_id)
+                to_new = atom_map.get(rel.to_atom_id)
+                if from_new and to_new:
+                    s.add(UnifiedRelation(
+                        relation_type='tree_parent',
+                        from_atom_id=from_new.id,
+                        to_atom_id=to_new.id,
+                        sort_order=rel.sort_order,
+                        is_deleted=False,
+                    ))
+
+            # 複製 CanvasConnections（節點間）
+            if atom_ids:
+                conns = (
+                    s.query(CanvasConnection)
+                    .filter(
+                        CanvasConnection.canvas_id == src_canvas_id,
+                        CanvasConnection.from_kind == 'atom',
+                        CanvasConnection.to_kind == 'atom',
+                        CanvasConnection.source_atom_id.in_(atom_ids),
+                        CanvasConnection.target_atom_id.in_(atom_ids),
+                    )
+                    .all()
+                )
+                for conn in conns:
+                    src_new = atom_map.get(conn.source_atom_id)
+                    tgt_new = atom_map.get(conn.target_atom_id)
+                    if src_new and tgt_new:
+                        s.add(CanvasConnection(
+                            canvas_id=target_canvas.id,
+                            from_kind='atom',
+                            to_kind='atom',
+                            source_atom_id=src_new.id,
+                            target_atom_id=tgt_new.id,
+                            line_style=conn.line_style,
+                            color=conn.color,
+                            label=conn.label,
+                            animated=conn.animated,
+                        ))
+
+            s.flush()
+            return jsonify({
+                'message': f'心智圖殼已複製到白板 {target_slug}',
+                'shell': new_shell.to_dict(),
+            }), 201
 
 
 def _collect_tree_parents(s, atom_ids):

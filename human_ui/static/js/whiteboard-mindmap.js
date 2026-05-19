@@ -1517,5 +1517,82 @@ function whiteboardMindmapMixin() {
                 return !hidden[ca.atom_id];
             });
         },
+
+        // ---- 通用轉移 modal（心智圖 / 文字框共用）----
+        transferModal: {
+            open: false,
+            kind: '',     // 'mindmap' | 'textbox'
+            obj: null,    // sh or tb
+            label: '',    // 顯示在標題的名稱
+            canvases: [],
+            targetSlug: '',
+            mode: 'move',
+            loading: false,
+            error: '',
+        },
+
+        async _openTransferModal(kind, obj, label) {
+            var m = this.transferModal;
+            m.kind = kind;
+            m.obj = obj;
+            m.label = label;
+            m.targetSlug = '';
+            m.mode = 'move';
+            m.loading = false;
+            m.error = '';
+            try {
+                var all = await API.getCanvases(false);
+                var currentSlug = this.canvasId;
+                m.canvases = (all || []).filter(function(cv) {
+                    return cv.slug !== currentSlug && !cv.is_archived;
+                });
+            } catch (e) {
+                m.canvases = [];
+            }
+            m.open = true;
+        },
+
+        openMindmapTransferModal(sh) {
+            return this._openTransferModal('mindmap', sh, sh.title || '心智圖');
+        },
+
+        openTextboxTransferModal(tb) {
+            return this._openTransferModal('textbox', tb, tb.title || '文字框');
+        },
+
+        async doTransfer() {
+            var m = this.transferModal;
+            if (!m.obj || !m.targetSlug) return;
+            m.loading = true;
+            m.error = '';
+            try {
+                if (m.kind === 'mindmap') {
+                    await API.transferMindmapShell(m.obj.id, m.targetSlug, m.mode);
+                    if (m.mode === 'move') {
+                        var shellId = m.obj.id;
+                        this.mindmapShells = this.mindmapShells.filter(function(s) { return s.id !== shellId; });
+                        this.atoms = this.atoms.filter(function(ca) { return ca.mindmap_shell_id !== shellId; });
+                        this.treeParents = [];
+                        await this.loadData();
+                    }
+                } else if (m.kind === 'textbox') {
+                    await API.transferTextbox(m.obj.id, m.targetSlug, m.mode);
+                    if (m.mode === 'move') {
+                        var tbId = m.obj.id;
+                        this.textboxes = this.textboxes.filter(function(tb) { return tb.id !== tbId; });
+                        this.connections = this.connections.filter(function(c) {
+                            return c.source_textbox_id !== tbId && c.target_textbox_id !== tbId;
+                        });
+                    }
+                }
+                m.open = false;
+                var verb = m.mode === 'copy' ? '已複製' : '已移動';
+                this.showToast((m.kind === 'mindmap' ? '心智圖' : '文字框') + verb + '到目標白板', 'success');
+            } catch (e) {
+                m.error = '操作失敗：' + ((e && e.message) || String(e));
+            } finally {
+                m.loading = false;
+            }
+        },
     };
 }
