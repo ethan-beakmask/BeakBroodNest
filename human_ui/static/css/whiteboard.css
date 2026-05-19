@@ -748,6 +748,16 @@
     text-align: center;
 }
 
+.wb-entry-thumb {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 3px;
+    object-fit: cover;
+    border: 1px solid var(--border-light);
+    background: var(--bg-secondary);
+}
+
 .wb-entry-text {
     flex: 1;
     overflow: hidden;
@@ -1772,47 +1782,95 @@
 }
 
 /* ============================================================
-   心智圖殼 + mini 節點 (canvas_mindmap_shells)
+   心智圖殼 + 節點 (canvas_mindmap_shells)
+   v1: 拿掉殼外框視覺,殼僅作為 hit area 供拖曳/右鍵；
+       節點改成 240×80 三模板（純文 / 圖+文 / 純圖）
    ============================================================ */
 .wb-mindmap-shell {
     position: absolute;
     border-radius: 8px;
+    /* v1: pointer-events 保持 auto,讓 elementFromPoint 仍能命中
+       (跨殼拖放/吸入卡片 drop detection 需要)。
+       事件處理已從 div 上拿掉,右鍵直接冒泡到 wb-canvas 不顯示 shell 菜單。 */
     pointer-events: auto;
-    cursor: move;
+    cursor: default;
     transition: border-color 0.1s;
     box-sizing: border-box;
+    /* v1：強制隱身（覆蓋 getMindmapShellStyle 的 inline 樣式） */
+    border: none !important;
+    background: transparent !important;
 }
 .wb-mindmap-shell-label {
-    position: absolute;
-    top: -1px;
-    left: -1px;
-    padding: 4px 12px;
-    border-top-left-radius: 8px;
-    border-bottom-right-radius: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1.3;
-    user-select: none;
-    pointer-events: auto;
+    /* v1：殼內部標籤不再使用,標題已改由 .wb-mindmap-root-label 顯示在根節點上方 */
+    display: none;
 }
 
-/* mini 節點：小、只顯示標題 */
-.wb-mindmap-node {
+/* 4a: 心智圖標題標籤 -- 浮在 root 節點正上方,寬度與節點齊
+   接管 drag/contextmenu/改名互動,所以 cursor 顯式設為 move */
+.wb-mindmap-root-label {
     position: absolute;
-    min-height: 26px;
-    padding: 4px 10px;
-    background: #fff;
-    border: 1px solid #cbd5e1;
+    height: 22px;
+    padding: 0 10px;
     border-radius: 4px;
     font-size: 12px;
-    line-height: 1.3;
+    font-weight: 600;
+    line-height: 22px;
+    user-select: none;
+    pointer-events: auto;
+    cursor: move;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.wb-mindmap-root-label:hover {
+    filter: brightness(1.08);
+}
+
+/* 心智圖節點：240×80 統一尺寸 box, 內容隨模板變化 */
+.wb-mindmap-node {
+    position: absolute;
+    width: 240px;
+    height: 80px;
+    padding: 8px 12px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.35;
     cursor: pointer;
     user-select: none;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     display: flex;
     align-items: center;
+    gap: 10px;
     box-sizing: border-box;
     transition: border-color 0.1s, box-shadow 0.1s;
+    overflow: hidden;
+}
+/* 圖區：64×64 方塊（image / image_text 模板） */
+.wb-mindmap-node-image {
+    flex: 0 0 64px;
+    width: 64px;
+    height: 64px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.wb-mindmap-node-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+    pointer-events: none;
+}
+/* 純圖模板：圖居中、無文字（240×80 box 內視覺上是水平居中的方圖） */
+.wb-mindmap-node.mindmap-node--image {
+    justify-content: center;
 }
 .wb-mindmap-node:hover {
     border-color: #94a3b8;
@@ -1827,11 +1885,20 @@
     background: #fffbe6;
 }
 .wb-mindmap-node-title {
-    flex: 1;
+    flex: 1 1 auto;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     color: #1f2937;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+    line-height: 1.35;
+    font-size: 13px;
+    min-width: 0;
+}
+.wb-mindmap-node--text .wb-mindmap-node-title {
+    -webkit-line-clamp: 4;
+    text-align: left;
 }
 .wb-mindmap-node-title:empty::before {
     content: '(空白)';

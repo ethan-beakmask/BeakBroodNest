@@ -509,10 +509,12 @@ function whiteboardCardEditorMixin() {
             var title = ed.title;
 
             // Sync structured entries to DB
+            // 注意：必須無條件呼叫,即使 entries=[](空文件)。
+            // 否則用戶刪除最後一個 entry 時,DB 端會殘留舊 atom_entries 列,
+            // 白板渲染仍會看到已刪除的圖/卡內容。
             var entries = ce.extractEntries();
-            var hasStructuredEntries = entries.some(e => e.schema_code !== 'freetext');
 
-            if (hasStructuredEntries || entries.length > 0) {
+            {
                 try {
                     var syncResult = await API.syncEntries(ed.atomId, entries);
                     // 用後端回傳的 raw_text 串接作為搜尋用 content（atom.content 只供關鍵字檢索）

@@ -224,12 +224,17 @@ class SlashMenuView {
         if (code === 'idcard') {
             fv.line1 = rawText || fv.line1 || ''
         }
+        // image 主旨從 modal 的 rawText 進 fieldValues.caption
+        if (code === 'image') {
+            fv.caption = rawText || fv.caption || ''
+        }
         // idcard 設為 primary 時,清除其他 idcard 的 primary
         let primaryNeedsClear = false
         if (code === 'idcard' && (fv.is_primary === 'true' || fv.is_primary === true)) {
             primaryNeedsClear = true
         }
-        const inlineText = code === 'idcard' ? '' : (rawText || '')
+        // 自帶主旨的 schema(idcard/image)NodeView 內 inline 文字留空,主旨從 fieldValues 取
+        const inlineText = (code === 'idcard' || code === 'image') ? '' : (rawText || '')
         const entryAttrs = {
             schemaCode: code,
             schemaId: schema.id,

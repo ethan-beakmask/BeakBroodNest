@@ -623,12 +623,20 @@ class CardEditor {
                     sort_order: sortOrder,
                 }
             }
+            const schemaCode = it.node.attrs.schemaCode || 'freetext'
+            const fv = it.node.attrs.fieldValues || {}
+            // 自帶主旨的 schema：inline 為空,從 fieldValues 取主旨字串供 raw_text 全文索引/顯示
+            let rawText = it.node.textContent
+            if (!rawText) {
+                if (schemaCode === 'idcard') rawText = (fv.line1 || '').trim()
+                else if (schemaCode === 'image') rawText = (fv.caption || '').trim()
+            }
             return {
                 id: it.node.attrs.entryId || null,
-                schema_code: it.node.attrs.schemaCode || 'freetext',
+                schema_code: schemaCode,
                 schema_id: it.node.attrs.schemaId || null,
-                raw_text: it.node.textContent,
-                field_values: it.node.attrs.fieldValues || {},
+                raw_text: rawText,
+                field_values: fv,
                 sort_order: sortOrder,
             }
         })

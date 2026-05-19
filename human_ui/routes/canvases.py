@@ -347,14 +347,15 @@ def get_canvas(slug):
                     'schema_color': er.schema_color,
                 })
 
-            # 對 idcard entries 補上 field_values，供白板渲染識別證縮圖
-            idcard_entry_ids = [
+            # 對 idcard / image entries 補上 field_values，供白板渲染縮圖
+            thumb_schema_codes = ('idcard', 'image')
+            thumb_entry_ids = [
                 e['id']
                 for elist in entries_map.values()
                 for e in elist
-                if e.get('schema_code') == 'idcard'
+                if e.get('schema_code') in thumb_schema_codes
             ]
-            if idcard_entry_ids:
+            if thumb_entry_ids:
                 fv_rows = (
                     s.query(
                         EntryFieldValue.entry_id,
@@ -365,7 +366,7 @@ def get_canvas(slug):
                         EntrySchemaField,
                         EntrySchemaField.id == EntryFieldValue.field_id,
                     )
-                    .filter(EntryFieldValue.entry_id.in_(idcard_entry_ids))
+                    .filter(EntryFieldValue.entry_id.in_(thumb_entry_ids))
                     .all()
                 )
                 fv_map = {}
@@ -373,7 +374,7 @@ def get_canvas(slug):
                     fv_map.setdefault(eid, {})[fname] = fvalue
                 for elist in entries_map.values():
                     for e in elist:
-                        if e.get('schema_code') == 'idcard':
+                        if e.get('schema_code') in thumb_schema_codes:
                             e['field_values'] = fv_map.get(e['id'], {})
 
         # --- 2. 批次載入標籤 ---

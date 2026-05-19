@@ -126,8 +126,8 @@ class EntryModal {
     }
 
     _renderForm() {
-        // 主旨欄 -- idcard / file 不需要(主旨來自 line1 / file_header)
-        if (this.schemaCode !== 'idcard' && this.schemaCode !== 'file') {
+        // 主旨欄 -- idcard / image / file 不需要(主旨來自 line1 / caption / file_header)
+        if (this.schemaCode !== 'idcard' && this.schemaCode !== 'image' && this.schemaCode !== 'file') {
             this.body.appendChild(this._buildSubjectRow())
         }
         if (this.schema && this.schema.fields && this.schema.fields.length > 0) {
@@ -135,6 +135,8 @@ class EntryModal {
                 this._renderTaskFields()
             } else if (this.schemaCode === 'idcard') {
                 this._renderIdCardFields()
+            } else if (this.schemaCode === 'image') {
+                this._renderImageFields()
             } else {
                 this._renderGenericFields()
             }
@@ -322,6 +324,91 @@ class EntryModal {
         this.body.appendChild(wrap)
     }
 
+    _renderImageFields() {
+        const wrap = document.createElement('div')
+        wrap.className = 'beak-entry-modal__image'
+
+        // 左：圖框
+        const imgBox = document.createElement('div')
+        imgBox.className = 'beak-entry-modal__image-frame'
+        imgBox.tabIndex = 0
+        const renderImage = () => {
+            imgBox.innerHTML = ''
+            const token = (this.fieldValues.image_token || '').trim()
+            if (token) {
+                const img = document.createElement('img')
+                img.src = '/beakbroodnest/files/' + encodeURIComponent(token)
+                img.alt = ''
+                img.draggable = false
+                imgBox.appendChild(img)
+            } else {
+                const empty = document.createElement('div')
+                empty.className = 'beak-entry-modal__image-empty'
+                empty.textContent = '點擊選圖'
+                imgBox.appendChild(empty)
+            }
+            const actions = document.createElement('div')
+            actions.className = 'beak-entry-modal__image-actions'
+            const replaceBtn = document.createElement('button')
+            replaceBtn.type = 'button'
+            replaceBtn.className = 'btn btn-sm btn-outline-secondary'
+            replaceBtn.textContent = token ? '換圖' : '選圖'
+            replaceBtn.addEventListener('click', (e) => {
+                e.stopPropagation()
+                this._pickImage(renderImage)
+            })
+            actions.appendChild(replaceBtn)
+            if (token) {
+                const clearBtn = document.createElement('button')
+                clearBtn.type = 'button'
+                clearBtn.className = 'btn btn-sm btn-outline-danger'
+                clearBtn.textContent = '清除'
+                clearBtn.addEventListener('click', (e) => {
+                    e.stopPropagation()
+                    this.fieldValues.image_token = ''
+                    renderImage()
+                })
+                actions.appendChild(clearBtn)
+            }
+            imgBox.appendChild(actions)
+        }
+        imgBox.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') return
+            this._pickImage(renderImage)
+        })
+        imgBox.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                this._pickImage(renderImage)
+            }
+        })
+        renderImage()
+        wrap.appendChild(imgBox)
+        this._fieldInputs.push(imgBox)
+
+        // 右：caption 單行說明
+        const right = document.createElement('div')
+        right.className = 'beak-entry-modal__image-fields'
+        const row = document.createElement('div')
+        row.className = 'beak-entry-modal__field'
+        const label = document.createElement('label')
+        label.textContent = '說明'
+        const inp = document.createElement('input')
+        inp.type = 'text'
+        inp.className = 'form-control'
+        inp.value = this.fieldValues.caption || ''
+        inp.placeholder = '一句話說明此圖'
+        inp.dataset.fieldKey = 'caption'
+        inp.addEventListener('input', () => { this.fieldValues.caption = inp.value })
+        row.appendChild(label)
+        row.appendChild(inp)
+        right.appendChild(row)
+        this._fieldInputs.push(inp)
+
+        wrap.appendChild(right)
+        this.body.appendChild(wrap)
+    }
+
     _pickImage(renderImage) {
         openImageAlbumPicker({
             currentToken: this.fieldValues.image_token || null,
@@ -493,6 +580,9 @@ class EntryModal {
         } else if (this.schemaCode === 'idcard') {
             // idcard 的主旨用 line1 當代理(供 raw_text 顯示)
             this.rawText = (this.fieldValues.line1 || '').trim()
+        } else if (this.schemaCode === 'image') {
+            // image 的主旨用 caption 當代理(供 raw_text 顯示)
+            this.rawText = (this.fieldValues.caption || '').trim()
         }
         const result = { rawText: this.rawText, fieldValues: { ...this.fieldValues } }
         this._teardown()

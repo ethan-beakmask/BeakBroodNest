@@ -2052,6 +2052,62 @@ input[type="checkbox"].se-field-input {
     color: #334155;
 }
 
+/* image entry -- 編輯 modal:左圖右單行說明 */
+.beak-entry-modal--image { width: min(560px, 100%); }
+.beak-entry-modal__image {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+}
+.beak-entry-modal__image-frame {
+    flex: 0 0 200px;
+    height: 200px;
+    background: #f1f5f9;
+    border: 1px dashed #94a3b8;
+    border-radius: 6px;
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.beak-entry-modal__image-frame:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+.beak-entry-modal__image-frame img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.beak-entry-modal__image-empty {
+    color: #94a3b8;
+    font-size: 13px;
+}
+.beak-entry-modal__image-actions {
+    position: absolute;
+    bottom: 6px;
+    left: 6px;
+    right: 6px;
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+.beak-entry-modal__image-frame:hover .beak-entry-modal__image-actions,
+.beak-entry-modal__image-frame:focus .beak-entry-modal__image-actions {
+    opacity: 1;
+}
+.beak-entry-modal__image-fields {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
 .beak-entry-modal__footer {
     display: flex;
     align-items: center;
@@ -2226,6 +2282,46 @@ input[type="checkbox"].se-field-input {
 .se-idcard-readonly .se-idcard-line-2 { font-size: 14px; font-weight: 600; color: #334155; }
 .se-idcard-readonly .se-idcard-line-3 { font-size: 12px; color: #475569; }
 .se-idcard-readonly .se-idcard-line-4 { font-size: 12px; color: #475569; }
+
+/* image entry -- NodeView 全展唯讀 */
+.se-image-readonly {
+    display: flex;
+    gap: 10px;
+    padding: 6px 8px 8px 8px;
+    align-items: stretch;
+}
+.se-image-readonly .se-image-thumb {
+    flex: 0 0 120px;
+    height: 120px;
+    background: #f1f5f9;
+    border: 1px dashed #94a3b8;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.se-image-readonly .se-image-thumb img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+.se-image-readonly .se-image-thumb-empty {
+    color: #94a3b8;
+    font-size: 11px;
+}
+.se-image-readonly .se-image-caption {
+    flex: 1 1 auto;
+    align-self: center;
+    font-size: 13px;
+    color: #334155;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.se-image-readonly .se-image-caption--empty {
+    color: #94a3b8;
+    font-style: italic;
+}
 
 /* tagRow 編輯按鈕 */
 .se-tag-row .se-edit-btn {

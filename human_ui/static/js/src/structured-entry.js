@@ -625,6 +625,9 @@ class StructuredEntryView {
         if (code === 'idcard') {
             return (fv.line1 || '').trim()
         }
+        if (code === 'image') {
+            return (fv.caption || '').trim()
+        }
         if (code === 'file') {
             return fv.filename || (this.node.textContent || '')
         }
@@ -650,6 +653,7 @@ class StructuredEntryView {
     _buildFieldsReadonly() {
         const code = this.node.attrs.schemaCode || ''
         if (code === 'idcard') return this._buildIdCardReadonly()
+        if (code === 'image') return this._buildImageReadonly()
         if (code === 'file') return this._buildFileReadonly()
         if (code === 'task') return this._buildTaskReadonly()
         const schema = this._getSchema()
@@ -829,6 +833,34 @@ class StructuredEntryView {
         return wrap
     }
 
+    _buildImageReadonly() {
+        const wrap = document.createElement('div')
+        wrap.className = 'se-image-readonly'
+        const fv = this.node.attrs.fieldValues || {}
+        const token = (fv.image_token || '').trim()
+        const imgBox = document.createElement('div')
+        imgBox.className = 'se-image-thumb'
+        if (token) {
+            const img = document.createElement('img')
+            img.src = '/beakbroodnest/files/' + encodeURIComponent(token)
+            img.alt = ''
+            img.draggable = false
+            imgBox.appendChild(img)
+        } else {
+            const empty = document.createElement('div')
+            empty.className = 'se-image-thumb-empty'
+            empty.textContent = '(無圖)'
+            imgBox.appendChild(empty)
+        }
+        wrap.appendChild(imgBox)
+        const caption = document.createElement('div')
+        caption.className = 'se-image-caption'
+        caption.textContent = (fv.caption || '').trim() || '(無說明)'
+        if (!fv.caption) caption.classList.add('se-image-caption--empty')
+        wrap.appendChild(caption)
+        return wrap
+    }
+
     _buildFileReadonly() {
         const wrap = document.createElement('div')
         wrap.className = 'se-file-header'
@@ -896,6 +928,10 @@ class StructuredEntryView {
         if (code === 'idcard') {
             fv.line1 = rawText || fv.line1 || ''
         }
+        // image 主旨從 caption 進來
+        if (code === 'image') {
+            fv.caption = rawText || fv.caption || ''
+        }
         // idcard is_primary 單選邏輯:其他 idcard 全部 false
         let primaryClearTr = null
         if (code === 'idcard' && (fv.is_primary === 'true' || fv.is_primary === true)) {
@@ -923,7 +959,7 @@ class StructuredEntryView {
         const node = state.doc.nodeAt(mappedPos) || this.node
         const inlineFrom = mappedPos + 1
         const inlineTo = mappedPos + 1 + node.content.size
-        const subjectForInline = code === 'idcard' ? '' : (rawText || '')
+        const subjectForInline = (code === 'idcard' || code === 'image') ? '' : (rawText || '')
         if (subjectForInline) {
             tr.replaceWith(inlineFrom, inlineTo, state.schema.text(subjectForInline))
         } else {

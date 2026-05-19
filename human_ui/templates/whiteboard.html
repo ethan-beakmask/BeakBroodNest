@@ -137,33 +137,38 @@
                     </div>
                 </template>
 
-                <!-- 心智圖殼（在卡片下層） -->
+                <!-- 心智圖殼（v1 隱身：純粹當「跨殼拖放/吸入卡片」的 drop target；
+                     不再吃 mouse 事件,避免右鍵時誤觸 shell contextmenu。
+                     drag/contextmenu/改名全部移到根節點上方的 root-label。 -->
                 <template x-for="sh in mindmapShells" :key="'mm-shell-' + sh.id">
                     <div class="wb-mindmap-shell"
                          :id="'mindmap-shell-' + sh.id"
                          :class="{ 'mindmap-shell-cross-target': mindmapDragCrossShellId === sh.id }"
-                         :style="getMindmapShellStyle(sh)"
+                         :style="getMindmapShellStyle(sh)">
+                    </div>
+                </template>
+
+                <!-- 4a: 心智圖標題顯示在根節點上方（單獨一層，定位跟著 root atom 走）
+                     接管原本 shell 上的 drag/contextmenu/改名互動 -->
+                <template x-for="sh in mindmapShells" :key="'mm-root-label-' + sh.id">
+                    <div class="wb-mindmap-root-label"
+                         :id="'mindmap-root-label-' + sh.id"
+                         :style="getMindmapRootLabelStyle(sh)"
                          @mousedown="onMindmapShellMouseDown($event, sh)"
+                         @dblclick.stop="startShellTitleEdit(sh)"
                          @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_shell', sh: sh }">
-                        <div class="wb-mindmap-shell-label"
-                             :style="getMindmapShellLabelStyle(sh)"
-                             @dblclick.stop="startShellTitleEdit(sh)">
-                            <template x-if="editingShellId !== sh.id">
-                                <span x-text="sh.title"></span>
-                            </template>
-                            <template x-if="editingShellId === sh.id">
-                                <input class="wb-mindmap-shell-title-input"
-                                       type="text"
-                                       :id="'mm-shell-title-input-' + sh.id"
-                                       :value="editingShellTitle"
-                                       @input="onShellTitleInput(sh.id, $event.target.value)"
-                                       @blur="finishShellTitleEdit()"
-                                       @keydown.enter.prevent="finishShellTitleEdit()"
-                                       @keydown.escape.prevent.stop="finishShellTitleEdit()"
-                                       @click.stop
-                                       @mousedown.stop>
-                            </template>
-                        </div>
+                        <span x-show="editingShellId !== sh.id" x-text="sh.title || '(未命名心智圖)'"></span>
+                        <input class="wb-mindmap-shell-title-input"
+                               x-show="editingShellId === sh.id"
+                               type="text"
+                               :id="'mm-shell-title-input-' + sh.id"
+                               :value="editingShellTitle"
+                               @input="onShellTitleInput(sh.id, $event.target.value)"
+                               @blur="finishShellTitleEdit()"
+                               @keydown.enter.prevent="finishShellTitleEdit()"
+                               @keydown.escape.prevent.stop="finishShellTitleEdit()"
+                               @click.stop
+                               @mousedown.stop>
                     </div>
                 </template>
 
@@ -282,7 +287,15 @@
                                          :id="'entry-' + ca.atom_id + '-' + entry.id"
                                          @mouseenter="onEntryMouseEnter(ca, entry)"
                                          @mouseleave="onEntryMouseLeave(ca, entry)">
-                                        <i class="bi wb-entry-icon" :class="entry.schema_icon" :style="'color:' + entry.schema_color"></i>
+                                        <template x-if="entry.schema_code === 'image' && entry.field_values && entry.field_values.image_token">
+                                            <img class="wb-entry-thumb"
+                                                 :src="'/beakbroodnest/files/' + encodeURIComponent(entry.field_values.image_token)"
+                                                 :alt="entry.raw_text || ''"
+                                                 draggable="false">
+                                        </template>
+                                        <template x-if="!(entry.schema_code === 'image' && entry.field_values && entry.field_values.image_token)">
+                                            <i class="bi wb-entry-icon" :class="entry.schema_icon" :style="'color:' + entry.schema_color"></i>
+                                        </template>
                                         <span class="wb-entry-text" x-text="(entry.raw_text || '').substring(0, 40)"></span>
                                         <div class="wb-entry-anchor"
                                              @mousedown.stop.prevent="startEntryConnDrag($event, ca, entry)"></div>
@@ -315,7 +328,7 @@
                     </div>
                 </template>
 
-                <!-- 心智圖節點（mini 卡，僅標題） -->
+                <!-- 心智圖節點（240×80,3 模板：純文 / 圖+文 / 純圖） -->
                 <template x-for="ca in visibleMindmapAtoms" :key="'mm-node-' + ca.atom_id">
                     <div class="wb-mindmap-node"
                          :id="'card-' + ca.atom_id"
@@ -325,6 +338,9 @@
                              'mindmap-node-dragging': mindmapDragNode && mindmapDragNode.atom_id === ca.atom_id && mindmapDragMoved,
                              'mindmap-node-multiselected': selectedAtomIds.includes(ca.atom_id),
                              'conn-drop-target': isConnDragging && connDragHoverAtomId === ca.atom_id,
+                             'mindmap-node--text': mindmapNodeTemplate(ca) === 'text',
+                             'mindmap-node--image': mindmapNodeTemplate(ca) === 'image',
+                             'mindmap-node--image-text': mindmapNodeTemplate(ca) === 'image_text',
                          }"
                          :style="getMindmapNodeStyle(ca)"
                          @mousedown="onMindmapNodeMouseDown($event, ca)"
@@ -332,20 +348,26 @@
                          @mouseleave="onCardMouseLeaveForConn(ca)"
                          @dblclick.stop="onMindmapNodeDblClick(ca, $event)"
                          @contextmenu.prevent.stop="contextMenu = { x: $event.clientX, y: $event.clientY, type: 'mindmap_node', ca: ca }">
-                        <template x-if="editingMindmapAtomId !== ca.atom_id">
-                            <span class="wb-mindmap-node-title"
-                                  x-text="ca.atom ? (ca.atom.title || '(空白)') : ''"></span>
-                        </template>
-                        <template x-if="editingMindmapAtomId === ca.atom_id">
-                            <input class="wb-mindmap-title-input"
-                                   type="text"
-                                   :id="'mm-title-input-' + ca.atom_id"
-                                   :value="editingMindmapTitle"
-                                   @input="onMindmapTitleInput(ca.atom_id, $event.target.value)"
-                                   @blur="finishMindmapTitleEdit(ca.atom_id)"
-                                   @click.stop
-                                   @mousedown.stop>
-                        </template>
+                        <!-- 圖區（image / image_text 模板顯示） -->
+                        <div class="wb-mindmap-node-image"
+                             x-show="mindmapNodeHasImage(ca) && editingMindmapAtomId !== ca.atom_id">
+                            <img :src="mindmapNodeImageUrl(ca)"
+                                 :alt="ca.atom ? ca.atom.title : ''"
+                                 draggable="false">
+                        </div>
+                        <!-- 文字區（text / image_text 模板顯示；image-only 模板隱藏） -->
+                        <span class="wb-mindmap-node-title"
+                              x-show="editingMindmapAtomId !== ca.atom_id && mindmapNodeTemplate(ca) !== 'image'"
+                              x-text="ca.atom ? (ca.atom.title || '(空白)') : ''"></span>
+                        <input class="wb-mindmap-title-input"
+                               x-show="editingMindmapAtomId === ca.atom_id"
+                               type="text"
+                               :id="'mm-title-input-' + ca.atom_id"
+                               :value="editingMindmapTitle"
+                               @input="onMindmapTitleInput(ca.atom_id, $event.target.value)"
+                               @blur="finishMindmapTitleEdit(ca.atom_id)"
+                               @click.stop
+                               @mousedown.stop>
                         <span class="wb-mindmap-toggle"
                               :style="hasMindmapChildren(ca) ? '' : 'visibility:hidden;'"
                               @click.stop="toggleMindmapCollapse(ca)"

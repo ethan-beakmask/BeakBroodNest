@@ -47,15 +47,17 @@ function whiteboardMindmapMixin() {
         collapsedMindmapAtomIds: {},
 
         // ---- 常數: tree layout ----
-        MM_NODE_W: 140,
-        MM_NODE_H: 30,
+        // v1 統一節點尺寸 240×80（grid 基底 = 20，所有數值皆 20 的倍數）
+        // 3 種模板（純文 / 圖+文 / 純圖）皆在 240×80 box 內排版，layout 演算法不必區分
+        MM_NODE_W: 240,
+        MM_NODE_H: 80,
         // tree-right: 同層垂直堆疊、不同層水平展開
-        MM_X_GAP: 90,    // 層距(水平)
-        MM_Y_GAP: 12,    // sibling 間距(垂直)
-        MM_DIAG_X_OFFSET: 35,  // tree-right-diag: 同層 sibling 每張的 X 階梯位移(NODE_W/4)
+        MM_X_GAP: 80,    // 層距(水平)
+        MM_Y_GAP: 20,    // sibling 間距(垂直)
+        MM_DIAG_X_OFFSET: 60,  // tree-right-diag: 同層 sibling 每張的 X 階梯位移(NODE_W/4)
         // tree-down: 同層水平排列、不同層垂直展開
-        MM_X_GAP_DOWN: 16,  // sibling 間距(水平)
-        MM_Y_GAP_DOWN: 36,  // 層距(垂直)
+        MM_X_GAP_DOWN: 20,  // sibling 間距(水平)
+        MM_Y_GAP_DOWN: 60,  // 層距(垂直)
         MM_PAD_X: 24,
         MM_PAD_Y: 48,   // 殼上緣標題列高度
         MM_PAD_BOTTOM: 16,
@@ -520,6 +522,21 @@ function whiteboardMindmapMixin() {
         },
         getMindmapShellLabelStyle(shell) {
             return 'background:' + shell.color + ';color:#fff;';
+        },
+
+        // 4a: 心智圖標題顯示在根節點上方
+        // 標籤定位基於 root atom 的 pos,而非 shell 的 pos(shell 視覺已隱身)
+        getMindmapRootLabelStyle(shell) {
+            if (!shell || !shell.root_atom_id) return 'display:none;';
+            var rootCa = this._getCanvasAtomByAtomId(shell.root_atom_id);
+            if (!rootCa) return 'display:none;';
+            var w = rootCa.width || this.MM_NODE_W;
+            // 標籤水平置中於 root 節點上方,寬度 auto,垂直距節點 6px
+            var x = (rootCa.pos_x || 0);
+            var y = (rootCa.pos_y || 0) - 28;
+            return 'left:' + x + 'px; top:' + y + 'px; width:' + w + 'px;'
+                 + ' background:' + (shell.color || '#3b82f6') + '; color:#fff;'
+                 + ' z-index:' + ((rootCa.z_index || 10) + 1) + ';';
         },
 
         // ---- 建立殼（從工具列） ----

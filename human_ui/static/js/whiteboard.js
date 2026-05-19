@@ -377,7 +377,13 @@ function whiteboardApp(canvasId) {
                 if (this._ceInstallBeforeUnload) this._ceInstallBeforeUnload();
             }
             if (!this._mupHandler) {
-                this._mupHandler = function() { if (self.isConnDragging) self.cancelConnDrag(); };
+                this._mupHandler = function() {
+                    if (self.isConnDragging) self.cancelConnDrag();
+                    // 防卡:document 層級兜底,若 viewport mouseup 沒收到事件
+                    // (滑鼠在白板外放開),強制清掉 panning / rightDragPending 狀態
+                    if (self.isPanning) { self.isPanning = false; self.saveViewport(); }
+                    if (self.rightDragPending) { self.rightDragPending = false; self.rightDragTarget = null; }
+                };
                 document.addEventListener('mouseup', this._mupHandler);
             }
             this.$refs.viewport.addEventListener('mousedown', function(e) {
@@ -511,6 +517,12 @@ function whiteboardApp(canvasId) {
         },
 
         onViewportMouseMove(e) {
+            // 防卡:若 isPanning 或 rightDragPending 仍在,但鼠標已無按鍵按住,
+            // 代表 mouseup 在視窗外丟失了。立即重置避免游標卡在 grabbing 狀態。
+            if (e.buttons === 0) {
+                if (this.isPanning) { this.isPanning = false; this.saveViewport(); }
+                if (this.rightDragPending) { this.rightDragPending = false; this.rightDragTarget = null; }
+            }
             if (this.exchangeFollowItem && this._updateExchangeFollowPos) { this._updateExchangeFollowPos(e); return; }
             // 心智圖節點同層拖曳排序（優先）
             if (this._handleMindmapDragMove && this._handleMindmapDragMove(e)) return;
@@ -1023,6 +1035,39 @@ function whiteboardApp(canvasId) {
             var e = this.primaryIdCardEntry(ca);
             if (!e) return '';
             return ((e.field_values || {})['line' + n] || '').trim();
+        },
+
+        // 心智圖節點代表圖：取 Card 內第一個有 image_token 的 ;;image 或 ;;idcard entry
+        // idcard 也納入是因為它本來就是「左圖右文」結構，圖檔資料同欄位
+        mindmapNodeImageEntry(ca) {
+            if (!ca || !ca.atom || !ca.atom.entries) return null;
+            for (var i = 0; i < ca.atom.entries.length; i++) {
+                var e = ca.atom.entries[i];
+                if (e.schema_code !== 'image' && e.schema_code !== 'idcard') continue;
+                var tok = ((e.field_values || {}).image_token || '').trim();
+                if (tok) return e;
+            }
+            return null;
+        },
+        mindmapNodeImageUrl(ca) {
+            var e = this.mindmapNodeImageEntry(ca);
+            if (!e) return '';
+            var token = ((e.field_values || {}).image_token || '').trim();
+            return token ? '/beakbroodnest/files/' + encodeURIComponent(token) : '';
+        },
+        mindmapNodeHasImage(ca) {
+            return !!this.mindmapNodeImageUrl(ca);
+        },
+        mindmapNodeHasTitle(ca) {
+            return !!(ca && ca.atom && ca.atom.title && ca.atom.title.trim());
+        },
+        // 'text' | 'image' | 'image_text' -- v1 三模板自動判定
+        mindmapNodeTemplate(ca) {
+            var hasImg = this.mindmapNodeHasImage(ca);
+            var hasTxt = this.mindmapNodeHasTitle(ca);
+            if (hasImg && hasTxt) return 'image_text';
+            if (hasImg) return 'image';
+            return 'text';
         },
 
         _firstRowIsImage(ca) {
