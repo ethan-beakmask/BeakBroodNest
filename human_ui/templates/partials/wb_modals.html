@@ -1695,6 +1695,9 @@
                     <div class="context-menu-item" @click="setShellLayout(contextMenu.sh.id, 'radial-rotated'); closeContextMenu()">
                         <span x-text="contextMenu.sh.layout === 'radial-rotated' ? '✓ 同心圓-旋轉卡片' : '同心圓-旋轉卡片'"></span>
                     </div>
+                    <div class="context-menu-item" @click="setShellLayout(contextMenu.sh.id, 'tree-folder'); closeContextMenu()">
+                        <span x-text="contextMenu.sh.layout === 'tree-folder' ? '✓ 樹狀（資料夾）' : '樹狀（資料夾）'"></span>
+                    </div>
                     <div class="context-menu-separator"></div>
                     <div style="padding:6px 10px;font-size:11px;color:var(--text-muted, #6c757d);">底色</div>
                     <div style="padding:0 10px 8px;display:flex;gap:5px;flex-wrap:wrap;">
@@ -1703,19 +1706,20 @@
                                  :style="!contextMenu || !contextMenu.sh ? '' : ('width:20px;height:20px;border-radius:3px;cursor:pointer;background:' + c + ';' + (contextMenu.sh.color === c ? 'box-shadow:0 0 0 2px #1f2937;' : 'box-shadow:0 0 0 1px #cbd5e1;'))"></div>
                         </template>
                     </div>
-                    <div style="padding:6px 10px 2px;font-size:11px;color:var(--text-muted, #6c757d);">框線</div>
-                    <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellBorderStyle(contextMenu.sh.id, 'solid'), closeContextMenu())">
-                        <span x-text="(contextMenu && contextMenu.sh && (contextMenu.sh.border_style || 'solid') === 'solid' ? '✓ 實線' : '實線')"></span>
-                    </div>
-                    <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellBorderStyle(contextMenu.sh.id, 'dashed'), closeContextMenu())">
-                        <span x-text="(contextMenu && contextMenu.sh && contextMenu.sh.border_style === 'dashed' ? '✓ 虛線' : '虛線')"></span>
-                    </div>
-                    <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellBorderStyle(contextMenu.sh.id, 'none'), closeContextMenu())">
-                        <span x-text="(contextMenu && contextMenu.sh && contextMenu.sh.border_style === 'none' ? '✓ 無框（保留底色）' : '無框（保留底色）')"></span>
-                    </div>
-                    <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellBorderStyle(contextMenu.sh.id, 'transparent'), closeContextMenu())">
-                        <span x-text="(contextMenu && contextMenu.sh && contextMenu.sh.border_style === 'transparent' ? '✓ 全透明（殼隱形）' : '全透明（殼隱形）')"></span>
-                    </div>
+                    <template x-if="contextMenu && contextMenu.sh && contextMenu.sh.layout !== 'radial' && contextMenu.sh.layout !== 'radial-rotated' && contextMenu.sh.layout !== 'tree-folder'">
+                        <div>
+                            <div style="padding:6px 10px 2px;font-size:11px;color:var(--text-muted, #6c757d);">線條</div>
+                            <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellLineStyle(contextMenu.sh.id, 'bezier'), closeContextMenu())">
+                                <span x-text="(contextMenu && contextMenu.sh && (contextMenu.sh.line_style || 'bezier') === 'bezier' ? '✓ 曲線（Bezier）' : '曲線（Bezier）')"></span>
+                            </div>
+                            <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellLineStyle(contextMenu.sh.id, 'elbow'), closeContextMenu())">
+                                <span x-text="(contextMenu && contextMenu.sh && contextMenu.sh.line_style === 'elbow' ? '✓ 折線（直角）' : '折線（直角）')"></span>
+                            </div>
+                            <div class="context-menu-item" @click="contextMenu && contextMenu.sh && (setMindmapShellLineStyle(contextMenu.sh.id, 'diagonal'), closeContextMenu())">
+                                <span x-text="(contextMenu && contextMenu.sh && contextMenu.sh.line_style === 'diagonal' ? '✓ 斜線' : '斜線')"></span>
+                            </div>
+                        </div>
+                    </template>
                     <div class="context-menu-separator"></div>
                     <div class="context-menu-item" @click="openMindmapTransferModal(contextMenu.sh); closeContextMenu()">轉移到其他白板...</div>
                     <div class="context-menu-separator"></div>

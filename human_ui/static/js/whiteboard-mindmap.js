@@ -62,8 +62,15 @@ function whiteboardMindmapMixin() {
         MM_PAD_Y: 48,   // 殼上緣標題列高度
         MM_PAD_BOTTOM: 16,
         // radial: root 在中心，子節點在以 root 為圓心的同心圓上
-        MM_RADIUS_STEP: 180,    // 每層半徑增量
+        MM_RADIUS_STEP: 380,    // 每層半徑增量
         MM_RADIAL_PAD: 40,      // 殼邊與最外圈卡片的間距
+        // tree-folder: 像 tree 指令的目錄清單,root 在左上,每個節點佔一行,子節點向右縮排
+        // INDENT 與 STEM 互相獨立,但要求 STEM < INDENT(否則 rail 會跑到 parent 卡片之外左側)
+        // rail X = child.pos_x - STEM = parent.pos_x + (INDENT - STEM)
+        // 預設:INDENT=140, STEM=60 => rail X 距 parent 左邊緣 80px (= NODE_W/3 = 1/3 位置)
+        MM_FOLDER_INDENT: 140,  // 每層往右縮排(X 軸)
+        MM_FOLDER_STEM: 60,     // 直角轉向 child 的水平段長度
+        MM_FOLDER_ROW_GAP: 20,  // 列距(節點底到下一節點頂)
 
         // ---- 樹索引（從 treeParents 建立） ----
         // 每次 loadData 後呼叫 _rebuildTreeIndex
@@ -168,6 +175,9 @@ function whiteboardMindmapMixin() {
                 bounds = this._placeSubtreeDown(shell.root_atom_id, rootX, rootY);
             } else if (shell.layout === 'tree-right-diag') {
                 bounds = this._placeSubtreeDiag(shell.root_atom_id, rootX, rootY, 0);
+            } else if (shell.layout === 'tree-folder') {
+                var rowCounter = { value: 0 };
+                bounds = this._placeSubtreeFolder(shell.root_atom_id, rootX, 0, rowCounter, rootY);
             } else {
                 bounds = this._placeSubtree(shell.root_atom_id, rootX, rootY);
             }
@@ -336,6 +346,28 @@ function whiteboardMindmapMixin() {
             return { right: x + subtreeW, bottom: maxBottom };
         },
 
+        // ---- Tree Layout (tree-folder): 像 tree 指令的目錄清單,每個節點佔一行 ----
+        // root 在左上、每個子節點向右縮排 INDENT,DFS 順序依 sort_order 排列
+        // rowCounter 用 object 包裝以便在遞迴間共享計數器
+        _placeSubtreeFolder(atomId, rootX, depth, rowCounter, rootY) {
+            var ca = this._getCanvasAtomByAtomId(atomId);
+            if (!ca) return { right: rootX, bottom: rootY };
+            ca.pos_x = rootX + depth * this.MM_FOLDER_INDENT;
+            ca.pos_y = rootY + rowCounter.value * (this.MM_NODE_H + this.MM_FOLDER_ROW_GAP);
+            ca.width = this.MM_NODE_W;
+            ca.height = this.MM_NODE_H;
+            var nodeRight = ca.pos_x + this.MM_NODE_W;
+            var nodeBottom = ca.pos_y + this.MM_NODE_H;
+            rowCounter.value += 1;
+            var children = this._isCollapsed(atomId) ? [] : (this._childrenByParent[atomId] || []);
+            for (var i = 0; i < children.length; i++) {
+                var sub = this._placeSubtreeFolder(children[i], rootX, depth + 1, rowCounter, rootY);
+                if (sub.right > nodeRight) nodeRight = sub.right;
+                if (sub.bottom > nodeBottom) nodeBottom = sub.bottom;
+            }
+            return { right: nodeRight, bottom: nodeBottom };
+        },
+
         async setMindmapShellBorderStyle(shellId, borderStyle) {
             if (this.isSnapshot) return;
             var shell = this.getShellById(shellId);
@@ -362,6 +394,40 @@ function whiteboardMindmapMixin() {
             } catch (e) {
                 shell.border_style = oldVal;
                 this.showToast('變更框線失敗：' + (e.message || e), 'error');
+            }
+        },
+
+        async setMindmapShellLineStyle(shellId, lineStyle) {
+            if (this.isSnapshot) return;
+            var shell = this.getShellById(shellId);
+            if (!shell) return;
+            var oldVal = shell.line_style || 'bezier';
+            if (oldVal === lineStyle) return;
+            shell.line_style = lineStyle;
+            var self = this;
+            this.$nextTick(function() { self.renderConnections(); });
+            try {
+                await API.updateMindmapShell(shellId, { line_style: lineStyle });
+                this.pushUndo({
+                    type: 'mindmap_shell_line_style',
+                    desc: '變更心智圖線條樣式',
+                    undo: async function() {
+                        var sh = self.getShellById(shellId);
+                        if (sh) sh.line_style = oldVal;
+                        try { await API.updateMindmapShell(shellId, { line_style: oldVal }); } catch (e) {}
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                    redo: async function() {
+                        var sh = self.getShellById(shellId);
+                        if (sh) sh.line_style = lineStyle;
+                        try { await API.updateMindmapShell(shellId, { line_style: lineStyle }); } catch (e) {}
+                        self.$nextTick(function() { self.renderConnections(); });
+                    },
+                });
+            } catch (e) {
+                shell.line_style = oldVal;
+                this.$nextTick(function() { self.renderConnections(); });
+                this.showToast('變更線條樣式失敗：' + (e.message || e), 'error');
             }
         },
 
@@ -954,6 +1020,9 @@ function whiteboardMindmapMixin() {
 
                 var shell = self.getShellById(child.mindmap_shell_id);
                 var layout = shell ? shell.layout : 'tree-right';
+                // line_style: 'bezier'(預設) | 'elbow'(正交折線)
+                // radial / radial-rotated 不受 line_style 影響(同心圓本身用直線)
+                var lineStyle = shell && shell.line_style ? shell.line_style : 'bezier';
 
                 var pW = parent.width || self.MM_NODE_W;
                 var pH = parent.height || self.MM_NODE_H;
@@ -972,24 +1041,68 @@ function whiteboardMindmapMixin() {
                     var pe = self._rectEdgeAlong(pcx, pcy, pRot, pW, pH, ddx, ddy);
                     var ce = self._rectEdgeAlong(ccx, ccy, cRot, cW, cH, -ddx, -ddy);
                     path += 'M ' + pe.x + ' ' + pe.y + ' L ' + ce.x + ' ' + ce.y + ' ';
+                } else if (layout === 'tree-folder') {
+                    // 樹狀(資料夾風格): rail 從 parent 卡片下方(明確在 parent 底邊以下)出來,
+                    // 垂直延伸到 child 中線,水平 STEM 進 child 左邊
+                    // rail X = child.pos_x - STEM,等於 parent 內偏左 (INDENT - STEM) 處
+                    var railX = child.pos_x - self.MM_FOLDER_STEM;
+                    var parentBottom = parent.pos_y + pH;
+                    var childCy = child.pos_y + cH / 2;
+                    var childLeft = child.pos_x;
+                    path += 'M ' + railX + ' ' + parentBottom
+                          + ' L ' + railX + ' ' + childCy
+                          + ' L ' + childLeft + ' ' + childCy + ' ';
                 } else if (layout === 'tree-down') {
                     var px = parent.pos_x + pW / 2;
                     var py = parent.pos_y + pH;
                     var cx = child.pos_x + cW / 2;
                     var cy = child.pos_y;
-                    var midY = (py + cy) / 2;
-                    path += 'M ' + px + ' ' + py
-                          + ' L ' + px + ' ' + midY
-                          + ' L ' + cx + ' ' + midY
-                          + ' L ' + cx + ' ' + cy + ' ';
+                    if (lineStyle === 'diagonal') {
+                        // 斜線:parent 出短段 -> 斜線到 child 前 -> 短段進 child
+                        var STUB_D = 40;
+                        path += 'M ' + px + ' ' + py
+                              + ' L ' + px + ' ' + (py + STUB_D)
+                              + ' L ' + cx + ' ' + (cy - STUB_D)
+                              + ' L ' + cx + ' ' + cy + ' ';
+                    } else {
+                        // bezier: 折點 Y 取中點(各 sibling cy 同 -> 樹幹效果)
+                        // elbow:  折點 Y 緊貼 child 上方(在 sibling cx 各異的情況下,垂直段彼此分開)
+                        var elbowY = lineStyle === 'elbow'
+                            ? (cy - self.MM_Y_GAP_DOWN / 2)
+                            : ((py + cy) / 2);
+                        path += 'M ' + px + ' ' + py
+                              + ' L ' + px + ' ' + elbowY
+                              + ' L ' + cx + ' ' + elbowY
+                              + ' L ' + cx + ' ' + cy + ' ';
+                    }
                 } else {
+                    // tree-right / tree-right-diag
                     var px2 = parent.pos_x + pW;
                     var py2 = parent.pos_y + pH / 2;
                     var cx2 = child.pos_x;
                     var cy2 = child.pos_y + cH / 2;
-                    var midX = (px2 + cx2) / 2;
-                    path += 'M ' + px2 + ' ' + py2
-                          + ' C ' + midX + ' ' + py2 + ', ' + midX + ' ' + cy2 + ', ' + cx2 + ' ' + cy2 + ' ';
+                    if (lineStyle === 'elbow') {
+                        // 正交折線:垂直段 X 設在 child 左側內 GAP/2 處
+                        // diag layout 下每個 sibling 的 child.pos_x 已階梯式錯開,垂直段 X 也錯開,自然不交叉
+                        var elbowX = cx2 - self.MM_X_GAP / 2;
+                        path += 'M ' + px2 + ' ' + py2
+                              + ' L ' + elbowX + ' ' + py2
+                              + ' L ' + elbowX + ' ' + cy2
+                              + ' L ' + cx2 + ' ' + cy2 + ' ';
+                    } else if (lineStyle === 'diagonal') {
+                        // 斜線:parent 出短水平段 -> 斜線直連到 child 前 -> 短水平段進 child
+                        // 斜線方向與 diag layout 階梯排列相容,不會橫切過更早 sibling 的卡片內部
+                        var STUB_R = 40;
+                        path += 'M ' + px2 + ' ' + py2
+                              + ' L ' + (px2 + STUB_R) + ' ' + py2
+                              + ' L ' + (cx2 - STUB_R) + ' ' + cy2
+                              + ' L ' + cx2 + ' ' + cy2 + ' ';
+                    } else {
+                        // bezier: 立方曲線,控制點在 parent/child 中間 X
+                        var midX = (px2 + cx2) / 2;
+                        path += 'M ' + px2 + ' ' + py2
+                              + ' C ' + midX + ' ' + py2 + ', ' + midX + ' ' + cy2 + ', ' + cx2 + ' ' + cy2 + ' ';
+                    }
                 }
             });
             var existing = svg.querySelector('path.wb-mindmap-tree-lines');

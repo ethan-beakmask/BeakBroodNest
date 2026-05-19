@@ -1147,7 +1147,7 @@ def transfer_canvas_textbox(tb_id):
 
 _SHELL_FIELDS = (
     'title', 'pos_x', 'pos_y', 'width', 'height', 'z_index',
-    'color', 'layout', 'border_style', 'root_atom_id',
+    'color', 'layout', 'border_style', 'line_style', 'root_atom_id',
 )
 
 
