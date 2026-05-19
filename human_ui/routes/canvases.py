@@ -1071,20 +1071,16 @@ def transfer_canvas_textbox(tb_id):
         src_canvas_id = tb.canvas_id
 
         if mode == 'move':
-            # 移動文字框相關 CanvasConnection 到目標白板
-            conns = (
-                s.query(CanvasConnection)
-                .filter(
-                    CanvasConnection.canvas_id == src_canvas_id,
-                    CanvasConnection.from_kind == 'textbox',
-                    CanvasConnection.to_kind == 'textbox',
-                    CanvasConnection.source_textbox_id == tb_id,
-                    CanvasConnection.target_textbox_id == tb_id,
-                )
+            # 目標白板上已存在的 atom_id 集合
+            target_atom_ids = {
+                row[0] for row in
+                s.query(CanvasAtom.atom_id)
+                .filter(CanvasAtom.canvas_id == target_canvas.id)
                 .all()
-            )
-            # 也包含只有一端是此 textbox 的連線（與 atom 的跨類型連線）
-            mixed_conns = (
+            }
+
+            # 取所有涉及此文字框的連線，逐條判斷另一端是否在目標白板
+            all_conns = (
                 s.query(CanvasConnection)
                 .filter(
                     CanvasConnection.canvas_id == src_canvas_id,
@@ -1093,8 +1089,29 @@ def transfer_canvas_textbox(tb_id):
                 )
                 .all()
             )
-            for conn in mixed_conns:
-                conn.canvas_id = target_canvas.id
+            for conn in all_conns:
+                other_atom_id = (
+                    conn.source_atom_id if conn.to_kind == 'textbox' and conn.target_textbox_id == tb_id
+                    else conn.target_atom_id if conn.from_kind == 'textbox' and conn.source_textbox_id == tb_id
+                    else None
+                )
+                other_tb_id = (
+                    conn.source_textbox_id if conn.target_textbox_id == tb_id and conn.source_textbox_id != tb_id
+                    else conn.target_textbox_id if conn.source_textbox_id == tb_id and conn.target_textbox_id != tb_id
+                    else None
+                )
+                if other_atom_id is not None:
+                    # 另一端是 atom：只在目標白板有此 atom 時才保留
+                    if other_atom_id in target_atom_ids:
+                        conn.canvas_id = target_canvas.id
+                    else:
+                        s.delete(conn)
+                elif other_tb_id is not None:
+                    # 另一端是不同的文字框（不跟著移動）→ 丟棄
+                    s.delete(conn)
+                else:
+                    # 兩端都是此文字框（self-loop）→ 移動
+                    conn.canvas_id = target_canvas.id
 
             tb.canvas_id = target_canvas.id
             s.flush()
