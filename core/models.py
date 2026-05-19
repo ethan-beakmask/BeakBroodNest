@@ -635,7 +635,6 @@ class CanvasMindmapShell(Base):
     z_index: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     color: Mapped[str] = mapped_column(String(20), nullable=False, default='#3b82f6')
     layout: Mapped[str] = mapped_column(String(20), nullable=False, default='tree-right')
-    border_style: Mapped[str] = mapped_column(String(20), nullable=False, default='solid')
     line_style: Mapped[str] = mapped_column(String(20), nullable=False, default='bezier')
     root_atom_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('knowledge_atoms.id', ondelete='SET NULL'), nullable=True
@@ -662,7 +661,6 @@ class CanvasMindmapShell(Base):
             'z_index': self.z_index,
             'color': self.color,
             'layout': self.layout,
-            'border_style': self.border_style,
             'line_style': self.line_style,
             'root_atom_id': self.root_atom_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,

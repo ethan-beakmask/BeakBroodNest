@@ -368,35 +368,6 @@ function whiteboardMindmapMixin() {
             return { right: nodeRight, bottom: nodeBottom };
         },
 
-        async setMindmapShellBorderStyle(shellId, borderStyle) {
-            if (this.isSnapshot) return;
-            var shell = this.getShellById(shellId);
-            if (!shell) return;
-            var oldVal = shell.border_style || 'solid';
-            shell.border_style = borderStyle;
-            try {
-                await API.updateMindmapShell(shellId, { border_style: borderStyle });
-                var self = this;
-                this.pushUndo({
-                    type: 'mindmap_shell_border_style',
-                    desc: '變更心智圖殼框線',
-                    undo: async function() {
-                        var sh = self.getShellById(shellId);
-                        if (sh) sh.border_style = oldVal;
-                        try { await API.updateMindmapShell(shellId, { border_style: oldVal }); } catch (e) {}
-                    },
-                    redo: async function() {
-                        var sh = self.getShellById(shellId);
-                        if (sh) sh.border_style = borderStyle;
-                        try { await API.updateMindmapShell(shellId, { border_style: borderStyle }); } catch (e) {}
-                    },
-                });
-            } catch (e) {
-                shell.border_style = oldVal;
-                this.showToast('變更框線失敗：' + (e.message || e), 'error');
-            }
-        },
-
         async setMindmapShellLineStyle(shellId, lineStyle) {
             if (this.isSnapshot) return;
             var shell = this.getShellById(shellId);
@@ -563,28 +534,12 @@ function whiteboardMindmapMixin() {
 
         // ---- Render: 殼樣式 + mini 卡額外類別 ----
         getMindmapShellStyle(shell) {
-            var bs = shell.border_style || 'solid';
-            var border, bg;
-            if (bs === 'none') {
-                border = 'none';
-                bg = shell.color + '0a';
-            } else if (bs === 'transparent') {
-                border = 'none';
-                bg = 'transparent';
-            } else if (bs === 'dashed') {
-                border = '2px dashed ' + shell.color;
-                bg = shell.color + '0a';
-            } else {  // solid
-                border = '2px solid ' + shell.color;
-                bg = shell.color + '0a';
-            }
+            // v1 殼隱身,僅作為定位/drop target;border/background 由 CSS .wb-mindmap-shell 統一控制
             return 'left:' + shell.pos_x + 'px;'
                  + 'top:' + shell.pos_y + 'px;'
                  + 'width:' + shell.width + 'px;'
                  + 'height:' + shell.height + 'px;'
-                 + 'z-index:' + (shell.z_index || 1) + ';'
-                 + 'border:' + border + ';'
-                 + 'background:' + bg + ';';
+                 + 'z-index:' + (shell.z_index || 1) + ';';
         },
         getMindmapShellLabelStyle(shell) {
             return 'background:' + shell.color + ';color:#fff;';
