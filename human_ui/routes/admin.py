@@ -380,6 +380,11 @@ def api_admin_table_latest(name):
     limit = request.args.get('limit', 30, type=int)
     limit = max(1, min(limit, 200))  # 安全上限
 
+    # knowledge_atoms 專屬：owner=human 只顯示 ethan 自己寫的（過濾掉 1500+ AI 知識）
+    owner_filter = request.args.get('owner', 'all')
+    if owner_filter not in ('all', 'human'):
+        owner_filter = 'all'
+
     # 確認表存在 + 取得 metadata
     tables_meta = _list_tables_with_meta()
     meta = next((t for t in tables_meta if t['name'] == table_name), None)
@@ -414,15 +419,31 @@ def api_admin_table_latest(name):
 
     select_list = ', '.join(f'"{_safe_ident(c["name"])}"' for c in select_cols)
     sql_str = f'SELECT {select_list} FROM "{table_name}"'
+    where_parts = []
+    sql_params = {}
+    if table_name == 'knowledge_atoms' and owner_filter == 'human':
+        where_parts.append('owner = :owner_val')
+        sql_params['owner_val'] = 'ethan'
+    if where_parts:
+        sql_str += ' WHERE ' + ' AND '.join(where_parts)
     if order_clause:
         sql_str += f' ORDER BY {order_clause}'
     sql_str += f' LIMIT {limit}'
+
+    # 順便算 filtered_count，讓前端能顯示「30 / 1312」這種比率
+    filtered_count = None
+    if table_name == 'knowledge_atoms':
+        count_sql = f'SELECT count(*) FROM "{table_name}"'
+        if where_parts:
+            count_sql += ' WHERE ' + ' AND '.join(where_parts)
 
     engine = get_engine()
     rows_out = []
     try:
         with engine.connect() as conn:
-            result = conn.execute(text(sql_str))
+            if table_name == 'knowledge_atoms':
+                filtered_count = int(conn.execute(text(count_sql), sql_params).scalar() or 0)
+            result = conn.execute(text(sql_str), sql_params)
             col_meta_by_name = {c['name']: c for c in cols}
             for row in result.fetchall():
                 row_dict = {}
@@ -450,5 +471,7 @@ def api_admin_table_latest(name):
         'rows': rows_out,
         'returned': len(rows_out),
         'limit': limit,
+        'owner_filter': owner_filter if table_name == 'knowledge_atoms' else None,
+        'filtered_count': filtered_count,
     })
 
