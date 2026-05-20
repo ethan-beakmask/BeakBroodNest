@@ -151,6 +151,43 @@ import { openSectionNav } from './section-nav.js'
 import { FindReplace, findKey } from './find-replace.js'
 import { NodeIdExtension } from './node-id-extension.js'
 
+// 走訪 paragraph 的 inline children，判斷有沒有圖片或其它「非文字也需保留 markdown」的節點。
+// 用於決定純圖 paragraph 是否要被 _collectStructuredItems 納入。
+function _paragraphHasInlineMedia(node) {
+    if (!node || !node.content) return false
+    let found = false
+    node.descendants((child) => {
+        if (found) return false
+        if (child.type && child.type.name === 'image') { found = true; return false }
+        return true
+    })
+    return found
+}
+
+// 把 paragraph (或類似 block) 序列化成 raw_text，圖片轉成 markdown ![alt](src)。
+// 取代 node.textContent 的角色：textContent 對 image node 永遠是空字串，
+// 會造成 sync 後 atom.content 缺圖。
+function _inlineMarkdownSnapshot(node) {
+    if (!node) return ''
+    const parts = []
+    node.descendants((child) => {
+        if (!child.type) return true
+        if (child.type.name === 'text') {
+            parts.push(child.text || '')
+            return false
+        }
+        if (child.type.name === 'image') {
+            const a = child.attrs || {}
+            const alt = (a.alt || '').replace(/[\[\]]/g, '')
+            const src = a.src || ''
+            if (src) parts.push(`![${alt}](${src})`)
+            return false
+        }
+        return true
+    })
+    return parts.join('')
+}
+
 class CardEditor {
     constructor() {
         this.editor = null
@@ -588,7 +625,10 @@ class CardEditor {
                 return
             }
             const text = node.textContent
-            if (text.trim() || node.type.name !== 'paragraph') {
+            // 純圖片 paragraph 的 textContent 為空，但 raw_text 需要保留 ![](src)，
+            // 否則 sync 後 atom.content 會少掉圖片 markdown，modal/admin/tables 預覽看不到圖。
+            const hasMedia = node.type.name === 'paragraph' && _paragraphHasInlineMedia(node)
+            if (text.trim() || node.type.name !== 'paragraph' || hasMedia) {
                 items.push({ node, pos: offset, isFreetext: true })
             }
         })
@@ -618,7 +658,7 @@ class CardEditor {
             if (it.isFreetext) {
                 return {
                     schema_code: 'freetext',
-                    raw_text: it.node.textContent,
+                    raw_text: _inlineMarkdownSnapshot(it.node),
                     field_values: {},
                     sort_order: sortOrder,
                 }

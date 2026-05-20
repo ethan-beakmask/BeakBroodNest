@@ -22,8 +22,8 @@
                         <span class="bc-al-title" x-text="atom?.title || (loading ? '載入中...' : (error || ''))"></span>
                     </div>
                     <div class="bc-al-actions">
-                        <a x-show="atom?.id" :href="canvasHref()" target="_blank" class="bc-al-link"
-                           title="在白板搜尋此卡">在白板開啟</a>
+                        <a x-show="canEditAtom()" :href="canvasHref()" target="_blank" class="bc-al-link"
+                           title="切到白板並開啟此卡的編輯器（新分頁）">在白板編輯</a>
                         <button type="button" class="bc-al-close" @click="close()" aria-label="關閉">×</button>
                     </div>
                 </div>
@@ -321,7 +321,8 @@ function atomLookup() {
             // HTML / markdown 都丟 marked.parse；純 text/url/ref 類就 escape 後當 pre 顯示
             if (t === 'markdown' || t === 'html') {
                 if (window.marked && window.marked.parse) {
-                    try { return window.marked.parse(c); } catch (e) { /* fallthrough */ }
+                    // breaks:true 讓單個 \n 渲染為 <br>，閱讀模式下多筆 entry 不會擠成一行
+                    try { return window.marked.parse(c, { breaks: true }); } catch (e) { /* fallthrough */ }
                 }
             }
             // 後備：跳脫 + 保留換行
@@ -338,8 +339,15 @@ function atomLookup() {
         },
 
         canvasHref() {
-            // 開到一個能搜到卡的入口；目前用首頁帶 hash，讓白板能 focus
-            return this.atom ? `/beakbroodnest/#atom-${this.atom.id}` : '#';
+            // 帶 ?open=<id> 進白板，whiteboard.js init() 會自動 openCardEditor()
+            // 編輯權限由 whiteboard-card-editor.js 的 editable 旗標控（非 ethan owner 開出來是 read-only）
+            return this.atom ? `/beakbroodnest/?open=${this.atom.id}` : '#';
+        },
+
+        // 只有人類自己擁有的 atom 才顯示「在白板編輯」按鈕。
+        // Claude 等 AI 寫的 1500+ 筆知識在 modal 直接顯示就是唯讀，不需要再給入口。
+        canEditAtom() {
+            return !!(this.atom?.id) && (this.atom.owner || '') === 'ethan';
         },
     };
 }

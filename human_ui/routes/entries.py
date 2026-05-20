@@ -434,10 +434,11 @@ def sync_entries(atom_id):
                 s.delete(old)
 
         # 同步 content 全文快照
+        # 用雙換行確保 markdown 渲染時每筆 entry 各自獨立段落，避免 4 張圖橫向擠成一列
         texts = []
         for e in sorted(result_entries, key=lambda x: x.sort_order):
             texts.append(e.raw_text)
-        atom.content = '\n'.join(texts)
+        atom.content = '\n\n'.join(texts)
         atom.updated_at = datetime.datetime.now()
 
         s.flush()

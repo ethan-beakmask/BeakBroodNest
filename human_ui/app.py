@@ -260,7 +260,8 @@ def _resolve_canvas(s, slug=None, only_projects=False):
 @app.route('/beakbroodnest/')
 @app.route('/beakbroodnest')
 def index():
-    """首頁：導向最後存取的白板，若無則導向 id 最大的白板"""
+    """首頁：導向最後存取的白板，若無則導向 id 最大的白板。
+    保留 query string 讓 ?open=<atom_id> 之類的指令能傳到白板頁面（卡片搜尋對話框→在白板編輯用）。"""
     with session_scope() as s:
         canvas = _resolve_canvas(s)
         if not canvas:
@@ -268,7 +269,11 @@ def index():
             s.add(canvas)
             s.flush()
         slug = canvas.slug
-    return redirect(f'/beakbroodnest/canvas/{slug}')
+    qs = request.query_string.decode()
+    target = f'/beakbroodnest/canvas/{slug}'
+    if qs:
+        target = f'{target}?{qs}'
+    return redirect(target)
 
 
 @app.route('/beakbroodnest/canvas/<slug>')
