@@ -64,6 +64,10 @@
         .stat-label { font-size: 11px; color: #6c757d; letter-spacing: 0.5px; }
 
         .at-empty { padding: 40px; text-align: center; color: #adb5bd; }
+
+        /* knowledge_atoms title 連結（單點開啟卡片對話框） */
+        .at-atom-link { color: #2563eb; text-decoration: none; }
+        .at-atom-link:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -224,10 +228,15 @@
                                             </td>
                                             <template x-for="c in visibleColumns" :key="c.name">
                                                 <td>
-                                                    <template x-if="row[c.name] === null || row[c.name] === undefined">
+                                                    <template x-if="isAtomTitle(c) && row.id">
+                                                        <a href="#" class="at-atom-link"
+                                                           @click.stop.prevent="window.openAtomCard && window.openAtomCard(row.id)"
+                                                           x-text="atomTitleText(row[c.name])"></a>
+                                                    </template>
+                                                    <template x-if="(!isAtomTitle(c) || !row.id) && (row[c.name] === null || row[c.name] === undefined)">
                                                         <span class="at-cell-null">null</span>
                                                     </template>
-                                                    <template x-if="row[c.name] !== null && row[c.name] !== undefined && isPreviewObj(row[c.name])">
+                                                    <template x-if="(!isAtomTitle(c) || !row.id) && row[c.name] !== null && row[c.name] !== undefined && isPreviewObj(row[c.name])">
                                                         <span>
                                                             <span class="at-cell-trunc" x-text="row[c.name]._preview"></span>
                                                             <span x-show="row[c.name]._truncated && row[c.name]._full_len"
@@ -235,7 +244,7 @@
                                                                   x-text="' (' + row[c.name]._full_len + ' chars)'"></span>
                                                         </span>
                                                     </template>
-                                                    <template x-if="row[c.name] !== null && row[c.name] !== undefined && !isPreviewObj(row[c.name])">
+                                                    <template x-if="(!isAtomTitle(c) || !row.id) && row[c.name] !== null && row[c.name] !== undefined && !isPreviewObj(row[c.name])">
                                                         <span :class="cellClass(c)" x-text="formatCell(row[c.name], c)"></span>
                                                     </template>
                                                 </td>
@@ -367,6 +376,16 @@ function adminTables() {
 
         isPreviewObj(v) {
             return v && typeof v === 'object' && !Array.isArray(v) && '_preview' in v;
+        },
+
+        isAtomTitle(col) {
+            return this.selectedTable === 'knowledge_atoms' && col && col.name === 'title';
+        },
+
+        atomTitleText(v) {
+            if (v === null || v === undefined) return '(無標題)';
+            if (this.isPreviewObj(v)) return v._preview || '(無標題)';
+            return String(v) || '(無標題)';
         },
 
         cellClass(col) {

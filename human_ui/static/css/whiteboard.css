@@ -1470,6 +1470,12 @@
     width: 14px;
     text-align: center;
 }
+.sidebar-card-id {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+}
 .sidebar-card-title {
     overflow: hidden;
     text-overflow: ellipsis;

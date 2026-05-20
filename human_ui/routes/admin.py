@@ -187,6 +187,9 @@ def api_admin_tables():
         if (cnt == 0) and (last_write is None):
             stale += 1
 
+    # knowledge_atoms 永遠置頂；其餘依表名字母序
+    items.sort(key=lambda it: (0 if it['name'] == 'knowledge_atoms' else 1, it['name']))
+
     return jsonify({
         'tables': items,
         'summary': {

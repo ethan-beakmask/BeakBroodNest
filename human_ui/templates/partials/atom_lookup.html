@@ -1,0 +1,346 @@
+<!-- Atom Lookup：Navbar 內的卡片搜尋列 + 浮動對話框
+     用法：頁面 include 此 partial 後，即可在任何地方呼叫 window.openAtomCard(id) 開啟對話框 -->
+
+<div x-data="atomLookup()" x-init="init()" style="display:inline-flex; align-items:center; gap:4px;">
+    <input type="number" min="1" step="1" inputmode="numeric"
+           class="bc-atom-lookup-input"
+           placeholder="卡片#"
+           x-model="inputId"
+           @keydown.enter.prevent="lookup()"
+           title="輸入卡片編號後按 Enter 查閱">
+    <button type="button" class="bc-atom-lookup-btn" @click="lookup()" title="查閱">查</button>
+
+    <!-- 浮動對話框（teleport 到 body 末端，避免被 navbar 容器裁切） -->
+    <template x-teleport="body">
+        <div x-show="isOpen" x-cloak class="bc-al-overlay"
+             @keydown.escape.window="close()"
+             @click.self="close()">
+            <div class="bc-al-modal" role="dialog" aria-modal="true">
+                <div class="bc-al-head">
+                    <div class="bc-al-title-wrap">
+                        <span class="bc-al-idtag" x-text="'#' + (atom?.id ?? '')"></span>
+                        <span class="bc-al-title" x-text="atom?.title || (loading ? '載入中...' : (error || ''))"></span>
+                    </div>
+                    <div class="bc-al-actions">
+                        <a x-show="atom?.id" :href="canvasHref()" target="_blank" class="bc-al-link"
+                           title="在白板搜尋此卡">在白板開啟</a>
+                        <button type="button" class="bc-al-close" @click="close()" aria-label="關閉">×</button>
+                    </div>
+                </div>
+
+                <div class="bc-al-body">
+                    <template x-if="loading">
+                        <div class="bc-al-loading">載入中...</div>
+                    </template>
+                    <template x-if="!loading && error">
+                        <div class="bc-al-error" x-text="error"></div>
+                    </template>
+                    <template x-if="!loading && !error && atom">
+                        <div>
+                            <!-- meta -->
+                            <div class="bc-al-meta">
+                                <span class="bc-al-chip" :class="'type-' + atom.atom_type" x-text="'type ' + atom.atom_type"></span>
+                                <span class="bc-al-chip" :class="'lc-' + atom.lifecycle" x-text="atom.lifecycle"></span>
+                                <span class="bc-al-chip" x-text="'owner ' + (atom.owner || '?')"></span>
+                                <span class="bc-al-chip" x-text="'source ' + (atom.source || '?')"></span>
+                                <span class="bc-al-chip" x-text="'vitality ' + (atom.vitality_score?.toFixed?.(2) ?? '?')"></span>
+                                <span class="bc-al-chip" x-text="'updated ' + fmtTs(atom.updated_at)"></span>
+                            </div>
+
+                            <!-- tags -->
+                            <template x-if="atom.tags && atom.tags.length">
+                                <div class="bc-al-tags">
+                                    <template x-for="t in atom.tags" :key="t.id">
+                                        <span class="bc-al-tag" x-text="'#' + t.name"></span>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- content (rendered) -->
+                            <div class="bc-al-content" x-html="renderedContent"></div>
+
+                            <!-- relations -->
+                            <template x-if="(atom.relations_from && atom.relations_from.length) || (atom.relations_to && atom.relations_to.length)">
+                                <div class="bc-al-rel-block">
+                                    <div class="bc-al-rel-title">關聯（點任一列直接切換到該卡）</div>
+                                    <template x-if="atom.relations_from && atom.relations_from.length">
+                                        <div class="bc-al-rel-sec">
+                                            <div class="bc-al-rel-sub">出向（from this）</div>
+                                            <template x-for="r in atom.relations_from" :key="r.id">
+                                                <div class="bc-al-rel-row"
+                                                     :class="{'is-clickable': !!r.to_atom?.id, 'is-disabled': !r.to_atom?.id}"
+                                                     @click="r.to_atom?.id && goAtom(r.to_atom.id)"
+                                                     :title="r.to_atom?.id ? '點此開啟 #' + r.to_atom.id : '對端為 entry，不支援卡片預覽'">
+                                                    <span class="bc-al-rel-type" x-text="r.relation_type"></span>
+                                                    <span class="bc-al-rel-link">
+                                                        <span x-text="r.to_atom?.id ? ('#' + r.to_atom.id) : ('entry#' + (r.to_entry_id ?? '?'))"></span>
+                                                        <span x-text="r.to_atom?.title || (r.to_entry_id ? '(entry，不可預覽)' : '(無標題)')"></span>
+                                                    </span>
+                                                    <span class="bc-al-rel-arrow" x-show="r.to_atom?.id">›</span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template x-if="atom.relations_to && atom.relations_to.length">
+                                        <div class="bc-al-rel-sec">
+                                            <div class="bc-al-rel-sub">入向（to this）</div>
+                                            <template x-for="r in atom.relations_to" :key="r.id">
+                                                <div class="bc-al-rel-row"
+                                                     :class="{'is-clickable': !!r.from_atom?.id, 'is-disabled': !r.from_atom?.id}"
+                                                     @click="r.from_atom?.id && goAtom(r.from_atom.id)"
+                                                     :title="r.from_atom?.id ? '點此開啟 #' + r.from_atom.id : '對端為 entry，不支援卡片預覽'">
+                                                    <span class="bc-al-rel-type" x-text="r.relation_type"></span>
+                                                    <span class="bc-al-rel-link">
+                                                        <span x-text="r.from_atom?.id ? ('#' + r.from_atom.id) : ('entry#' + (r.from_entry_id ?? '?'))"></span>
+                                                        <span x-text="r.from_atom?.title || (r.from_entry_id ? '(entry，不可預覽)' : '(無標題)')"></span>
+                                                    </span>
+                                                    <span class="bc-al-rel-arrow" x-show="r.from_atom?.id">›</span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+
+                            <!-- blockers -->
+                            <template x-if="atom.is_blocked && atom.blockers && atom.blockers.length">
+                                <div class="bc-al-block-block">
+                                    <div class="bc-al-rel-title">阻塞中（被以下卡阻擋）</div>
+                                    <template x-for="b in atom.blockers" :key="b.id">
+                                        <div class="bc-al-rel-row">
+                                            <span class="bc-al-rel-type" x-text="b.lifecycle"></span>
+                                            <a href="#" @click.prevent="goAtom(b.id)" class="bc-al-rel-link">
+                                                <span x-text="'#' + b.id"></span>
+                                                <span x-text="b.title || '(無標題)'"></span>
+                                            </a>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </template>
+</div>
+
+<style>
+.bc-atom-lookup-input {
+    width: 78px;
+    height: 26px;
+    padding: 2px 6px;
+    font-size: 12px;
+    border: 1px solid #adb5bd;
+    border-radius: 4px;
+    color: #495057;
+    background: #fff;
+}
+.bc-atom-lookup-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,.15); }
+.bc-atom-lookup-input::-webkit-inner-spin-button,
+.bc-atom-lookup-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.bc-atom-lookup-btn {
+    height: 26px;
+    padding: 0 8px;
+    font-size: 12px;
+    border: 1px solid #adb5bd;
+    background: #fff;
+    color: #495057;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.bc-atom-lookup-btn:hover { background: #f1f3f5; }
+
+[x-cloak] { display: none !important; }
+
+.bc-al-overlay {
+    position: fixed; inset: 0; z-index: 4000;
+    background: rgba(15, 23, 42, .55);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 56px 16px 16px 16px;
+}
+.bc-al-modal {
+    width: min(900px, 100%);
+    max-height: calc(100vh - 80px);
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.25);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+}
+.bc-al-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; border-bottom: 1px solid #e5e7eb;
+    background: #f8fafc;
+}
+.bc-al-title-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.bc-al-idtag {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px; color: #2563eb; font-weight: 600;
+    background: #dbeafe; padding: 2px 6px; border-radius: 4px;
+}
+.bc-al-title { font-size: 15px; font-weight: 700; color: #111827;
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bc-al-actions { display: flex; align-items: center; gap: 8px; }
+.bc-al-link { font-size: 12px; color: #2563eb; text-decoration: none; }
+.bc-al-link:hover { text-decoration: underline; }
+.bc-al-close {
+    background: transparent; border: none; font-size: 22px; cursor: pointer;
+    color: #6b7280; line-height: 1; padding: 0 4px;
+}
+.bc-al-close:hover { color: #111827; }
+
+.bc-al-body { padding: 12px 16px 16px; overflow: auto; }
+.bc-al-loading { color: #6b7280; padding: 24px; text-align: center; }
+.bc-al-error { color: #b91c1c; padding: 24px; text-align: center; }
+
+.bc-al-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.bc-al-chip {
+    font-size: 11px; padding: 2px 6px; border-radius: 3px;
+    background: #e5e7eb; color: #374151;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.bc-al-chip.type-A { background: #fef3c7; color: #92400e; }
+.bc-al-chip.type-B { background: #dbeafe; color: #1e40af; }
+.bc-al-chip.type-C { background: #d1fae5; color: #065f46; }
+.bc-al-chip.type-D { background: #ede9fe; color: #5b21b6; }
+.bc-al-chip.type-E { background: #fce7f3; color: #9d174d; }
+.bc-al-chip.type-F { background: #f1f5f9; color: #334155; }
+.bc-al-chip.lc-aging { background: #fef3c7; color: #92400e; }
+.bc-al-chip.lc-archived { background: #e5e7eb; color: #6b7280; }
+.bc-al-chip.lc-terminal { background: #fecaca; color: #991b1b; }
+
+.bc-al-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.bc-al-tag { font-size: 11px; color: #2563eb; background: #eff6ff; padding: 2px 6px; border-radius: 3px; }
+
+.bc-al-content {
+    border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 12px 14px; font-size: 14px; line-height: 1.6; color: #111827;
+    background: #fff; min-height: 40px;
+    overflow-wrap: anywhere; word-break: break-word;
+}
+.bc-al-content pre { background: #f3f4f6; padding: 8px; border-radius: 4px; overflow: auto; }
+.bc-al-content code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px;
+                      font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; }
+.bc-al-content pre code { background: transparent; padding: 0; }
+.bc-al-content table { border-collapse: collapse; margin: 8px 0; }
+.bc-al-content th, .bc-al-content td { border: 1px solid #d1d5db; padding: 4px 8px; }
+.bc-al-content img { max-width: 100%; height: auto; }
+.bc-al-content blockquote { border-left: 3px solid #cbd5e1; margin: 8px 0; padding: 4px 12px; color: #4b5563; }
+.bc-al-content h1, .bc-al-content h2, .bc-al-content h3 { margin-top: 16px; margin-bottom: 8px; }
+.bc-al-content :first-child { margin-top: 0; }
+
+.bc-al-rel-block, .bc-al-block-block { margin-top: 14px; }
+.bc-al-rel-title { font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 6px;
+                   border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; }
+.bc-al-rel-sub { font-size: 11px; color: #6b7280; margin: 6px 0 3px; }
+.bc-al-rel-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 8px; font-size: 12px; border-radius: 4px;
+    border: 1px solid transparent;
+}
+.bc-al-rel-row.is-clickable { cursor: pointer; }
+.bc-al-rel-row.is-clickable:hover { background: #eff6ff; border-color: #bfdbfe; }
+.bc-al-rel-row.is-disabled { opacity: .55; cursor: not-allowed; }
+.bc-al-rel-type { font-family: ui-monospace, SFMono-Regular, monospace; color: #6b7280;
+                  font-size: 10px; background: #f1f5f9; padding: 1px 5px; border-radius: 3px;
+                  min-width: 70px; text-align: center; }
+.bc-al-rel-link { color: #2563eb; text-decoration: underline;
+                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                  flex: 1; min-width: 0; }
+.bc-al-rel-row.is-clickable:hover .bc-al-rel-link { color: #1d4ed8; }
+.bc-al-rel-row.is-disabled .bc-al-rel-link { color: #9ca3af; text-decoration: none; }
+.bc-al-rel-link span:first-child { font-family: ui-monospace, SFMono-Regular, monospace;
+                                   color: #6b7280; margin-right: 6px; font-size: 11px; }
+.bc-al-rel-arrow { color: #94a3b8; font-size: 16px; line-height: 1; margin-left: auto;
+                   font-family: ui-monospace, SFMono-Regular, monospace; }
+.bc-al-rel-row.is-clickable:hover .bc-al-rel-arrow { color: #2563eb; }
+</style>
+
+<script>
+// 確保 marked.js 在頁面（即使頁面沒繼承 base.html）也載入；瀏覽器 cache 重複載入無副作用。
+(function ensureMarked() {
+    if (window.marked) return;
+    if (document.querySelector('script[src*="marked.min.js"]')) return;
+    var s = document.createElement('script');
+    s.src = '/beakbroodnest/static/vendor/marked.min.js';
+    document.head.appendChild(s);
+})();
+
+function atomLookup() {
+    return {
+        inputId: '',
+        isOpen: false,
+        loading: false,
+        error: '',
+        atom: null,
+
+        init() {
+            // 暴露全域呼叫入口，讓任何頁面（例如 admin_tables）皆可開啟對話框
+            window.openAtomCard = (id) => this.goAtom(id);
+        },
+
+        lookup() {
+            const raw = String(this.inputId || '').trim();
+            const id = parseInt(raw, 10);
+            if (!id || id <= 0) { return; }
+            this.goAtom(id);
+        },
+
+        // 切換到指定卡（同時用於外部呼叫與 modal 內連結點擊；不關閉 modal）
+        async goAtom(id) {
+            if (!id) return;
+            this.isOpen = true;
+            this.loading = true;
+            this.error = '';
+            this.atom = null;
+            try {
+                const resp = await fetch(`/beakbroodnest/api/atoms/${id}`);
+                if (resp.status === 404) { throw new Error(`#${id} 不存在或已刪除`); }
+                if (!resp.ok) { throw new Error('HTTP ' + resp.status); }
+                this.atom = await resp.json();
+            } catch (e) {
+                this.error = e.message || '載入失敗';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        close() {
+            this.isOpen = false;
+            this.atom = null;
+            this.error = '';
+        },
+
+        get renderedContent() {
+            if (!this.atom) return '';
+            const c = this.atom.content || '';
+            if (!c) return '<span style="color:#9ca3af;">（無內容）</span>';
+            const t = this.atom.content_type || 'markdown';
+            // HTML / markdown 都丟 marked.parse；純 text/url/ref 類就 escape 後當 pre 顯示
+            if (t === 'markdown' || t === 'html') {
+                if (window.marked && window.marked.parse) {
+                    try { return window.marked.parse(c); } catch (e) { /* fallthrough */ }
+                }
+            }
+            // 後備：跳脫 + 保留換行
+            const esc = c.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return '<pre style="white-space:pre-wrap;">' + esc + '</pre>';
+        },
+
+        fmtTs(s) {
+            if (!s) return '?';
+            const d = new Date(s);
+            if (isNaN(d.getTime())) return '?';
+            const p = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+        },
+
+        canvasHref() {
+            // 開到一個能搜到卡的入口；目前用首頁帶 hash，讓白板能 focus
+            return this.atom ? `/beakbroodnest/#atom-${this.atom.id}` : '#';
+        },
+    };
+}
+</script>

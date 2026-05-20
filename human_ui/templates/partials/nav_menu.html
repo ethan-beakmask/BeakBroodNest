@@ -1,10 +1,13 @@
 <!-- 動態導覽選單 (Alpine.js) - 橫向展開 -->
-<div x-data="navMenu()" x-init="load()" style="display:inline-flex; gap:4px;">
-    <template x-for="item in items" :key="item.id">
-        <a :href="item._resolvedUrl || item.url" class="bc-nav-item"
-           :class="item._isActive ? 'bc-nav-active' : ''"
-           x-text="item.name"></a>
-    </template>
+<div style="display:inline-flex; align-items:center; gap:8px;">
+    <div x-data="navMenu()" x-init="load()" style="display:inline-flex; gap:4px;">
+        <template x-for="item in items" :key="item.id">
+            <a :href="item._resolvedUrl || item.url" class="bc-nav-item"
+               :class="item._isActive ? 'bc-nav-active' : ''"
+               x-text="item.name"></a>
+        </template>
+    </div>
+    {% include 'partials/atom_lookup.html' %}
 </div>
 
 <style>

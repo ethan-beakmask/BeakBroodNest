@@ -791,7 +791,8 @@
                                 <span class="sidebar-card-type"
                                       :style="'color:' + (atomTypeConfig[ca.atom && ca.atom.atom_type] ? atomTypeConfig[ca.atom.atom_type].color : 'var(--text-muted)')"
                                       x-text="ca.atom ? ca.atom.atom_type : '?'"></span>
-                                <span class="ce-sidebar-title" x-text="ca.atom ? ca.atom.title : '#'+ca.atom_id"></span>
+                                <span class="sidebar-card-id" x-text="'#' + ca.atom_id"></span>
+                                <span class="ce-sidebar-title" x-text="ca.atom ? ca.atom.title : '(無標題)'"></span>
                                 <span class="ce-sidebar-badge" x-show="ca.is_blocked" style="background:#dc2626;color:#fff;font-size:8px;padding:1px 4px;border-radius:2px;">BLOCKED</span>
                                 <span class="ce-sidebar-badge" x-show="openEditors.some(e => e.atomId === ca.atom_id)">已開</span>
                             </div>
