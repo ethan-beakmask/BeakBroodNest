@@ -195,7 +195,7 @@
                                 ｜共 <span x-text="rowsMeta.returned"></span> 筆<span x-show="selectedTable === 'knowledge_atoms' && rowsMeta.filtered_count != null"> / <span x-text="(rowsMeta.filtered_count ?? 0).toLocaleString()"></span>（過濾後總數）</span>
                                 ｜PK: <code x-text="rowsMeta.primary_keys?.join(',') || '--'"></code>
                             </div>
-                            <div x-show="selectedTable === 'knowledge_atoms'" class="mt-1">
+                            <div x-show="selectedTable === 'knowledge_atoms'" class="mt-1 d-flex flex-wrap gap-2 align-items-center">
                                 <div class="btn-group btn-group-sm" role="group" aria-label="owner 過濾">
                                     <button type="button" class="btn"
                                             :class="atomOwnerFilter === 'all' ? 'btn-primary' : 'btn-outline-secondary'"
@@ -203,6 +203,17 @@
                                     <button type="button" class="btn"
                                             :class="atomOwnerFilter === 'human' ? 'btn-primary' : 'btn-outline-secondary'"
                                             @click="setAtomOwnerFilter('human')">僅自己 (ethan)</button>
+                                </div>
+                                <div class="btn-group btn-group-sm" role="group" aria-label="顯示筆數">
+                                    <button type="button" class="btn"
+                                            :class="atomLimit === 300 ? 'btn-primary' : 'btn-outline-secondary'"
+                                            @click="setAtomLimit(300)">300</button>
+                                    <button type="button" class="btn"
+                                            :class="atomLimit === 1000 ? 'btn-primary' : 'btn-outline-secondary'"
+                                            @click="setAtomLimit(1000)">1000</button>
+                                    <button type="button" class="btn"
+                                            :class="atomLimit === 0 ? 'btn-primary' : 'btn-outline-secondary'"
+                                            @click="setAtomLimit(0)">ALL</button>
                                 </div>
                             </div>
                         </div>
@@ -296,6 +307,7 @@ function adminTables() {
         selectedTable: '',
         rowsMeta: {},
         atomOwnerFilter: 'all',   // 'all' | 'human'（僅 knowledge_atoms 用）
+        atomLimit: 300,           // 300 | 1000 | 0 (ALL)；僅 knowledge_atoms 用
         rowsLoading: false,
         rowsError: '',
         expandedRow: -1,
@@ -370,6 +382,7 @@ function adminTables() {
             try {
                 const params = new URLSearchParams({ limit: '30' });
                 if (name === 'knowledge_atoms') {
+                    params.set('limit', String(this.atomLimit));
                     params.set('owner', this.atomOwnerFilter);
                 }
                 const resp = await fetch(`/beakbroodnest/api/admin/tables/${encodeURIComponent(name)}/latest?${params}`);
@@ -388,6 +401,15 @@ function adminTables() {
         async setAtomOwnerFilter(val) {
             if (this.atomOwnerFilter === val) return;
             this.atomOwnerFilter = val;
+            if (this.selectedTable === 'knowledge_atoms') {
+                this.expandedRow = -1;
+                await this.loadRows('knowledge_atoms');
+            }
+        },
+
+        async setAtomLimit(val) {
+            if (this.atomLimit === val) return;
+            this.atomLimit = val;
             if (this.selectedTable === 'knowledge_atoms') {
                 this.expandedRow = -1;
                 await this.loadRows('knowledge_atoms');

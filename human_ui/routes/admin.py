@@ -378,7 +378,12 @@ def api_admin_table_latest(name):
         return jsonify({'error': 'invalid table name'}), 400
 
     limit = request.args.get('limit', 30, type=int)
-    limit = max(1, min(limit, 200))  # 安全上限
+    # knowledge_atoms 是 admin 唯讀工具，放寬到 10000 並允許 limit=0 表示無上限；
+    # 其餘表維持 200 安全上限避免誤撈大表。
+    if table_name == 'knowledge_atoms':
+        limit = max(0, min(limit, 10000))
+    else:
+        limit = max(1, min(limit, 200))
 
     # knowledge_atoms 專屬：owner=human 只顯示 ethan 自己寫的（過濾掉 1500+ AI 知識）
     owner_filter = request.args.get('owner', 'all')
@@ -428,7 +433,8 @@ def api_admin_table_latest(name):
         sql_str += ' WHERE ' + ' AND '.join(where_parts)
     if order_clause:
         sql_str += f' ORDER BY {order_clause}'
-    sql_str += f' LIMIT {limit}'
+    if limit > 0:
+        sql_str += f' LIMIT {limit}'
 
     # 順便算 filtered_count，讓前端能顯示「30 / 1312」這種比率
     filtered_count = None
