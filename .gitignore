@@ -9,6 +9,7 @@ build/
 
 # Config (含密碼，不入版控)
 config.ini
+config.ini.bak.*
 
 # MCP 本機設定
 .mcp.json
