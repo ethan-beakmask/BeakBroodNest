@@ -403,6 +403,14 @@ function whiteboardApp(canvasId) {
                     e.preventDefault();
                 }
             }, true);
+            // 點到非心智圖元素 -> 自動離開心智圖模式
+            // 否則 active 節點殘留,白板 Tab/Enter/Del 會被 handleMindmapKeyDown 攔去操作心智圖
+            this.$refs.viewport.addEventListener('mousedown', function(e) {
+                if (!self.activeMindmapAtomId && !self.activeMindmapShellId) return;
+                var t = e.target;
+                if (t && t.closest && t.closest('.wb-mindmap-shell, .wb-mindmap-node')) return;
+                self.leaveMindmapMode();
+            }, true);
             window.addEventListener('pagehide', function() {
                 if (self.isSnapshot || !self.canvasId) return;
                 try {

@@ -336,6 +336,7 @@
                              'mindmap-node-active': activeMindmapAtomId === ca.atom_id,
                              'mindmap-node-editing': editingMindmapAtomId === ca.atom_id,
                              'mindmap-node-dragging': mindmapDragNode && mindmapDragNode.atom_id === ca.atom_id && mindmapDragMoved,
+                             'mindmap-node-nest-target': mindmapDragMoved && mindmapDragDropPosition === 'inside' && mindmapDragDropTargetId === ca.atom_id,
                              'mindmap-node-multiselected': selectedAtomIds.includes(ca.atom_id),
                              'conn-drop-target': isConnDragging && connDragHoverAtomId === ca.atom_id,
                              'mindmap-node--text': mindmapNodeTemplate(ca) === 'text',

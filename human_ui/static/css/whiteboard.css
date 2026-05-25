@@ -2000,6 +2000,12 @@
     background: #fef3c7 !important;
 }
 
+/* nest 目標節點 -- 拖曳節點時 hover 到另一節點本體上,提示「收為子節點」 */
+.wb-mindmap-node.mindmap-node-nest-target {
+    box-shadow: 0 0 0 3px #f59e0b, 0 0 0 6px rgba(245, 158, 11, 0.25);
+    background: #fef3c7 !important;
+}
+
 /* 心智圖節點多選標記（框選或多選右鍵套色用） */
 .wb-mindmap-node.mindmap-node-multiselected {
     box-shadow: 0 0 0 2px #f59e0b, 0 1px 2px rgba(0,0,0,0.04);

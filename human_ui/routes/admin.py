@@ -390,6 +390,11 @@ def api_admin_table_latest(name):
     if owner_filter not in ('all', 'human'):
         owner_filter = 'all'
 
+    # knowledge_atoms 專屬：hide_empty=1 隱藏「完全無內容」atom
+    # 定義：content_plain 與 thumbnail_url 都空（NULL 或長度 0）
+    # 註：content 永遠非 null（HTML 殼），所以用 content_plain 判斷實質內容
+    hide_empty = request.args.get('hide_empty', '1') == '1'
+
     # 確認表存在 + 取得 metadata
     tables_meta = _list_tables_with_meta()
     meta = next((t for t in tables_meta if t['name'] == table_name), None)
@@ -429,6 +434,11 @@ def api_admin_table_latest(name):
     if table_name == 'knowledge_atoms' and owner_filter == 'human':
         where_parts.append('owner = :owner_val')
         sql_params['owner_val'] = 'ethan'
+    if table_name == 'knowledge_atoms' and hide_empty:
+        where_parts.append(
+            "(COALESCE(length(content_plain), 0) > 0 "
+            "OR COALESCE(length(thumbnail_url), 0) > 0)"
+        )
     if where_parts:
         sql_str += ' WHERE ' + ' AND '.join(where_parts)
     if order_clause:
@@ -478,6 +488,7 @@ def api_admin_table_latest(name):
         'returned': len(rows_out),
         'limit': limit,
         'owner_filter': owner_filter if table_name == 'knowledge_atoms' else None,
+        'hide_empty': hide_empty if table_name == 'knowledge_atoms' else None,
         'filtered_count': filtered_count,
     })
 

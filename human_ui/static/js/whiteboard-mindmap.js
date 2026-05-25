@@ -35,8 +35,8 @@ function whiteboardMindmapMixin() {
         mindmapDragStartX: 0,
         mindmapDragStartY: 0,
         mindmapDragMoved: false,
-        mindmapDragDropTargetId: null, // sibling atom_id（drop indicator 顯示在它上/下）
-        mindmapDragDropPosition: null, // 'above' | 'below' | 'left' | 'right'
+        mindmapDragDropTargetId: null, // sibling atom_id（drop indicator 顯示在它上/下）；inside 時為新 parent atom_id
+        mindmapDragDropPosition: null, // 'above' | 'below' | 'left' | 'right' | 'inside'
         mindmapDragOutsideShell: false, // 拖到殼範圍外 = 準備 extract
         // 跨殼搬移
         mindmapDragCrossShellId: null,        // 目標殼 id（不是當前殼）
@@ -1274,6 +1274,15 @@ function whiteboardMindmapMixin() {
                 this.mindmapDragCrossParentAtomId = null;
             }
 
+            // 先試 nest:若滑鼠落在「另一個同殼節點」本體上 -> 變成它的 child
+            // 排除自己 / 自己後代 / 已是 parent 的目標
+            var nestId = this._detectNestTarget(clientX, clientY, node);
+            if (nestId !== null) {
+                this.mindmapDragDropTargetId = nestId;
+                this.mindmapDragDropPosition = 'inside';
+                return;
+            }
+
             var parentId = this._parentByChild[node.atom_id];
             if (parentId === undefined) {
                 this.mindmapDragDropTargetId = null;
@@ -1345,6 +1354,30 @@ function whiteboardMindmapMixin() {
             return { shellId: sid, parentAtomId: null };
         },
 
+        // 偵測拖曳是否落在「同殼另一個節點」本體上（nest under target，變成它的 child）
+        // 回傳目標 atom_id 或 null
+        _detectNestTarget(clientX, clientY, draggedCa) {
+            var draggedAtomId = draggedCa.atom_id;
+            var draggedShellId = draggedCa.mindmap_shell_id;
+            var stack = (document.elementsFromPoint
+                ? document.elementsFromPoint(clientX, clientY)
+                : [document.elementFromPoint(clientX, clientY)]) || [];
+            for (var i = 0; i < stack.length; i++) {
+                var el = stack[i];
+                if (!el) continue;
+                var nodeEl = el.closest && el.closest('.wb-mindmap-node');
+                if (!nodeEl) continue;
+                var aid = parseInt(nodeEl.id.replace('card-', ''), 10);
+                if (!aid || aid === draggedAtomId) continue;
+                var ca = this._getCanvasAtomByAtomId(aid);
+                if (!ca || ca.mindmap_shell_id !== draggedShellId) continue;
+                if (this._isDescendantOf(aid, draggedAtomId)) continue;
+                if (this._parentByChild[draggedAtomId] === aid) return null;
+                return aid;
+            }
+            return null;
+        },
+
         _isDescendantOf(candidateId, ancestorId) {
             // candidate 是 ancestor 的後代嗎？
             var cur = this._parentByChild[candidateId];
@@ -1380,7 +1413,11 @@ function whiteboardMindmapMixin() {
                 // 拖出殼 -- extract，並把節點放到滑鼠座標
                 this._extractFromDrag(dragged, dropClientX, dropClientY);
             } else if (moved && dropId !== null && dropId !== undefined) {
-                this._commitMindmapReorder(dragged, dropId, dropPos);
+                if (dropPos === 'inside') {
+                    this._commitMindmapNest(dragged, dropId);
+                } else {
+                    this._commitMindmapReorder(dragged, dropId, dropPos);
+                }
             } else if (!moved) {
                 // 未實際拖動 -- 視為 click
                 this.onMindmapNodeClick(dragged, e);
@@ -1449,6 +1486,34 @@ function whiteboardMindmapMixin() {
             return s ? s.id : null;
         },
 
+        async _commitMindmapNest(draggedCa, newParentAtomId) {
+            this._rebuildTreeIndex();
+            var shellId = draggedCa.mindmap_shell_id;
+            // 放新 parent 子節點尾端
+            var newSiblings = this._childrenByParent[newParentAtomId] || [];
+            var self = this;
+            var maxSort = 0;
+            newSiblings.forEach(function(sid) {
+                var so = self._sortOrderByChild[sid];
+                if (typeof so === 'number' && so > maxSort) maxSort = so;
+            });
+            var newSort = maxSort + 1;
+            try {
+                await API.moveMindmapNode(shellId, draggedCa.atom_id, {
+                    new_parent_atom_id: newParentAtomId,
+                    sort_order: newSort,
+                });
+                await this.loadData();
+                this.$nextTick(function() {
+                    self.recalcMindmapLayout(shellId);
+                    self.renderConnections();
+                });
+                this.showToast('已收為子節點', 'info', 1500);
+            } catch (e) {
+                this.showToast('收為子節點失敗：' + (e.message || e), 'error');
+            }
+        },
+
         async _commitMindmapReorder(draggedCa, dropTargetAtomId, position) {
             this._rebuildTreeIndex();
             var targetSortOrder = this._sortOrderByChild[dropTargetAtomId] || 0;
@@ -1475,6 +1540,8 @@ function whiteboardMindmapMixin() {
         // drop indicator 樣式（在 template 中綁 :style）
         get mindmapDropIndicatorStyle() {
             if (!this.mindmapDragDropTargetId || !this.mindmapDragMoved) return 'display:none;';
+            // inside（nest）狀態用節點本身的 .mindmap-node-nest-target class 高亮,不畫橘線
+            if (this.mindmapDragDropPosition === 'inside') return 'display:none;';
             var ca = this._getCanvasAtomByAtomId(this.mindmapDragDropTargetId);
             if (!ca) return 'display:none;';
             var w = ca.width || this.MM_NODE_W;

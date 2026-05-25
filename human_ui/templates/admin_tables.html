@@ -206,14 +206,23 @@
                                 </div>
                                 <div class="btn-group btn-group-sm" role="group" aria-label="顯示筆數">
                                     <button type="button" class="btn"
-                                            :class="atomLimit === 300 ? 'btn-primary' : 'btn-outline-secondary'"
-                                            @click="setAtomLimit(300)">300</button>
+                                            :class="atomLimit === 100 ? 'btn-primary' : 'btn-outline-secondary'"
+                                            @click="setAtomLimit(100)">100</button>
+                                    <button type="button" class="btn"
+                                            :class="atomLimit === 500 ? 'btn-primary' : 'btn-outline-secondary'"
+                                            @click="setAtomLimit(500)">500</button>
                                     <button type="button" class="btn"
                                             :class="atomLimit === 1000 ? 'btn-primary' : 'btn-outline-secondary'"
                                             @click="setAtomLimit(1000)">1000</button>
                                     <button type="button" class="btn"
                                             :class="atomLimit === 0 ? 'btn-primary' : 'btn-outline-secondary'"
                                             @click="setAtomLimit(0)">ALL</button>
+                                </div>
+                                <div class="form-check form-check-inline ms-1"
+                                     title="勾選=隱藏 content_plain 與 thumbnail_url 都空的 atom（純標題卡片）">
+                                    <input class="form-check-input" type="checkbox" id="atomHideEmpty"
+                                           x-model="atomHideEmpty" @change="onHideEmptyChange()">
+                                    <label class="form-check-label small" for="atomHideEmpty">隱藏無內容</label>
                                 </div>
                             </div>
                         </div>
@@ -307,7 +316,8 @@ function adminTables() {
         selectedTable: '',
         rowsMeta: {},
         atomOwnerFilter: 'all',   // 'all' | 'human'（僅 knowledge_atoms 用）
-        atomLimit: 300,           // 300 | 1000 | 0 (ALL)；僅 knowledge_atoms 用
+        atomLimit: 100,           // 100 | 500 | 1000 | 0 (ALL)；僅 knowledge_atoms 用
+        atomHideEmpty: true,      // 預設隱藏「content_plain 與 thumbnail 都空」的 atom
         rowsLoading: false,
         rowsError: '',
         expandedRow: -1,
@@ -384,6 +394,7 @@ function adminTables() {
                 if (name === 'knowledge_atoms') {
                     params.set('limit', String(this.atomLimit));
                     params.set('owner', this.atomOwnerFilter);
+                    params.set('hide_empty', this.atomHideEmpty ? '1' : '0');
                 }
                 const resp = await fetch(`/beakbroodnest/api/admin/tables/${encodeURIComponent(name)}/latest?${params}`);
                 if (!resp.ok) {
@@ -410,6 +421,13 @@ function adminTables() {
         async setAtomLimit(val) {
             if (this.atomLimit === val) return;
             this.atomLimit = val;
+            if (this.selectedTable === 'knowledge_atoms') {
+                this.expandedRow = -1;
+                await this.loadRows('knowledge_atoms');
+            }
+        },
+
+        async onHideEmptyChange() {
             if (this.selectedTable === 'knowledge_atoms') {
                 this.expandedRow = -1;
                 await this.loadRows('knowledge_atoms');
