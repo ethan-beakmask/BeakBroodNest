@@ -1,0 +1,25 @@
+{% extends 'reader_base.html' %}
+{% block title %}搜尋「{{ query }}」 · BBN Reader{% endblock %}
+{% block content %}
+
+<h5 class="mb-3">搜尋結果：<span class="text-primary">{{ query }}</span></h5>
+<p class="text-muted small">共 {{ hits | length }} 個對話命中（上限 {{ limit }}）</p>
+
+{% if not hits %}
+<p class="empty-hint">沒有命中。</p>
+{% else %}
+{% for h in hits %}
+<div class="post-card sender-assistant">
+  <div class="post-meta">
+    <strong>
+      <a href="{{ url_for('reader.reader_thread_detail', conv_id=h.thread_id) }}">{{ h.title }}</a>
+    </strong>
+    &nbsp;{{ h.created_at | reader_dt }}
+    &nbsp;·&nbsp;<span title="{{ h.project_path }}">{{ h.project_display }}</span>
+  </div>
+  <div class="post-body small text-muted">{{ h.snippet }}</div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% endblock %}

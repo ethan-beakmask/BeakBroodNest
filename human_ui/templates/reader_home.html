@@ -1,0 +1,19 @@
+{% extends 'reader_base.html' %}
+{% block title %}{{ current_display }} · BBN Reader{% endblock %}
+{% block content %}
+
+{% if not thread_list_data.threads %}
+  <p class="empty-hint">
+    沒有對話資料。
+    {% if thread_list_data.query %}
+      <br>查詢「{{ thread_list_data.query }}」沒有命中。
+    {% endif %}
+  </p>
+{% else %}
+  <p class="empty-hint">
+    從左側 thread list 選一個對話開始閱讀。<br>
+    <small>{{ current_display }} · 共 {{ thread_list_data.total }} 對話</small>
+  </p>
+{% endif %}
+
+{% endblock %}

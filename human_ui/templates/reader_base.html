@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Reader · BeakBroodNest{% endblock %}</title>
+<link rel="icon" href="/beakbroodnest/static/favicon.ico" type="image/x-icon">
+<link rel="stylesheet" href="/beakbroodnest/static/vendor/bootstrap-5.3.3-dist/css/bootstrap.min.css">
+<script defer src="/beakbroodnest/static/vendor/alpine.min.js"></script>
+<style>
+  body { background:#f6f7f9; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans TC",sans-serif; }
+  .navbar-brand { font-weight:600; letter-spacing:.5px; }
+
+  /* 上方 PROJECTS 下拉 */
+  .proj-bar {
+    background:#fff; border-bottom:1px solid #dee2e6;
+    padding:.3rem .75rem;
+    display:flex; align-items:center; gap:.5rem;
+  }
+  .proj-bar .proj-label {
+    font-size:.7rem; font-weight:600; color:#6c757d;
+    letter-spacing:.5px;
+  }
+  .proj-bar select.proj-select {
+    font-size:.85rem; padding:.2rem .5rem;
+    border:1px solid #dee2e6; border-radius:.25rem;
+    background:#f8f9fa; color:#212529;
+    min-width:240px; max-width:520px;
+  }
+  .proj-bar select.proj-select:focus {
+    outline:none; border-color:#86b7fe;
+    box-shadow:0 0 0 .15rem rgba(13,110,253,.25);
+  }
+  .proj-bar .proj-current-path {
+    font-size:.75rem; color:#6c757d; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+
+  /* 兩欄 layout：左 thread-list / 右 main */
+  .layout { display:grid; grid-template-columns: 340px 1fr; gap:1rem; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+  .layout.no-list { grid-template-columns: 1fr; }
+
+  .thread-list-pane {
+    background:#fff; border:1px solid #dee2e6; border-radius:.375rem;
+    padding:.5rem; height: calc(100vh - 150px); overflow-y:auto;
+    display:flex; flex-direction:column;
+  }
+  .thread-list-pane .tl-header {
+    padding:.25rem .25rem .5rem; border-bottom:1px solid #e9ecef; margin-bottom:.5rem;
+  }
+  .thread-list-pane .tl-header .tl-title { font-weight:600; font-size:.9rem; }
+  .thread-list-pane .tl-header .tl-count { color:#6c757d; font-size:.75rem; }
+  .thread-list-pane .tl-body { flex:1; overflow-y:auto; }
+
+  .main {
+    background:#fff; border:1px solid #dee2e6; border-radius:.375rem;
+    padding:.75rem; min-height: calc(100vh - 150px);
+    max-height: calc(100vh - 110px); overflow-y:auto;
+  }
+
+  .thread-row { padding:.5rem .35rem; border-bottom:1px solid #f1f3f5; }
+  .thread-row.active { background:#e7f1ff; border-left:3px solid #0d6efd; padding-left:.6rem; }
+  .thread-row a.title { color:#0d6efd; text-decoration:none; font-weight:500; }
+  .thread-row a.title:hover { text-decoration:underline; }
+  .thread-row .meta { font-size:.7rem; color:#6c757d; margin-top:.15rem; }
+  .thread-row .sc-btn {
+    margin-left:.5rem; font-size:.7rem; color:#6c757d;
+    cursor:pointer; user-select:none;
+  }
+  .thread-row .sc-btn:hover { color:#0d6efd; }
+  .sc-children { padding-left:1rem; margin-top:.25rem; border-left:2px solid #e9ecef; }
+  .sc-children .thread-row { padding:.35rem .25rem; }
+
+  .post-card { background:#fff; border:1px solid #dee2e6; border-radius:.375rem;
+               margin-bottom:.5rem; padding:.75rem; }
+  .post-card.sender-user, .post-card.sender-human { border-left:4px solid #198754; }
+  .post-card.sender-assistant { border-left:4px solid #0d6efd; }
+  .post-card.sender-attachment { border-left:4px solid #adb5bd; background:#f8f9fa; }
+  .post-card.sender-tool, .post-card.sender-tool_result { border-left:4px solid #6f42c1; }
+  .post-card.sidechain { background:#fdf6e3; }
+  .post-card .post-meta { font-size:.75rem; color:#6c757d; margin-bottom:.5rem; }
+  .post-card .post-body { word-wrap: break-word; overflow-wrap: break-word; }
+  .post-card .post-body pre {
+    background:#f6f8fa; border:1px solid #e9ecef; border-radius:.25rem;
+    padding:.5rem; overflow-x:auto; font-size:.85rem;
+  }
+  .post-card .post-body code { font-size:.9em; }
+  .post-card .post-body table { border-collapse:collapse; margin:.5rem 0; }
+  .post-card .post-body th, .post-card .post-body td {
+    border:1px solid #dee2e6; padding:.3rem .6rem;
+  }
+  .post-card .post-body th { background:#f8f9fa; }
+  details.block-think, details.block-tool, details.block-toolresult {
+    margin:.5rem 0; padding:.4rem .6rem; border-radius:.25rem;
+    border:1px solid #e9ecef;
+  }
+  details.block-think summary { color:#6c757d; }
+  details.block-tool summary { color:#6f42c1; }
+  details.block-toolresult summary { color:#198754; }
+  details summary { cursor:pointer; font-size:.85rem; }
+  details pre { background:#f8f9fa; padding:.4rem; margin-top:.25rem;
+                border-radius:.25rem; font-size:.8rem; overflow-x:auto; }
+  .pager { margin-top:1rem; }
+  .badge-sidechain { background:#fd7e14; }
+  .breadcrumb-link { font-size:.85rem; color:#6c757d; text-decoration:none; }
+  .breadcrumb-link:hover { color:#0d6efd; }
+
+  .empty-hint {
+    color:#6c757d; text-align:center; padding:3rem 1rem;
+    font-size:.95rem;
+  }
+</style>
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+<nav class="navbar navbar-light bg-white border-bottom">
+  <div class="container-fluid">
+    <div class="d-flex align-items-center gap-3">
+      <a class="navbar-brand mb-0" href="/beakbroodnest/"
+         style="font-weight:700;font-size:15px;color:#3b82f6;letter-spacing:-0.3px;">BeakBroodNest</a>
+      {% include 'partials/nav_menu.html' %}
+    </div>
+    <form class="d-flex" action="{{ url_for('reader.reader_search') }}" method="get">
+      <input class="form-control form-control-sm me-2" type="search"
+             name="q" placeholder="跨 project 搜尋對話..." style="min-width:240px"
+             value="{{ request.args.get('q') or '' }}">
+      <button class="btn btn-sm btn-outline-secondary" type="submit">搜尋</button>
+    </form>
+  </div>
+</nav>
+
+{# 上方 PROJECTS 下拉 #}
+<div class="proj-bar">
+  <span class="proj-label">PROJECT</span>
+  <select class="proj-select" onchange="switchProject(this)">
+    <option value="" {% if not current_slug %}selected{% endif %}>
+      全部 ({{ projects | sum(attribute='count') }})
+    </option>
+    {% for p in projects %}
+      <option value="{{ p.slug }}" data-path="{{ p.path }}"
+              {% if p.slug == current_slug %}selected{% endif %}>
+        {{ p.display }} ({{ p.count }}) — {{ p.path }}
+      </option>
+    {% endfor %}
+  </select>
+  {% if current_slug %}
+    {% for p in projects if p.slug == current_slug %}
+      <span class="proj-current-path" title="{{ p.path }}">{{ p.path }}</span>
+    {% endfor %}
+  {% endif %}
+</div>
+
+<div class="container-fluid mt-2">
+<div class="layout {% if not thread_list_data %}no-list{% endif %}">
+  {% if thread_list_data %}
+  <aside class="thread-list-pane">
+    <div class="tl-header">
+      <div class="d-flex align-items-center">
+        <span class="tl-title">{{ current_display }}</span>
+        <span class="tl-count ms-2">{{ thread_list_data.total }} 對話</span>
+      </div>
+      <form class="d-flex mt-2" method="get">
+        {% if current_slug %}<input type="hidden" name="proj" value="{{ current_slug }}">{% endif %}
+        <input class="form-control form-control-sm me-1" type="search"
+               name="lq" placeholder="此 project 內搜尋..."
+               value="{{ thread_list_data.query or '' }}">
+        <button class="btn btn-sm btn-outline-secondary" type="submit">找</button>
+      </form>
+      <div class="form-check form-check-sm mt-2">
+        <input class="form-check-input" type="checkbox" id="hide_summary"
+               {% if not show_summary %}checked{% endif %}
+               onchange="toggleHideSummary(this)">
+        <label class="form-check-label small text-muted" for="hide_summary">
+          隱藏「請對以下 topic 產出結構化摘要。」
+        </label>
+      </div>
+    </div>
+    <div class="tl-body">
+      {% if not thread_list_data.threads %}
+        <p class="text-muted small">沒有資料</p>
+      {% else %}
+        {% for t in thread_list_data.threads %}
+        <div class="thread-row {% if t.id == thread_list_data.active_thread_id %}active{% endif %}">
+          <a class="title"
+             href="{{ url_for('reader.reader_thread_detail', conv_id=t.id) }}{% if current_slug %}?proj={{ current_slug }}{% endif %}">
+            {{ t.title }}
+          </a>
+          {% if t.is_sidechain %}
+            <span class="badge badge-sidechain text-bg-warning">sc</span>
+          {% endif %}
+          {% if t.sidechain_count > 0 %}
+            <span class="sc-btn" data-label="{{ t.sidechain_count }} sidechain"
+                  onclick="loadSidechain(this, '{{ t.id }}')">
+              ▶ {{ t.sidechain_count }}
+            </span>
+          {% endif %}
+          <div class="meta">
+            {{ t.first_timestamp | reader_dt }} · {{ t.total_turns }} turns
+            {% if not current_slug %} · <span title="{{ t.project_path }}">{{ t.project_display }}</span>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if thread_list_data.total_pages > 1 %}
+        <nav class="pager">
+          <ul class="pagination pagination-sm justify-content-center">
+            <li class="page-item {% if thread_list_data.page == 1 %}disabled{% endif %}">
+              <a class="page-link" href="{{ thread_list_data.prev_url }}">‹</a>
+            </li>
+            <li class="page-item disabled">
+              <span class="page-link">{{ thread_list_data.page }}/{{ thread_list_data.total_pages }}</span>
+            </li>
+            <li class="page-item {% if thread_list_data.page == thread_list_data.total_pages %}disabled{% endif %}">
+              <a class="page-link" href="{{ thread_list_data.next_url }}">›</a>
+            </li>
+          </ul>
+        </nav>
+        {% endif %}
+      {% endif %}
+    </div>
+  </aside>
+  {% endif %}
+  <section class="main">
+    {% block content %}{% endblock %}
+  </section>
+</div>
+</div>
+
+<script src="/beakbroodnest/static/vendor/bootstrap-5.3.3-dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function switchProject(sel) {
+  const slug = sel.value;
+  const base = '/beakbroodnest/reader/';
+  window.location.href = slug ? `${base}?proj=${slug}` : base;
+}
+
+function toggleHideSummary(cb) {
+  const url = new URL(window.location.href);
+  if (cb.checked) {
+    url.searchParams.delete('show_summary');
+  } else {
+    url.searchParams.set('show_summary', '1');
+  }
+  url.searchParams.delete('lp');
+  window.location.href = url.toString();
+}
+
+async function loadSidechain(btn, threadId) {
+  const wrapper = btn.closest('.thread-row');
+  let box = wrapper.querySelector('.sc-children');
+  if (box) { box.remove(); btn.textContent = btn.dataset.label; return; }
+  btn.textContent = '載入中…';
+  const res = await fetch(`/beakbroodnest/reader/t/${threadId}/sidechain`);
+  const html = await res.text();
+  box = document.createElement('div');
+  box.className = 'sc-children';
+  box.innerHTML = html;
+  wrapper.appendChild(box);
+  btn.textContent = '▼ ' + btn.dataset.label;
+}
+</script>
+</body>
+</html>

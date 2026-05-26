@@ -1,0 +1,12 @@
+{% for t in children %}
+<div class="thread-row">
+  <a class="title" href="{{ url_for('reader.reader_thread_detail', conv_id=t.id) }}">
+    ↳ {{ t.title }}
+  </a>
+  <div class="meta">
+    {{ t.first_timestamp | reader_dt }} · {{ t.total_turns }} turns
+  </div>
+</div>
+{% else %}
+<p class="text-muted small">(無 sidechain)</p>
+{% endfor %}

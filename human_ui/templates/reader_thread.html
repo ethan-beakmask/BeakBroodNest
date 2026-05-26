@@ -1,0 +1,97 @@
+{% extends 'reader_base.html' %}
+{% block title %}{{ thread.title[:40] }} · BBN Reader{% endblock %}
+{% block content %}
+
+<div class="mb-2">
+  <a class="breadcrumb-link"
+     href="{{ url_for('reader.reader_home') }}{% if current_slug %}?proj={{ current_slug }}{% endif %}">‹ 回 {{ current_display }}</a>
+  {% if parent_thread %}
+    &nbsp;|&nbsp;
+    <a class="breadcrumb-link"
+       href="{{ url_for('reader.reader_thread_detail', conv_id=parent_thread.id) }}{% if current_slug %}?proj={{ current_slug }}{% endif %}">
+      ↑ 父 thread: {{ parent_thread.title[:40] }}
+    </a>
+  {% endif %}
+</div>
+
+<div class="d-flex align-items-start mb-3">
+  <div class="flex-grow-1">
+    <h5 class="mb-1">
+      {{ thread.title }}
+      {% if thread.is_sidechain %}<span class="badge badge-sidechain text-bg-warning">sidechain</span>{% endif %}
+    </h5>
+    <div class="text-muted small">
+      {{ thread.first_timestamp | reader_dt }} ~ {{ thread.last_timestamp | reader_dt }}
+      &nbsp;·&nbsp; {{ total_posts }} turns
+      {% if thread.project_path %} &nbsp;·&nbsp; <span title="{{ thread.project_path }}">{{ thread.project_path }}</span>{% endif %}
+      {% if thread.git_branch %} &nbsp;·&nbsp; branch={{ thread.git_branch }}{% endif %}
+      {% if thread.session_id %} &nbsp;·&nbsp; sess={{ thread.session_id[:12] }}{% endif %}
+    </div>
+  </div>
+  <div class="ms-2">
+    <div class="btn-group btn-group-sm" role="group">
+      <a class="btn {% if mode == 'linear' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="?mode=linear{% if page > 1 %}&page={{ page }}{% endif %}{% if current_slug %}&proj={{ current_slug }}{% endif %}">線性</a>
+      <a class="btn {% if mode == 'tree' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="?mode=tree{% if page > 1 %}&page={{ page }}{% endif %}{% if current_slug %}&proj={{ current_slug }}{% endif %}">樹狀</a>
+    </div>
+  </div>
+</div>
+
+{% for p in posts %}
+<div class="post-card sender-{{ p.sender | lower }} {% if mode == 'tree' and p.is_sidechain %}sidechain{% endif %}"
+     id="post-{{ p.id }}"
+     {% if mode == 'tree' and p.is_sidechain %}style="margin-left:2rem;"{% endif %}>
+  <div class="post-meta">
+    <strong>#{{ p.seq }} {{ p.sender }}</strong>
+    {% if p.kind != 'text' %}<span class="badge text-bg-secondary">{{ p.kind }}</span>{% endif %}
+    {% if p.is_sidechain %}<span class="badge text-bg-warning">sidechain</span>{% endif %}
+    {% if p.tool_name %}
+      <span class="badge text-bg-info">{{ p.tool_name }}</span>
+      {% if p.tool_is_error %}<span class="badge text-bg-danger">tool error</span>{% endif %}
+    {% endif %}
+    &nbsp;{{ p.timestamp | reader_dt }}
+    {% if p.model %} · {{ p.model }}{% endif %}
+    {% if p.input_tokens %} · in={{ p.input_tokens }}{% endif %}
+    {% if p.output_tokens %} · out={{ p.output_tokens }}{% endif %}
+  </div>
+
+  {% for b in p.blocks %}
+    {% if b.type == 'thinking' %}
+    <details class="block-think">
+      <summary>thinking ({{ b.body | length }} 字)</summary>
+      <pre>{{ b.body }}</pre>
+    </details>
+    {% elif b.type == 'tool_use' %}
+    <details class="block-tool">
+      <summary>tool_use: {{ b.name }}{% if b.is_error %} [ERROR]{% endif %}</summary>
+      <pre>{{ b.input | tojson(indent=2) }}</pre>
+    </details>
+    {% endif %}
+  {% endfor %}
+
+  {% if p.body %}
+  <div class="post-body">{{ p.body | reader_md | safe }}</div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% if use_paging and total_pages > 1 %}
+<nav class="pager">
+  <ul class="pagination pagination-sm">
+    {% set prev = page - 1 if page > 1 else 1 %}
+    {% set next = page + 1 if page < total_pages else total_pages %}
+    <li class="page-item {% if page == 1 %}disabled{% endif %}">
+      <a class="page-link" href="?mode={{ mode }}&page={{ prev }}{% if current_slug %}&proj={{ current_slug }}{% endif %}">‹ 上一頁</a>
+    </li>
+    <li class="page-item disabled">
+      <span class="page-link">第 {{ page }} / {{ total_pages }} 頁（每頁 {{ page_size }} turns）</span>
+    </li>
+    <li class="page-item {% if page == total_pages %}disabled{% endif %}">
+      <a class="page-link" href="?mode={{ mode }}&page={{ next }}{% if current_slug %}&proj={{ current_slug }}{% endif %}">下一頁 ›</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+
+{% endblock %}
