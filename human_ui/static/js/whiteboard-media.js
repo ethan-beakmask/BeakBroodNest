@@ -111,7 +111,7 @@ function whiteboardMediaMixin() {
                         type: 'paragraph',
                         content: [{
                             type: 'image',
-                            attrs: { src: src, alt: file.name, title: null, width: null, thumbnail: true },
+                            attrs: { src: src, alt: 'image', title: null, width: null, thumbnail: true },
                         }],
                     }],
                 };
@@ -170,9 +170,8 @@ function whiteboardMediaMixin() {
                     var rec = await API.uploadFile(file, 'image');
                     var atom = await API.createAtom({
                         title: rec.original_filename,
-                        content: mdContent(rec.url, rec.original_filename),
+                        content: '',
                         content_json: contentJson(rec.url),
-                        thumbnail_url: rec.url,
                         atom_type: 'F',
                         source: 'human',
                     });
