@@ -349,6 +349,9 @@ class Canvas(Base):
     is_project: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )  # True=專案管理取用,False=思考用途的自由白板
+    project_path: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )  # 關聯的本地專案目錄路徑（如 /opt/BeakBroodNest），供 AI 依 cwd 查待辦
     snapshot: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )  # 歸檔時凍結的完整白板快照（原子內容、連線、群組）
@@ -392,6 +395,7 @@ class Canvas(Base):
             'owner': self.owner,
             'is_archived': self.is_archived,
             'is_project': self.is_project,
+            'project_path': self.project_path,
             'viewport_x': self.viewport_x,
             'viewport_y': self.viewport_y,
             'viewport_zoom': self.viewport_zoom,
