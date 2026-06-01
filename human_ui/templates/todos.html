@@ -175,7 +175,10 @@
                                 <td x-text="it.node_id || '-'" style="color:#6c757d;font-family:monospace;font-size:11px;"></td>
                                 <td style="color:#6c757d;font-family:monospace;font-size:11px;">
                                     <template x-if="it.source==='atom_entry'">
-                                        <span x-text="'a'+it.atom_id+'/e'+it.entry_id"></span>
+                                        <a href="#" class="todos-link"
+                                           @click.prevent="window.openAtomCard && window.openAtomCard(it.atom_id)"
+                                           x-text="'a'+it.atom_id+'/e'+it.entry_id"
+                                           title="點此開啟卡片內容"></a>
                                     </template>
                                     <template x-if="it.source==='standalone_entry'">
                                         <span x-text="'se'+it.entry_id"></span>
@@ -188,9 +191,7 @@
                                          style="color:#6c757d;font-size:11px;"></div>
                                 </td>
                                 <td>
-                                    <a class="todos-link"
-                                       :href="'/beakbroodnest/canvas/' + it.canvas_slug"
-                                       x-text="it.canvas_name"></a>
+                                    <span x-text="it.canvas_name"></span>
                                     <span x-show="it.canvas_is_project"
                                           style="font-size:9px;color:#3b82f6;">★</span>
                                 </td>
@@ -203,9 +204,16 @@
                                           x-text="it.urgency"></span>
                                 </td>
                                 <td>
-                                    <a class="todos-link"
-                                       :href="'/beakbroodnest/canvas/' + it.canvas_slug"
-                                       title="到白板">開啟</a>
+                                    <template x-if="it.source==='atom_entry'">
+                                        <a class="todos-link"
+                                           :href="'/beakbroodnest/?open=' + it.atom_id"
+                                           title="在白板開啟 tiptap 編輯器">開啟</a>
+                                    </template>
+                                    <template x-if="it.source==='standalone_entry'">
+                                        <a class="todos-link"
+                                           :href="'/beakbroodnest/canvas/' + it.canvas_slug"
+                                           title="到白板">開啟</a>
+                                    </template>
                                 </td>
                             </tr>
                         </template>
@@ -269,13 +277,13 @@ function todosApp() {
         rowKey(it) { return it.source + ':' + it.entry_id; },
 
         async init() {
-            // 從 URL 取 ?canvas=
+            await this.loadCanvases();
+            // 從 URL 取 ?canvas=（必須在 loadCanvases 之後，options 已存在 select 才能正確選中）
             try {
                 const sp = new URLSearchParams(window.location.search);
                 const c = (sp.get('canvas') || '').trim();
                 if (/^[A-Za-z0-9_-]+$/.test(c)) this.canvasSlug = c;
             } catch (e) {}
-            await this.loadCanvases();
             await this.reload();
         },
 
