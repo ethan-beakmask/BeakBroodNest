@@ -5,7 +5,9 @@ BeakBroodNest -- 人類介面 Flask 入口
 路由已拆分至 routes/ 子模組
 """
 import argparse
+import base64
 import functools
+import json
 import secrets
 import string
 import sys
@@ -29,6 +31,7 @@ from core.models import (
 from core import relations as rel_service
 
 from human_ui.routes import ALL_BLUEPRINTS
+from human_ui.crypto_utils import generate_key, aes_gcm_decrypt
 
 
 app = Flask(__name__, static_url_path='/beakbroodnest/static')
@@ -114,6 +117,46 @@ def _check_auth():
         if request.is_json or request.path.startswith('/beakbroodnest/api/'):
             return jsonify({'error': '未登入'}), 401
         return redirect('/beakbroodnest/login')
+
+
+@app.before_request
+def _decrypt_request():
+    """AES-GCM 透明解密：將加密 body 還原為明文 JSON 再交給路由處理"""
+    if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        return
+    if 'application/json' not in (request.content_type or ''):
+        return
+
+    raw = request.get_data()
+    if not raw:
+        return
+
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        return
+
+    if '_enc' not in obj:
+        return
+
+    key_b64 = session.get('_aes_key')
+    if not key_b64:
+        abort(400)
+
+    try:
+        decrypted = aes_gcm_decrypt(base64.b64decode(key_b64), obj['_enc'])
+        request._cached_data = decrypted
+    except Exception:
+        abort(400)
+
+
+@app.route('/beakbroodnest/api/session-key', methods=['GET'])
+def get_session_key():
+    """提供/產生當前 session 的 AES-256-GCM 金鑰（需已登入）"""
+    if '_aes_key' not in session:
+        session['_aes_key'] = base64.b64encode(generate_key()).decode()
+        session.modified = True
+    return jsonify({'key': session['_aes_key']})
 
 
 @app.route('/beakbroodnest/login', methods=['GET', 'POST'])

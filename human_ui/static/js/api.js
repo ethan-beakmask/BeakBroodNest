@@ -1,10 +1,56 @@
 /**
  * BeakBroodNest API 封裝
  */
+
+// AES-256-GCM session key — 透明加密所有 POST/PUT/PATCH/DELETE body
+const _bbnCrypto = (() => {
+    let _keyPromise = null;
+
+    async function _fetchKey() {
+        const resp = await fetch('/beakbroodnest/api/session-key');
+        if (!resp.ok) throw new Error('session-key fetch failed: ' + resp.status);
+        const { key } = await resp.json();
+        const keyBytes = Uint8Array.from(atob(key), c => c.charCodeAt(0));
+        return crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    }
+
+    function _getKey() {
+        if (!_keyPromise) _keyPromise = _fetchKey().catch(e => { _keyPromise = null; throw e; });
+        return _keyPromise;
+    }
+
+    async function encrypt(plainObj) {
+        const cryptoKey = await _getKey();
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const plain = new TextEncoder().encode(JSON.stringify(plainObj));
+        const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cryptoKey, plain);
+        const combined = new Uint8Array(12 + cipher.byteLength);
+        combined.set(iv);
+        combined.set(new Uint8Array(cipher), 12);
+        // btoa via charCode is safe for arbitrary binary
+        return btoa(Array.from(combined, b => String.fromCharCode(b)).join(''));
+    }
+
+    // 預先取得 key，頁面載入後立即暖機
+    function warmup() { _getKey().catch(() => {}); }
+
+    return { encrypt, warmup };
+})();
+
 const API = {
     async _fetch(url, options = {}) {
         const defaults = { headers: { 'Content-Type': 'application/json' } };
-        const resp = await fetch(url, { ...defaults, ...options });
+        const merged = { ...defaults, ...options };
+
+        // 加密有 body 的寫入請求
+        const method = (merged.method || 'GET').toUpperCase();
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && merged.body) {
+            const plainObj = JSON.parse(merged.body);
+            const enc = await _bbnCrypto.encrypt(plainObj);
+            merged.body = JSON.stringify({ _enc: enc });
+        }
+
+        const resp = await fetch(url, merged);
         if (resp.status === 401) {
             window.location.href = '/beakbroodnest/login';
             throw new Error('未登入');
@@ -211,3 +257,6 @@ const API = {
         return resp.json();
     },
 };
+
+// 頁面載入後立即暖機 session key（減少首次 POST 延遲）
+_bbnCrypto.warmup();
