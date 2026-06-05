@@ -6,17 +6,36 @@
 const _bbnCrypto = (() => {
     let _keyPromise = null;
 
+    async function _importKey(b64) {
+        const keyBytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        return crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+    }
+
     async function _fetchKey() {
-        const resp = await fetch('/beakbroodnest/api/session-key');
+        // 優先讀 server 在 HTML 模板中嵌入的 key — 沒有 fetch 就沒有 cookie race
+        if (typeof window !== 'undefined' && window.__BBN_AES_KEY) {
+            return _importKey(window.__BBN_AES_KEY);
+        }
+        // Fallback: 模板未注入時走 endpoint(self-heal 後 retry 也走這條)
+        const resp = await fetch('/beakbroodnest/api/session-key', {
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: { 'Cache-Control': 'no-cache' },
+        });
         if (!resp.ok) throw new Error('session-key fetch failed: ' + resp.status);
         const { key } = await resp.json();
-        const keyBytes = Uint8Array.from(atob(key), c => c.charCodeAt(0));
-        return crypto.subtle.importKey('raw', keyBytes, 'AES-GCM', false, ['encrypt']);
+        return _importKey(key);
     }
 
     function _getKey() {
         if (!_keyPromise) _keyPromise = _fetchKey().catch(e => { _keyPromise = null; throw e; });
         return _keyPromise;
+    }
+
+    function invalidateKey() {
+        _keyPromise = null;
+        // 同步清掉 HTML 嵌入的 key — 否則 self-heal 重抓會再拿到同一把過期的 key
+        if (typeof window !== 'undefined') window.__BBN_AES_KEY = '';
     }
 
     async function encrypt(plainObj) {
@@ -34,23 +53,40 @@ const _bbnCrypto = (() => {
     // 預先取得 key，頁面載入後立即暖機
     function warmup() { _getKey().catch(() => {}); }
 
-    return { encrypt, warmup };
+    return { encrypt, warmup, invalidateKey };
 })();
 
 const API = {
     async _fetch(url, options = {}) {
-        const defaults = { headers: { 'Content-Type': 'application/json' } };
+        const defaults = { headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
         const merged = { ...defaults, ...options };
 
-        // 加密有 body 的寫入請求
         const method = (merged.method || 'GET').toUpperCase();
-        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && merged.body) {
-            const plainObj = JSON.parse(merged.body);
-            const enc = await _bbnCrypto.encrypt(plainObj);
-            merged.body = JSON.stringify({ _enc: enc });
+        const needsEncrypt = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && merged.body;
+        const plainBody = needsEncrypt ? merged.body : null;
+
+        async function send() {
+            const req = { ...merged };
+            if (needsEncrypt) {
+                const plainObj = JSON.parse(plainBody);
+                const enc = await _bbnCrypto.encrypt(plainObj);
+                req.body = JSON.stringify({ _enc: enc });
+            }
+            return fetch(url, req);
         }
 
-        const resp = await fetch(url, merged);
+        let resp = await send();
+
+        // 422 + aes_key_missing/invalid：server session 失去 _aes_key 或 key 已輪替，
+        // 清掉本地 key cache 重抓一次（self-heal）。只重試一次避免無限循環。
+        if (resp.status === 422 && needsEncrypt) {
+            const peek = await resp.clone().json().catch(() => null);
+            if (peek && (peek.code === 'aes_key_missing' || peek.code === 'aes_key_invalid')) {
+                _bbnCrypto.invalidateKey();
+                resp = await send();
+            }
+        }
+
         if (resp.status === 401) {
             window.location.href = '/beakbroodnest/login';
             throw new Error('未登入');

@@ -121,7 +121,11 @@ def _check_auth():
 
 @app.before_request
 def _decrypt_request():
-    """AES-GCM 透明解密：將加密 body 還原為明文 JSON 再交給路由處理"""
+    """AES-GCM 透明解密：將加密 body 還原為明文 JSON 再交給路由處理
+
+    若 session 內 _aes_key 缺失或解密失敗，回傳 422 + code='aes_key_missing'/'aes_key_invalid'，
+    讓前端可偵測到並清掉本地 key cache 重抓一次（self-heal）。
+    """
     if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
         return
     if 'application/json' not in (request.content_type or ''):
@@ -141,22 +145,29 @@ def _decrypt_request():
 
     key_b64 = session.get('_aes_key')
     if not key_b64:
-        abort(400)
+        return jsonify({'error': 'session AES key 缺失', 'code': 'aes_key_missing'}), 422
 
     try:
         decrypted = aes_gcm_decrypt(base64.b64decode(key_b64), obj['_enc'])
         request._cached_data = decrypted
     except Exception:
-        abort(400)
+        return jsonify({'error': 'AES 解密失敗', 'code': 'aes_key_invalid'}), 422
 
 
 @app.route('/beakbroodnest/api/session-key', methods=['GET'])
 def get_session_key():
-    """提供/產生當前 session 的 AES-256-GCM 金鑰（需已登入）"""
+    """提供/產生當前 session 的 AES-256-GCM 金鑰（需已登入）
+
+    回應加上 Cache-Control: no-store, private，避免瀏覽器/CDN cache 導致
+    client 拿到舊 key、server 端 session 卻沒有對應 _aes_key（會被 _decrypt_request 422）。
+    """
     if '_aes_key' not in session:
         session['_aes_key'] = base64.b64encode(generate_key()).decode()
         session.modified = True
-    return jsonify({'key': session['_aes_key']})
+    resp = jsonify({'key': session['_aes_key']})
+    resp.headers['Cache-Control'] = 'no-store, private, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    return resp
 
 
 @app.route('/beakbroodnest/login', methods=['GET', 'POST'])
@@ -267,6 +278,19 @@ def inject_cache_ver():
         return {'cache_ver': int(mtime)}
     except (ValueError, OSError):
         return {'cache_ver': 0}
+
+
+@app.context_processor
+def inject_aes_key():
+    """注入 AES key 到模板，避免前端 fetch + cookie race(GET resp 回來但 Set-Cookie
+    還沒寫入 jar 時就送出加密 POST，會被後端 422)。已登入且 session 缺 key 時自動補。
+    """
+    if not session.get('authenticated'):
+        return {'aes_key': ''}
+    if '_aes_key' not in session:
+        session['_aes_key'] = base64.b64encode(generate_key()).decode()
+        session.modified = True
+    return {'aes_key': session['_aes_key']}
 
 
 # ============================================================

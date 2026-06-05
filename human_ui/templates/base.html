@@ -9,6 +9,7 @@
     {% block extra_css %}{% endblock %}
     <script src="/beakbroodnest/static/vendor/marked.min.js"></script>
     <script defer src="/beakbroodnest/static/vendor/alpine.min.js"></script>
+    <script>window.__BBN_AES_KEY = "{{ aes_key }}";</script>
     <script src="/beakbroodnest/static/js/api.js?v={{ cache_ver }}"></script>
     {% block extra_js %}{% endblock %}
 </head>
