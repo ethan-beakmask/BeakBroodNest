@@ -3,7 +3,11 @@
  */
 
 // AES-256-GCM session key — 透明加密所有 POST/PUT/PATCH/DELETE body
+// crypto.subtle 只在 secure context (HTTPS / localhost) 提供。Brave/Firefox 嚴格遵守規範,
+// Chrome 對 private IP 放寬。此處偵測 — 不可用就降級明文,後端 _decrypt_request 看到沒
+// _enc 欄位會直接透傳。
 const _bbnCrypto = (() => {
+    const _available = typeof crypto !== 'undefined' && !!crypto.subtle;
     let _keyPromise = null;
 
     async function _importKey(b64) {
@@ -51,9 +55,11 @@ const _bbnCrypto = (() => {
     }
 
     // 預先取得 key，頁面載入後立即暖機
-    function warmup() { _getKey().catch(() => {}); }
+    function warmup() { if (_available) _getKey().catch(() => {}); }
 
-    return { encrypt, warmup, invalidateKey };
+    function isAvailable() { return _available; }
+
+    return { encrypt, warmup, invalidateKey, isAvailable };
 })();
 
 const API = {
@@ -62,7 +68,9 @@ const API = {
         const merged = { ...defaults, ...options };
 
         const method = (merged.method || 'GET').toUpperCase();
-        const needsEncrypt = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && merged.body;
+        const needsEncrypt = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)
+                          && merged.body
+                          && _bbnCrypto.isAvailable();
         const plainBody = needsEncrypt ? merged.body : null;
 
         async function send() {
