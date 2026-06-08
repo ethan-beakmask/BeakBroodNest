@@ -359,6 +359,7 @@
                         <!-- 文字區（text / image_text 模板顯示；image-only 模板隱藏） -->
                         <span class="wb-mindmap-node-title"
                               x-show="editingMindmapAtomId !== ca.atom_id && mindmapNodeTemplate(ca) !== 'image'"
+                              :class="{ 'has-content': ca.atom && ca.atom.has_content }"
                               x-text="ca.atom ? (ca.atom.title || '(空白)') : ''"></span>
                         <input class="wb-mindmap-title-input"
                                x-show="editingMindmapAtomId === ca.atom_id"

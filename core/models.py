@@ -183,6 +183,7 @@ class KnowledgeAtom(Base):
             'title': self.title,
             'content': self.content,
             'content_plain': self.content_plain,
+            'has_content': bool((self.content_plain or '').strip()),
             'content_json': self.content_json,
             'content_type': self.content_type,
             'thumbnail_url': self.thumbnail_url,

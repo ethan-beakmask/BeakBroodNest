@@ -566,6 +566,9 @@ function whiteboardCardEditorMixin() {
                 ca.atom.content_json = json;
                 ca.atom.updated_at = serverTs;
                 if (serverThumb !== undefined) ca.atom.thumbnail_url = serverThumb;
+                if (saveResp && typeof saveResp.has_content === 'boolean') {
+                    ca.atom.has_content = saveResp.has_content;
+                }
                 // 同步最新 entries（含 field_values）給白板渲染 -- idcard 主帳卡縮圖會用到
                 if (typeof syncResult !== 'undefined' && syncResult && syncResult.entries) {
                     ca.atom.entries = syncResult.entries;
@@ -997,6 +1000,9 @@ function whiteboardCardEditorMixin() {
                     var newAtom = Object.assign({}, this.atoms[idx].atom, {
                         content: text,
                         updated_at: (resp && resp.updated_at) || this.atoms[idx].atom.updated_at,
+                        has_content: (resp && typeof resp.has_content === 'boolean')
+                            ? resp.has_content
+                            : this.atoms[idx].atom.has_content,
                     });
                     var newCa = Object.assign({}, this.atoms[idx], { atom: newAtom });
                     this.atoms.splice(idx, 1, newCa);

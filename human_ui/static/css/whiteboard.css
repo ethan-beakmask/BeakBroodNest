@@ -1902,6 +1902,9 @@
     font-size: 13px;
     min-width: 0;
 }
+.wb-mindmap-node-title.has-content {
+    color: #2563eb;
+}
 .wb-mindmap-node--text .wb-mindmap-node-title {
     -webkit-line-clamp: 4;
     text-align: left;
