@@ -94,7 +94,9 @@
                             <span class="sidebar-card-type"
                                   :style="'color:' + (atomTypeConfig[ca.atom && ca.atom.atom_type] ? atomTypeConfig[ca.atom.atom_type].color : 'var(--text-muted)')"
                                   x-text="ca.atom ? ca.atom.atom_type : '?'"></span>
-                            <span class="sidebar-card-id" x-text="'#' + ca.atom_id"></span>
+                            <span class="sidebar-card-id" x-text="ca.atom_id"></span>
+                            <span class="sidebar-card-mark"
+                                  :class="{ 'has-content': ca.atom && ca.atom.has_content }">●</span>
                             <span class="sidebar-card-title" x-text="ca.atom ? ca.atom.title : '(無標題)'"></span>
                         </div>
                     </template>

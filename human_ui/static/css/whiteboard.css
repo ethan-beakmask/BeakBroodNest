@@ -1476,6 +1476,17 @@
     color: var(--text-muted);
     font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
 }
+.sidebar-card-mark {
+    flex-shrink: 0;
+    width: 8px;
+    text-align: center;
+    font-size: 8px;
+    line-height: 1;
+    color: transparent;
+}
+.sidebar-card-mark.has-content {
+    color: #2563eb;
+}
 .sidebar-card-title {
     overflow: hidden;
     text-overflow: ellipsis;
