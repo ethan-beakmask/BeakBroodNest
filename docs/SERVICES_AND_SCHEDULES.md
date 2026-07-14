@@ -83,7 +83,9 @@ sudo INSTALL_CRON=no  bash install.sh   # 跳過排程
 | `scripts/scheduler.py --tick` | `*/5 * * * *` | **集中式排程器入口**（meta-scheduler，派發 schedule.json 任務） |
 | `scripts/embed_worker.py` | `* * * * *` | Embedding worker，掃描待嵌入原子產生 pgvector |
 | `scripts/session_watchdog.py --check --alert` | `* * * * *` | 對話卡住偵測 |
-| `scripts/db_importer.py -convertall` | `*/10 * * * *` | JSONL 對話增量匯入 PostgreSQL |
+
+> 舊的 `db_importer.py -convertall` crontab 獨立條目已移除（2026-07-15），
+> P0 匯入改由 scheduler 的 `p0_import_frequent`（schedule.json）派發。
 
 範例（install.sh 自動寫入的格式，`SERVICE_NAME` / `INSTALL_DIR` / `CRON_USER` 為實際值）：
 
@@ -93,7 +95,6 @@ sudo INSTALL_CRON=no  bash install.sh   # 跳過排程
 */5 * * * * ethan /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/scheduler.py --tick >> /opt/tmp/beakbroodnest-scheduler.log 2>&1
 * * * * * ethan cd /opt/BeakBroodNest && flock -n /tmp/beakbroodnest-embed.lock venv/bin/python scripts/embed_worker.py >> /opt/tmp/beakbroodnest-embed_worker.log 2>&1
 * * * * * ethan /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/session_watchdog.py --check --alert >> /opt/tmp/beakbroodnest-session_watchdog.log 2>&1
-*/10 * * * * ethan flock -n /tmp/beakbroodnest-db-importer.lock /opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/db_importer.py -convertall >> /opt/tmp/beakbroodnest-db_importer.log 2>&1
 # END BeakBroodNest beakbroodnest
 ```
 

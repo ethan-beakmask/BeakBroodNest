@@ -1017,7 +1017,7 @@ else
 
     case "$ENABLE_CRON" in
         y|Y|yes)
-            log_info "寫入 5 條 cron 條目到 /etc/crontab（user=${CRON_USER}）..."
+            log_info "寫入 4 條 cron 條目到 /etc/crontab（user=${CRON_USER}）..."
             cp /etc/crontab "/etc/crontab.bak.$(date +%Y%m%d_%H%M%S)"
             cat >> /etc/crontab << CRONEOF
 
@@ -1027,7 +1027,6 @@ ${CRON_BEGIN_MARKER}
 */5 * * * * ${CRON_USER} BBN_INSTALL_DIR=${INSTALL_DIR} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/scheduler.py --tick >> /opt/tmp/${SERVICE_NAME}-scheduler.log 2>&1
 * * * * * ${CRON_USER} cd ${INSTALL_DIR} && BBN_INSTALL_DIR=${INSTALL_DIR} flock -n /tmp/${SERVICE_NAME}-embed.lock venv/bin/python scripts/embed_worker.py >> /opt/tmp/${SERVICE_NAME}-embed_worker.log 2>&1
 * * * * * ${CRON_USER} BBN_INSTALL_DIR=${INSTALL_DIR} ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/session_watchdog.py --check --alert >> /opt/tmp/${SERVICE_NAME}-session_watchdog.log 2>&1
-*/10 * * * * ${CRON_USER} BBN_INSTALL_DIR=${INSTALL_DIR} flock -n /tmp/${SERVICE_NAME}-db-importer.lock ${INSTALL_DIR}/venv/bin/python ${INSTALL_DIR}/scripts/db_importer.py -convertall >> /opt/tmp/${SERVICE_NAME}-db_importer.log 2>&1
 ${CRON_END_MARKER}
 CRONEOF
             log_info "  排程已寫入；下個整點開始啟動（如要立即測試：sudo bash -c 'tail -f /opt/tmp/${SERVICE_NAME}-*.log'）"
