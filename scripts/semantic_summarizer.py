@@ -743,7 +743,10 @@ def update_topic_results(
     topic: Dict[str, Any],
     result: Dict[str, Any],
 ) -> None:
-    """將 P2 結果回寫到 conversation_turns"""
+    """將 P2 結果回寫：摘要 JSON 落地 p2_summaries + 標記 conversation_turns
+
+    claude 版與 codex 版摘要器共用本函式，持久化只需改這一處。
+    """
     now = datetime.now().astimezone()
     topic_id = topic['topic_id']
 
@@ -751,6 +754,24 @@ def update_topic_results(
     turn_ids = [t['id'] for t in topic['signal_turns']]
 
     with conn.cursor() as cur:
+        # 摘要 JSON 持久化（舊設計只印 stdout 就丟棄，2026-07-15 起落地）
+        cur.execute("""
+            INSERT INTO p2_summaries
+                (topic_id, conversation_id, project_path, seq_min, seq_max,
+                 signal_count, max_severity, summary, model)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            topic_id,
+            topic['conversation_id'],
+            topic.get('project_path', ''),
+            topic.get('seq_min'),
+            topic.get('seq_max'),
+            topic.get('signal_count', 0),
+            topic.get('max_severity', ''),
+            json.dumps(result.get('summary') or {}, ensure_ascii=False),
+            result.get('model', ''),
+        ))
+
         # 更新所有相關 turns 的 p2_topic_id 和 p2_summarized_at
         cur.execute("""
             UPDATE conversation_turns

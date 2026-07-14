@@ -31,6 +31,21 @@ cc-list
 - `worker_inbox`：`kind ∈ {question, notice, result}`，FK 到 `worker_sessions.name`
 - `cc-spawn` 拒絕雙底線開頭的 name（防撞名）；hook 內部呼叫帶 `allow_underscore=True` 旁路
 
+## 派工內容規範（減少下游試誤）
+
+派工訊息（`dispatch_task` / `cc-spawn` 首則訊息 / Agent tool prompt）除了任務目標，
+**必附環境上下文**（有才附，不硬湊），依 BBN observe 數據，缺這些會讓接手 session
+把 turns 消耗在可避免的 tool_failure/error 試誤上：
+
+1. **資料庫連線方式**：不是給密碼，是給入口，如「用 `scripts/db_importer.py` 的
+   `_get_db_connection()`，設定在 `config.ini [postgresql]`」
+2. **明確檔案路徑**：含行號更好，如 `scripts/semantic_summarizer.py:519`
+3. **既有範例程式**：可直接複用的函式或同型任務的舊實作，如「批次回寫參考
+   `scripts/backfill_trace.py`」
+
+跨 session 的知識庫交接原子同樣適用，沿用「待查程式碼位置」段落格式（範例見 #4837）。
+方法論紀錄：知識庫 #4838（schema 方法論紀錄）。
+
 ## 場景 2 使用方式
 
 在 `/opt/BeakBroodNest/` 內輸入 `aside: <你的臨時問題>` 即被攔截，由 hook_aside 長期支線處理，主 cc 完全不見此 prompt。
