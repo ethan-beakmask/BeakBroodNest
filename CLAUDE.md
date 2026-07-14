@@ -87,3 +87,5 @@ sudo -u ethan codex exec \
   "prompt 內容"
 ```
 此帳號（ChatGPT auth）目前實測可用模型為 `gpt-5.5`；`gpt-5-mini`、codex-mini 類模型不支援。純唯讀分析（不寫檔）可用 `--sandbox read-only` 正常運作，只有寫入動作才會撞到這個限制。
+
+**呼叫時務必保留 stderr 並外掛 timeout**（如 `timeout 300 codex exec ... 2>&1`）：codex 遇 API 限流（429）會靜默指數退避重試，stderr 被丟棄時看起來像無聲卡死（2026-07-15 實測：同一任務平時 36~52 秒，限流時 300 秒以上仍未完成）。同機已知會消耗配額的來源：P2 codex daemon 批次。
