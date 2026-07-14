@@ -60,6 +60,7 @@ upstream / proxy_pass 名稱也使用 `${SERVICE_NAME}`，避免同機多實例�
 | `/opt/tmp/scripts-embed_worker.log` | scripts/embed_worker.py |
 | `/opt/tmp/BeakBroodNest-session_watchdog.log` | scripts/session_watchdog.py |
 | `/opt/tmp/BeakBroodNest-scripts-db_importer.log` | scripts/db_importer.py |
+| `/opt/tmp/p2_daemon_codex.log` | scripts/p2_daemon_run_codex.py.sh |
 
 ## 5. crontab 條目（/etc/crontab）
 
@@ -119,7 +120,33 @@ sudo INSTALL_CRON=no  bash install.sh   # 跳過排程
 
 完整任務定義見 `scripts/schedule.json`。
 
-## 7. 同機部署多份（測試版）建議
+## 7. P2 語意摘要 Codex 版
+
+`systemd/beakbroodnest-p2-codex.service` 與 `systemd/beakbroodnest-p2-codex.timer` 是 P2 語意摘要器的 Codex CLI 變體，對應腳本為：
+
+| 路徑 | 用途 |
+|---|---|
+| `scripts/semantic_summarizer_codex.py` | 讀取 P1 訊號、分群、呼叫 `codex exec` 產生 P2 JSON 摘要並回寫 DB |
+| `scripts/p2_daemon_run_codex.py.sh` | systemd wrapper，負責 PATH/HOME、flock、防重疊與 log redirect |
+| `/opt/tmp/p2_daemon_codex.log` | Codex 版 P2 daemon log |
+
+此版本預設不會由 install.sh 安裝或啟用；repo 內 unit/timer 僅供人工 review 後用 sudo 複製到 `/etc/systemd/system/`。舊 Claude 版 `beakbroodnest-p2.service` / `.timer` 保留不動。Codex model 預設使用此環境已測通的 `gpt-5.5`，可用 `BBN_P2_CODEX_MODEL=<model>` 改成帳號支援的更便宜/快速模型。
+
+手動測試：
+
+```bash
+cd /opt/BeakBroodNest
+/opt/BeakBroodNest/venv/bin/python scripts/semantic_summarizer_codex.py --all --dry-run --skip-subagents --since-days 14 --gap 50 --batch-size 1 --verbose
+```
+
+若要實際跑單批摘要，移除 `--dry-run` 並保留小的 `--batch-size`：
+
+```bash
+cd /opt/BeakBroodNest
+/opt/BeakBroodNest/venv/bin/python scripts/semantic_summarizer_codex.py --all --skip-subagents --since-days 14 --gap 50 --batch-size 1 --verbose
+```
+
+## 8. 同機部署多份（測試版）建議
 
 驗證 install.sh 時為避免踩到正式環境，所有環境變數**全部**錯開：
 

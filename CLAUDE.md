@@ -75,3 +75,15 @@ docs/               規劃文件
 
 ## 啟動與服務管理
 詳細規範請參考：`docs/SERVICES_AND_SCHEDULES.md`（systemd、nginx、DB 初始化、dev server、push 指令）
+
+## Codex CLI 呼叫注意事項（本機環境限定）
+本機（RD-coding）用 `codex exec` 時，`--sandbox read-only` 或 `--sandbox workspace-write` 會因 bwrap 需要建立 user namespace 但權限不足而擋下**所有**寫入操作（含 `mkdir`、`touch`、`apply_patch`），報錯 `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`。這不是路徑或權限問題，是沙箱本身建立失敗。**要讓 codex 真的寫檔案，必須用 `--sandbox danger-full-access`**：
+```bash
+sudo -u ethan codex exec \
+  --sandbox danger-full-access \
+  --skip-git-repo-check \
+  -C /opt/BeakBroodNest \
+  -o /tmp/codex_result.txt \
+  "prompt 內容"
+```
+此帳號（ChatGPT auth）目前實測可用模型為 `gpt-5.5`；`gpt-5-mini`、codex-mini 類模型不支援。純唯讀分析（不寫檔）可用 `--sandbox read-only` 正常運作，只有寫入動作才會撞到這個限制。

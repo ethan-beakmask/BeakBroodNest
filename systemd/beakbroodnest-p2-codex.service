@@ -1,0 +1,12 @@
+[Unit]
+Description=BeakBroodNest P2 incremental summarizer via Codex CLI (batch=15, since-days=14)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=ethan
+Group=ethan
+ExecStart=/opt/BeakBroodNest/scripts/p2_daemon_run_codex.py.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=2700
