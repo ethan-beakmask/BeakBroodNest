@@ -108,8 +108,10 @@ sudo INSTALL_CRON=no  bash install.sh   # 跳過排程
 | `vitality_decay` | `0 3 * * *` | 知識原子活力衰減（每日 03:00） |
 | `pg_backup` | `30 2 * * *` | PostgreSQL 資料庫備份（每日 02:30） |
 | `uploaded_files_gc` | `30 3 * * *` | 上傳檔案孤兒清理（每日 03:30） |
-| `nightly_review` | `25 8 * * *` | 每日復盤 Pipeline P0~P3（每日 08:25） |
-| `p1_scan_frequent` | `*/10 * * * *` | P1 訊號掃描高頻版（每 10 分鐘） |
+| `nightly_review` | `25 8 * * *` | 每日復盤 Pipeline P0~P3（每日 08:25，兜底全量掃描） |
+| `p0_import_frequent` | `*/10 * * * *` | P0 JSONL 增量匯入（每 10 分鐘；匯入後 NOTIFY 喚醒 listener） |
+
+> 舊的 `p1_scan_frequent`（每 10 分鐘輪詢 P1）已移除，P1/P2 改由第 7 節的事件驅動 listener 觸發。
 
 查狀態：
 
@@ -120,7 +122,48 @@ sudo INSTALL_CRON=no  bash install.sh   # 跳過排程
 
 完整任務定義見 `scripts/schedule.json`。
 
-## 7. P2 語意摘要 Codex 版
+## 7. 事件驅動 pipeline listener（P1+P2 主要觸發路徑）
+
+`systemd/beakbroodnest-listener.service` 常駐執行 `scripts/pipeline_listener.py --run`，
+透過 PostgreSQL LISTEN/NOTIFY 監聽 `conversation_turns` 新資料，debounce 後依序跑
+P1 訊號掃描與 P2 語意摘要。模型呼叫只在真的有新資料時發生，取代舊的
+`p1_scan_frequent` 輪詢與 `beakbroodnest-p2-codex.timer`（已停用）。
+
+事件鏈：
+
+```
+P0 (scheduler 每 10 分鐘 db_importer -convertall --since 2)
+  -> INSERT conversation_turns
+  -> DB trigger pg_notify('bbn_new_turns')      # scripts/init_pipeline_notify.sql
+  -> pipeline_listener debounce 60s
+  -> P1 signal_scanner.py --db
+  -> P2 摘要器（config.ini [pipeline] summarizer = codex|claude，失敗退 summarizer_fallback）
+```
+
+| 路徑 | 用途 |
+|---|---|
+| `scripts/pipeline_listener.py` | 常駐 listener（`--once` 可手動跑單輪測試） |
+| `scripts/init_pipeline_notify.sql` | 建立 NOTIFY trigger（升級後需 psql 執行一次） |
+| `systemd/beakbroodnest-listener.service` | systemd unit（sudo 複製到 /etc/systemd/system/） |
+| `/opt/tmp/scripts-pipeline_listener.log` | listener log |
+| `/opt/tmp/heartbeat/pipeline_listener.ok` | 每輪成功後寫入的 heartbeat |
+
+P2 執行期間持有 `/tmp/beak-p2.lock`，與 `nightly_pipeline.py` 及舊 P2 timer 互斥。
+`nightly_review` 保留為每日兜底全量掃描，防止事件遺漏造成資料缺口。
+
+安裝：
+
+```bash
+sudo cp systemd/beakbroodnest-listener.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now beakbroodnest-listener.service
+psql -U beak_broodnest -d beak_broodnest -f scripts/init_pipeline_notify.sql
+```
+
+## 8. P2 語意摘要 Codex 版
+
+> 2026-07-14 起 `beakbroodnest-p2-codex.timer` 已停用，P2 改由第 7 節的事件驅動 listener 觸發
+> （listener 依 config 呼叫同一支 `semantic_summarizer_codex.py`）。本節保留腳本說明與手動測試方式。
 
 `systemd/beakbroodnest-p2-codex.service` 與 `systemd/beakbroodnest-p2-codex.timer` 是 P2 語意摘要器的 Codex CLI 變體，對應腳本為：
 
@@ -146,7 +189,7 @@ cd /opt/BeakBroodNest
 /opt/BeakBroodNest/venv/bin/python scripts/semantic_summarizer_codex.py --all --skip-subagents --since-days 14 --gap 50 --batch-size 1 --verbose
 ```
 
-## 8. 同機部署多份（測試版）建議
+## 9. 同機部署多份（測試版）建議
 
 驗證 install.sh 時為避免踩到正式環境，所有環境變數**全部**錯開：
 

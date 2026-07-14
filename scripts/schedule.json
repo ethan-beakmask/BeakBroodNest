@@ -42,12 +42,12 @@
             "timeout_seconds": 60
         },
         {
-            "name": "p1_scan_frequent",
-            "description": "P1 訊號掃描高頻版（每 10 分鐘，incremental 掃 p1_scanned_at IS NULL 的 turn）",
-            "command": ["{venv_python}", "{scripts_dir}/signal_scanner.py", "--db"],
+            "name": "p0_import_frequent",
+            "description": "P0 JSONL 增量匯入（每 10 分鐘；匯入後 DB trigger NOTIFY 喚醒 pipeline_listener 跑 P1+P2，取代舊 p1_scan_frequent 輪詢）",
+            "command": ["{venv_python}", "{scripts_dir}/db_importer.py", "-convertall", "--since", "2"],
             "cron": "*/10 * * * *",
             "enabled": true,
-            "timeout_seconds": 300
+            "timeout_seconds": 600
         }
     ]
 }

@@ -1,0 +1,17 @@
+[Unit]
+Description=BeakBroodNest event-driven pipeline listener (P1+P2 via PostgreSQL LISTEN/NOTIFY)
+After=postgresql.service network.target
+
+[Service]
+Type=simple
+User=ethan
+Group=ethan
+Environment=HOME=/home/ethan
+Environment=PATH=/home/ethan/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+WorkingDirectory=/opt/BeakBroodNest
+ExecStart=/opt/BeakBroodNest/venv/bin/python /opt/BeakBroodNest/scripts/pipeline_listener.py --run
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
