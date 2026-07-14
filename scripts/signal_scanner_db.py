@@ -44,7 +44,11 @@ from db_importer import _load_db_params, _get_db_connection
 # ============================================================
 
 def _get_unscanned_conversations(conn) -> List[Dict[str, Any]]:
-    """取得所有含未掃描 turns 的對話"""
+    """取得所有含未掃描 turns 的對話
+
+    skip_analysis IS NOT NULL（pipeline/discard/no_analyze）的對話一律排除，
+    作為 P0 匯入時同步標記之後的第二道防線。
+    """
     with conn.cursor() as cur:
         cur.execute("""
             SELECT DISTINCT ct.conversation_id, c.project_path,
@@ -52,6 +56,7 @@ def _get_unscanned_conversations(conn) -> List[Dict[str, Any]]:
             FROM conversation_turns ct
             JOIN conversations c ON c.id = ct.conversation_id
             WHERE ct.p1_scanned_at IS NULL
+              AND c.skip_analysis IS NULL
             ORDER BY c.first_timestamp
         """)
         cols = [d[0] for d in cur.description]

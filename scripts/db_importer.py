@@ -18,7 +18,7 @@ import sys
 import glob
 import uuid as uuid_mod
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # 從 parse_conversation 匯入共用函式與常數
 from parse_conversation import (
@@ -53,6 +53,11 @@ DEFAULT_DB_PARAMS = {
 # Heartbeat
 HEARTBEAT_DIR = '/opt/tmp/heartbeat'
 HEARTBEAT_BASE = 'db_importer'
+
+# Pipeline 自我識別預設值（可由 config.ini [pipeline] 覆蓋）
+# marker 格式：<prefix><launch_kind>]，出現在對話第一則 user message 開頭
+DEFAULT_LAUNCH_MARKER_PREFIX = '[CC-LAUNCH-KIND='
+DEFAULT_PIPELINE_LAUNCH_KINDS = 'p2-dispatcher'
 
 
 def _write_heartbeat(suffix=None):
@@ -143,6 +148,27 @@ def _load_db_params() -> dict:
                 }
     print(f"[ERROR] 找不到 config.ini（搜尋路徑：{CONFIG_SEARCH_PATHS}），請先執行 install.sh", file=sys.stderr)
     sys.exit(1)
+
+
+def _load_pipeline_marker_config() -> Tuple[str, set]:
+    """讀取 pipeline 自我識別設定：(marker 前綴, 視為 pipeline 的 launch_kind 集合)。
+
+    config.ini [pipeline] 可覆蓋：
+      launch_marker_prefix = [CC-LAUNCH-KIND=
+      pipeline_launch_kinds = p2-dispatcher, another-kind
+    """
+    prefix = DEFAULT_LAUNCH_MARKER_PREFIX
+    kinds_raw = DEFAULT_PIPELINE_LAUNCH_KINDS
+    for path in CONFIG_SEARCH_PATHS:
+        if os.path.isfile(path):
+            cfg = configparser.RawConfigParser()
+            cfg.read(path, encoding='utf-8')
+            if cfg.has_section('pipeline'):
+                prefix = cfg.get('pipeline', 'launch_marker_prefix', fallback=prefix)
+                kinds_raw = cfg.get('pipeline', 'pipeline_launch_kinds', fallback=kinds_raw)
+            break
+    kinds = {k.strip() for k in kinds_raw.split(',') if k.strip()}
+    return prefix, kinds
 
 
 def _get_db_connection():
@@ -604,14 +630,22 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
 
     # trace/span 欄位（Phase 1 migration 後填充）
     conv_actor_id = _infer_actor_id(jsonl_path)
-    # 偵測首個 user_message 的 [CC-LAUNCH-KIND=...] marker
-    # （由 cc_runner.call_claude(launch_kind=...) 注入，識別 cc-spawn 子代理）
+    # 偵測首個 user_message 的 launch marker（預設 [CC-LAUNCH-KIND=...]，可組態）
+    # （由 cc_runner.call_claude(launch_kind=...) 或 P2 摘要器注入，識別非人類發起的 session）
+    # launch_kind 屬於 pipeline_launch_kinds 者，匯入當下同步標記 skip_analysis='pipeline'，
+    # 阻止 P1/P2 把 pipeline 自產 session 當成分析對象（自我循環污染防線，取代舊版事後猜 UUID 回寫）
+    conv_skip_analysis = None
     if conv_actor_id == 'cc-main':
+        marker_prefix, pipeline_kinds = _load_pipeline_marker_config()
+        marker_re = re.compile(r'^' + re.escape(marker_prefix) + r'([^\]\s]+)\]')
         for _t in turns:
             if _t.get('role') == 'user' and _t.get('content'):
-                m = re.match(r'^\[CC-LAUNCH-KIND=([^\]\s]+)\]', _t['content'])
+                m = marker_re.match(_t['content'])
                 if m:
-                    conv_actor_id = m.group(1).strip()
+                    launch_kind = m.group(1).strip()
+                    conv_actor_id = launch_kind
+                    if launch_kind in pipeline_kinds:
+                        conv_skip_analysis = 'pipeline'
                 break
     # 增量匯入時沿用既有 trace_id，避免同一 conversation 被切成多段
     # （ON CONFLICT DO NOTHING 只保護舊 turn，新 turn 若帶不同 trace_id 會造成 trace 分裂）
@@ -631,21 +665,25 @@ def _import_single_jsonl(conn, jsonl_path: str) -> dict:
 
     with conn.cursor() as cur:
         # 寫入 conversations
+        # skip_analysis 用 COALESCE：不覆蓋既有標記（如手動 discard），但回補 NULL
         cur.execute("""
             INSERT INTO conversations
                 (id, project_path, session_id, jsonl_path, jsonl_size,
                  total_turns, first_timestamp, last_timestamp,
-                 is_sidechain, parent_uuid, parent_conversation_id, git_branch)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 is_sidechain, parent_uuid, parent_conversation_id, git_branch,
+                 skip_analysis)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
                 jsonl_size = EXCLUDED.jsonl_size,
                 total_turns = EXCLUDED.total_turns,
                 last_timestamp = EXCLUDED.last_timestamp,
-                jsonl_path = EXCLUDED.jsonl_path
+                jsonl_path = EXCLUDED.jsonl_path,
+                skip_analysis = COALESCE(conversations.skip_analysis, EXCLUDED.skip_analysis)
         """, (
             conv_id, project_path, session_id, jsonl_path, current_size,
             len(turns), first_ts, last_ts,
             is_sidechain, parent_uuid_val, parent_conv_id, git_branch,
+            conv_skip_analysis,
         ))
 
         # 批次寫入 conversation_turns

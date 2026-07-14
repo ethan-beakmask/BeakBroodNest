@@ -28,7 +28,6 @@ import sys
 import tempfile
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 # 從 db_importer 復用 DB 連線
@@ -476,7 +475,7 @@ def run_claude_summarize(
     context_file: str,
     model: str = MODEL_DEFAULT,
     timeout: int = CLAUDE_TIMEOUT,
-) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+) -> Tuple[Optional[str], Optional[str]]:
     """
     呼叫 claude -p 產生摘要。
 
@@ -484,19 +483,14 @@ def run_claude_summarize(
     timeout 後對整個 group 發 SIGKILL，避免 grandchild 殘留 (claude CLI
     會 fork 出 node child，subprocess.run 的 timeout 只會殺直接子行程)。
 
+    此 session 的自我識別不在這裡處理：prompt 開頭固定帶
+    [CC-LAUNCH-KIND=p2-dispatcher] marker，由 P0（db_importer.py）匯入當下
+    同步標記 skip_analysis='pipeline'。舊版「執行後 diff 目錄猜 UUID 再回寫」
+    的機制因排程時序問題長期靜默失敗（見知識庫 #4837），已移除。
+
     Returns:
-        (output_text, error_message, new_conversation_uuid)
-        new_conversation_uuid 為此次 claude -p 產生的 session UUID（可能為 None）
+        (output_text, error_message)
     """
-    import glob as _glob
-
-    # 執行前快照 claude project 目錄，用來識別新建的 session jsonl
-    project_dir = Path.home() / '.claude' / 'projects' / '-opt-BeakBroodNest'
-    try:
-        before_files = set(project_dir.glob('*.jsonl'))
-    except Exception:
-        before_files = set()
-
     cmd = [
         'claude', '-p', main_prompt,
         '--append-system-prompt-file', context_file,
@@ -514,19 +508,7 @@ def run_claude_summarize(
             start_new_session=True,
         )
     except FileNotFoundError:
-        return None, 'claude CLI not found in PATH', None
-
-    def _detect_new_conv_uuid() -> Optional[str]:
-        # claude CLI 啟動後即建立 jsonl 並寫入 user_message，無論 timeout 或正常結束
-        # 都應掃描；timeout 情境下這個 jsonl 是半成品（沒 assistant），需要被 mark 為 pipeline
-        try:
-            after_files = set(project_dir.glob('*.jsonl'))
-            new_files = after_files - before_files
-            if new_files:
-                return new_files.pop().stem
-        except Exception:
-            pass
-        return None
+        return None, 'claude CLI not found in PATH'
 
     timed_out = False
     stdout, stderr = '', ''
@@ -543,13 +525,11 @@ def run_claude_summarize(
         except subprocess.TimeoutExpired:
             pass
 
-    new_conv_uuid = _detect_new_conv_uuid()
-
     if timed_out:
-        return None, f'claude -p timeout ({timeout}s)', new_conv_uuid
+        return None, f'claude -p timeout ({timeout}s)'
     if proc.returncode != 0:
-        return None, f'claude -p exit code {proc.returncode}: {(stderr or "")[:500]}', new_conv_uuid
-    return stdout, None, new_conv_uuid
+        return None, f'claude -p exit code {proc.returncode}: {(stderr or "")[:500]}'
+    return stdout, None
 
 
 def _extract_json_object(text: str) -> Optional[str]:
@@ -684,7 +664,7 @@ def summarize_topic(
     if verbose:
         print(f'[P2] {topic_id}: calling claude -p (model={model})', file=sys.stderr)
 
-    raw_output, error, new_conv_uuid = run_claude_summarize(main_prompt, ctx_file, model)
+    raw_output, error = run_claude_summarize(main_prompt, ctx_file, model)
 
     if error:
         _safe_unlink(ctx_file)
@@ -696,7 +676,6 @@ def summarize_topic(
             'error': error,
             'model': model,
             'raw_output': '',
-            'pipeline_conv_uuid': new_conv_uuid,
         }
 
     # 4. 驗證 JSON
@@ -707,7 +686,7 @@ def summarize_topic(
             print(f'[P2] {topic_id}: validation failed: {validation_error}, retrying',
                   file=sys.stderr)
         retry_model = MODEL_DEFAULT  # 強制升 sonnet
-        raw_output2, error2, new_conv_uuid2 = run_claude_summarize(main_prompt, ctx_file, retry_model)
+        raw_output2, error2 = run_claude_summarize(main_prompt, ctx_file, retry_model)
         if error2:
             _safe_unlink(ctx_file)
             kind = 'claude_timeout' if 'timeout' in error2 else 'claude_error'
@@ -719,12 +698,10 @@ def summarize_topic(
                 'first_error': validation_error,
                 'model': retry_model,
                 'raw_output': raw_output or '',
-                'pipeline_conv_uuid': new_conv_uuid2 or new_conv_uuid,
             }
         summary, validation_error = validate_summary(raw_output2)
         raw_output = raw_output2
         model = retry_model
-        new_conv_uuid = new_conv_uuid2 or new_conv_uuid
 
     if validation_error:
         _safe_unlink(ctx_file)
@@ -736,7 +713,6 @@ def summarize_topic(
             'error': validation_error,
             'raw_output': raw_output or '',
             'model': model,
-            'pipeline_conv_uuid': new_conv_uuid,
         }
 
     # 清理暫存檔
@@ -747,7 +723,6 @@ def summarize_topic(
         'status': 'ok',
         'summary': summary,
         'model': model,
-        'pipeline_conv_uuid': new_conv_uuid,
     }
 
 
@@ -784,18 +759,6 @@ def update_topic_results(
             WHERE id = ANY(%s)
         """, (topic_id, now, turn_ids))
 
-    conn.commit()
-
-
-def mark_pipeline_session(conn, conv_uuid: Optional[str]) -> None:
-    """將 P2 claude -p 自動產生的 session 標記為 pipeline，阻止被 P1/P2 再次分析。"""
-    if not conv_uuid:
-        return
-    with conn.cursor() as cur:
-        cur.execute("""
-            UPDATE conversations SET skip_analysis = 'pipeline'
-            WHERE id = %s AND skip_analysis IS NULL
-        """, (conv_uuid,))
     conn.commit()
 
 
@@ -948,10 +911,6 @@ def run_p2_pipeline(
 
             result = summarize_topic(conn, topic, dry_run=dry_run, verbose=verbose)
             results.append(result)
-
-            # 每次 claude -p 結束後，立即標記新建的 pipeline session，阻止 P1/P2 再掃
-            if not dry_run:
-                mark_pipeline_session(conn, result.get('pipeline_conv_uuid'))
 
             # 4. 依結果回寫 DB
             if result['status'] == 'ok' and not dry_run:
