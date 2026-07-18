@@ -11,10 +11,12 @@ BeakBroodNest P3 復盤分析器 -- 雛形版
 輸出存入 pipeline_runs 表，同時寫入 JSON 檔供觀察 UI 讀取。
 
 用法:
-  python review_analyzer.py --all                    分析所有已掃描的對話
+  python review_analyzer.py --all                    增量分析待更新的對話
+  python review_analyzer.py --all --force-all         強制全量分析所有對話
   python review_analyzer.py -c <uuid>                分析指定對話
   python review_analyzer.py --stats                  僅輸出技術統計（不呼叫 claude）
   python review_analyzer.py --all --dry-run           乾跑模式
+  python review_analyzer.py --prune-runs --dry-run    試算 P3 舊 run 清理筆數
 """
 
 import argparse
@@ -524,12 +526,60 @@ def analyze_conversation(conn, conversation_id: str, dry_run: bool = False,
     }
 
 
-def analyze_all(conn, dry_run: bool = False, skip_claude: bool = False):
-    """分析所有已匯入的對話"""
+def analyze_all(conn, dry_run: bool = False, skip_claude: bool = False,
+                force_all: bool = False):
+    """分析所有已匯入或增量待更新的對話"""
     cur = conn.cursor()
-    cur.execute("SELECT id FROM conversations ORDER BY last_timestamp DESC")
-    conv_ids = [str(row[0]) for row in cur.fetchall()]
-    print(f"[P3] 共 {len(conv_ids)} 個對話待分析")
+    try:
+        if force_all:
+            cur.execute("""
+                SELECT id, COUNT(*) OVER () AS total_count
+                FROM conversations
+                ORDER BY last_timestamp DESC
+            """)
+            rows = cur.fetchall()
+            conv_ids = [str(row[0]) for row in rows]
+            total_count = rows[0][1] if rows else 0
+            print(f"[P3] 全量模式：{len(conv_ids)} 個對話待分析（全部 {total_count} 個）")
+        else:
+            # 增量模式：只挑未成功分析過，或對話更新晚於最近成功分析時間者。
+            cur.execute("""
+                WITH last_success AS (
+                    SELECT conversation_id, MAX(started_at) AS last_success_at
+                    FROM pipeline_runs
+                    WHERE pipeline_name = 'p3_review'
+                      AND status = 'completed'
+                      AND conversation_id IS NOT NULL
+                    GROUP BY conversation_id
+                ),
+                pending AS (
+                    SELECT c.id, c.last_timestamp
+                    FROM conversations c
+                    LEFT JOIN last_success pr ON pr.conversation_id = c.id
+                    WHERE pr.last_success_at IS NULL
+                       OR c.last_timestamp > pr.last_success_at
+                ),
+                pending_ranked AS (
+                    SELECT id, last_timestamp, COUNT(*) OVER () AS pending_count
+                    FROM pending
+                ),
+                totals AS (
+                    SELECT COUNT(*) AS total_count
+                    FROM conversations
+                )
+                SELECT p.id, p.pending_count, t.total_count
+                FROM totals t
+                LEFT JOIN pending_ranked p ON TRUE
+                ORDER BY p.last_timestamp DESC NULLS LAST
+            """)
+            rows = cur.fetchall()
+            conv_ids = [str(row[0]) for row in rows if row[0] is not None]
+            pending_count = rows[0][1] if rows and rows[0][1] is not None else 0
+            total_count = rows[0][2] if rows else 0
+            print(f"[P3] 增量模式：{pending_count} 個對話待分析（全部 {total_count} 個）")
+    except Exception as exc:
+        print(f"[ERROR] 查詢待分析對話失敗: {exc}", file=sys.stderr)
+        raise
 
     # 全域統計
     global_stats = collect_error_stats(conn)
@@ -554,42 +604,134 @@ def analyze_all(conn, dry_run: bool = False, skip_claude: bool = False):
         analyze_conversation(conn, conv_id, dry_run, skip_claude)
 
 
+def prune_p3_runs(conn, dry_run: bool = False, yes: bool = False,
+                  batch_size: int = 50000) -> int:
+    """清理 P3 舊 pipeline_runs，每個對話只保留最新一筆"""
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT COUNT(*)
+            FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY conversation_id
+                           ORDER BY started_at DESC NULLS LAST, id DESC
+                       ) AS rn
+                FROM pipeline_runs
+                WHERE pipeline_name = 'p3_review'
+                  AND conversation_id IS NOT NULL
+            ) ranked
+            WHERE rn > 1
+        """)
+        delete_count = cur.fetchone()[0]
+        print(f"[P3] --prune-runs 將刪除 {delete_count} 筆舊資料")
+    except Exception as exc:
+        print(f"[ERROR] 查詢 P3 舊 run 失敗: {exc}", file=sys.stderr)
+        raise
+
+    if dry_run:
+        print("[P3] dry-run 模式：未執行刪除")
+        return 0
+
+    if not yes:
+        print("[P3] 未帶 --yes，不執行刪除。確認後請加上 --yes。", file=sys.stderr)
+        sys.exit(1)
+
+    total_deleted = 0
+    try:
+        while True:
+            cur.execute("""
+                WITH doomed AS (
+                    SELECT id
+                    FROM (
+                        SELECT id,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY conversation_id
+                                   ORDER BY started_at DESC NULLS LAST, id DESC
+                               ) AS rn
+                        FROM pipeline_runs
+                        WHERE pipeline_name = 'p3_review'
+                          AND conversation_id IS NOT NULL
+                    ) ranked
+                    WHERE rn > 1
+                    LIMIT %s
+                )
+                DELETE FROM pipeline_runs p
+                USING doomed
+                WHERE p.id = doomed.id
+            """, (batch_size,))
+            deleted = cur.rowcount
+            conn.commit()
+            total_deleted += deleted
+            if deleted == 0:
+                break
+            print(f"[P3] 已刪除 {total_deleted} 筆...")
+        print(f"[P3] 實際刪除 {total_deleted} 筆")
+        return total_deleted
+    except Exception as exc:
+        conn.rollback()
+        print(f"[ERROR] 刪除 P3 舊 run 失敗: {exc}", file=sys.stderr)
+        raise
+
+
 # ============================================================
 # CLI
 # ============================================================
 
 def main():
     parser = argparse.ArgumentParser(
+        usage='%(prog)s (--all | -c 對話UUID | --stats | --prune-runs) [選項]',
         description='BeakBroodNest P3 復盤分析器',
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
         epilog="""
 使用範例:
   python review_analyzer.py --stats                  全域技術統計（不呼叫 claude）
-  python review_analyzer.py --all                    分析所有對話（含 claude -p）
-  python review_analyzer.py --all --dry-run           乾跑模式
+  python review_analyzer.py --all                    增量分析待更新對話（含 claude -p）
+  python review_analyzer.py --all --force-all         強制全量分析所有對話
+  python review_analyzer.py --all --dry-run           增量乾跑模式
   python review_analyzer.py -c <uuid>                分析指定對話
-  python review_analyzer.py -c <uuid> --stats        指定對話統計（不呼叫 claude）
+  python review_analyzer.py --prune-runs --dry-run   試算 P3 舊 run 清理筆數
+  python review_analyzer.py --prune-runs --yes       清理 P3 舊 run（每個對話保留最新一筆）
         """
     )
+    parser.add_argument('-h', '--help', action='help', help='顯示此說明並離開')
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--all', action='store_true', help='分析所有對話')
+    group.add_argument('--all', action='store_true', help='增量分析待更新對話')
     group.add_argument('-c', '--conversation', help='指定對話 UUID')
     group.add_argument('--stats', action='store_true', help='僅輸出全域統計（不呼叫 claude）')
+    group.add_argument('--prune-runs', action='store_true',
+                       help='清理 P3 舊 pipeline_runs（每個對話保留最新一筆）')
 
     parser.add_argument('--dry-run', action='store_true', help='乾跑模式')
     parser.add_argument('--skip-claude', action='store_true', help='跳過 claude -p 改進評估')
+    parser.add_argument('--force-all', action='store_true',
+                        help='搭配 --all 使用，強制全量分析所有對話')
+    parser.add_argument('--yes', action='store_true',
+                        help='搭配 --prune-runs 使用，確認執行刪除')
+
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
 
     args = parser.parse_args()
+
+    if args.force_all and not args.all:
+        parser.error('--force-all 只可搭配 --all 使用')
+    if args.yes and not args.prune_runs:
+        parser.error('--yes 只可搭配 --prune-runs 使用')
 
     conn = _get_db_connection()
     try:
         if args.stats:
             global_stats = collect_error_stats(conn)
             print(json.dumps(global_stats, ensure_ascii=False, indent=2))
+        elif args.prune_runs:
+            prune_p3_runs(conn, args.dry_run, args.yes)
         elif args.conversation:
             analyze_conversation(conn, args.conversation, args.dry_run, args.skip_claude)
         else:
-            analyze_all(conn, args.dry_run, args.skip_claude)
+            analyze_all(conn, args.dry_run, args.skip_claude, args.force_all)
     finally:
         conn.close()
 
