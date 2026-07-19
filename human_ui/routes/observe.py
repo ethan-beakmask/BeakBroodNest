@@ -106,9 +106,14 @@ def session_logs():
 
 @bp.route('/api/observe/conversations', methods=['GET'])
 def conversations():
-    """列出已匯入的對話及統計"""
+    """列出已匯入的對話及統計。
+
+    Query params:
+        hide_zero_signals  -- '1' 過濾沒有 P1 訊號的對話（預設啟用）
+    """
     limit = request.args.get('limit', 50, type=int)
     project = request.args.get('project', '')
+    hide_zero = request.args.get('hide_zero_signals', '1') in ('1', 'true', 'yes')
 
     sql = """
         SELECT c.id, c.project_path, c.session_id, c.jsonl_path,
@@ -127,6 +132,13 @@ def conversations():
     if project:
         sql += " AND c.project_path LIKE :project"
         params['project'] = f'%{project}%'
+    if hide_zero:
+        sql += """
+            AND EXISTS (
+                SELECT 1 FROM conversation_turns ct
+                WHERE ct.conversation_id = c.id AND ct.p1_signals IS NOT NULL
+            )
+        """
     sql += " ORDER BY c.last_timestamp DESC NULLS LAST LIMIT :limit"
     params['limit'] = limit
 

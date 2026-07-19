@@ -85,6 +85,11 @@
         <!-- Tab: Conversations -->
         <!-- ============================================================ -->
         <div x-show="tab === 'conversations'">
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" role="switch" id="hideZeroSignalsSwitch"
+                       x-model="hideZeroSignals" @change="toggleZeroSignals()">
+                <label class="form-check-label" for="hideZeroSignalsSwitch">隱藏無訊號對話</label>
+            </div>
             <div class="table-responsive">
                 <table class="table table-sm table-hover align-middle">
                     <thead class="table-dark">

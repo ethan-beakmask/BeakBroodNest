@@ -13,6 +13,7 @@ function observeApp() {
         // Data
         stats: {},
         conversations: [],
+        hideZeroSignals: true,
         pipelines: [],
         sessions: [],
         signalDetail: [],
@@ -74,12 +75,20 @@ function observeApp() {
 
         async fetchConversations() {
             try {
-                const resp = await fetch('/beakbroodnest/api/observe/conversations?limit=50');
+                const params = new URLSearchParams({
+                    limit: '50',
+                    hide_zero_signals: this.hideZeroSignals ? '1' : '0',
+                });
+                const resp = await fetch(`/beakbroodnest/api/observe/conversations?${params.toString()}`);
                 this.conversations = await resp.json();
                 this.applySorting();
             } catch (e) {
                 console.error('fetchConversations error:', e);
             }
+        },
+
+        async toggleZeroSignals() {
+            await this.fetchConversations();
         },
 
         async fetchPipelines() {
