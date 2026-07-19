@@ -163,7 +163,23 @@ systemctl status beakbroodnest.service --no-pager | head -5
 
 系統時區 `Asia/Taipei (CST, +0800)`。DB 內 `timestamp with time zone` 欄位取出來帶 `+08:00`。
 
-**注意**：曾發生 `date '+%H:%M'` 在同一 session 內先回 UTC 時間、後回本地時間的情況（差 8 小時），原因未查明。對時間敏感的判斷請交叉比對 `nginx -t` 輸出時間戳或 log 檔時間，不要單靠一次 `date`。
+`date` 指令行為正常，沒有時區飄移問題。
+
+**但有個容易誤判的陷阱**：UTC 與 CST 差 8 小時，而長時間 session 中斷後的時間誤差也常落在數小時量級，兩者容易被誤認為同一回事。2026-07-19 就發生過：發言時間戳偏差 5~8 小時，一度被歸因為「`date` 回傳 UTC」，實際查證 DB 內 `conversation_turns.timestamp` 後發現是**內部推算時間**造成的（全域 CLAUDE.md 明訂「一律用 `date '+%H:%M'` 取得，禁止內部推算」，違反後又碰上用戶離開近 6 小時，誤差被放大）。
+
+要驗證某段對話的真實時間，別靠推算或記憶，查 DB：
+
+```bash
+cd /opt/BeakBroodNest && venv/bin/python - <<'EOF'
+from core.db import get_session
+from sqlalchemy import text
+s = get_session()
+for r in s.execute(text("""SELECT turn_seq, to_char(timestamp,'MM-DD HH24:MI') t, role, left(content,50)
+ FROM conversation_turns WHERE conversation_id='<conversation_id>'
+ ORDER BY turn_seq DESC LIMIT 20""")):
+    print(r)
+EOF
+```
 
 ## 服務重啟
 
