@@ -204,8 +204,21 @@ def main():
             overall_status = 'failed'
             # 不中斷：P0 失敗時 P3 仍可對舊資料統計
 
+    # 收集失敗階段原因，供 pipeline_runs.error_detail 事後查因（無失敗則留空）
+    error_detail = ''
+    if overall_status == 'failed':
+        failed_parts = []
+        for s in stages:
+            if s['status'] in ('failed', 'timeout', 'error'):
+                tail = (s.get('stderr_tail') or s.get('stdout_tail') or '').strip()
+                failed_parts.append(
+                    f'[{s["name"]}] status={s["status"]} exit={s.get("exit_code")}'
+                    + (f' :: {tail[-500:]}' if tail else '')
+                )
+        error_detail = '\n'.join(failed_parts)
+
     if not args.dry_run:
-        _record_pipeline_run(stages, overall_status)
+        _record_pipeline_run(stages, overall_status, error_detail)
 
     _write_heartbeat()
     summary = ' | '.join(f'{s["name"]}={s["status"]}/{s["duration_s"]}s' for s in stages)
