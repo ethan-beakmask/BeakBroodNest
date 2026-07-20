@@ -35,10 +35,22 @@ from ai_kb.tools.messaging import init_identity
 # MCP Server 定義
 # ============================================================
 
-mcp = FastMCP(
-    "BeakBroodNest",
-    instructions="知識白板與 AI 共用知識庫 -- 結構化知識存取，取代 MEMORY.md",
-)
+# FastMCP 建構時，pydantic-settings 會嘗試讀取「當前工作目錄的 .env」。
+# Claude Code 從各專案 cwd 啟動本 server（如 /opt/beakmeshwall），若該目錄存在
+# 唯讀 .env（例如 0600 且屬他人），會 PermissionError 直接崩潰，導致 /mcp 顯示
+# beak_broodnest failed（2026-07-21 於 beakmeshwall 重現定位）。
+# 對策：僅在建構這一刻暫時切到本專案根目錄（無 .env），建構後立即還原 cwd，
+# 確保 main() 的 init_identity 仍以真實啟動 cwd 判定呼叫方專案身份。
+_bbn_root = str(Path(__file__).resolve().parent.parent)
+_launch_cwd = os.getcwd()
+try:
+    os.chdir(_bbn_root)
+    mcp = FastMCP(
+        "BeakBroodNest",
+        instructions="知識白板與 AI 共用知識庫 -- 結構化知識存取，取代 MEMORY.md",
+    )
+finally:
+    os.chdir(_launch_cwd)
 
 # 註冊所有工具
 register_all(mcp)
