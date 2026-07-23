@@ -488,7 +488,7 @@ PYEOF
         DB_PORT="${DB_PORT:-5432}"
     fi
 
-    # 同步 ORM schema（補上新版本新增的欄位/表），等同全新安裝 [6/7] 第一步
+    # 同步 ORM schema：create_all_tables 只會建「缺的表」，**不會**補既有表「缺的欄位」
     "$INSTALL_DIR/venv/bin/python3" -c "
 import sys
 sys.path.insert(0, '$INSTALL_DIR')
@@ -497,8 +497,16 @@ from core import models  # noqa: F401
 from orchestrator import models as _om  # noqa: F401
 init_engine('$INSTALL_DIR/config.ini')
 create_all_tables()
-print('  ORM 結構同步完成')
+print('  ORM 結構同步完成（新表已建）')
 " || log_warn "  ORM 結構同步失敗（請檢查 config.ini 與 DB 連線）"
+
+    # 欄位級 schema drift 修復：補上 model 後加、既有表缺的欄位。
+    # create_all_tables 不補欄位，舊機升級時 ORM 查詢會因缺欄位整條 500
+    # （實例：舊機 /beakbroodnest/ 首頁 500，canvases 缺欄位）。全為 ADD COLUMN IF NOT EXISTS，冪等。
+    "$INSTALL_DIR/venv/bin/python3" "$INSTALL_DIR/scripts/check_schema_drift.py" --apply \
+        --config "$INSTALL_DIR/config.ini" \
+        && log_info "  欄位級 schema drift 已修復" \
+        || log_warn "  schema drift 修復失敗（舊機某些頁面可能仍 500，請手動跑 check_schema_drift.py --apply）"
 
     # Pipeline 表（conversations / conversation_turns / pipeline_runs / session_logs / p2_failures）
     if [ -f "$INSTALL_DIR/scripts/init_pipeline_tables.sql" ]; then
@@ -865,6 +873,12 @@ init_engine('$INSTALL_DIR/config.ini')
 create_all_tables()
 print('  資料表建立完成')
 "
+
+# 欄位級 schema drift 修復（全新安裝通常無缺欄位，此步為冪等保險，與升級路徑一致）
+"$INSTALL_DIR/venv/bin/python3" "$INSTALL_DIR/scripts/check_schema_drift.py" --apply \
+    --config "$INSTALL_DIR/config.ini" \
+    && log_info "  欄位級 schema drift 檢查完成" \
+    || log_warn "  schema drift 修復失敗（請手動跑 check_schema_drift.py --apply）"
 
 # 載入基線 seed（pending_outputs view 等結構性 seed）
 if [ -f "$INSTALL_DIR/scripts/seed_baseline.sql" ]; then

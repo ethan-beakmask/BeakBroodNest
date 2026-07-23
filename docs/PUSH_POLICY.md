@@ -23,6 +23,12 @@ UI 可見性依賴 DB 參考資料（選單 `nav_menu`、`entry_schemas`、schem
   否則不會被納管
 - 密鑰 / 環境特定資料（`system_config`、`sensitive_terms`）**MUST NOT** 加進白名單
 
+另一類同源問題是**欄位級 schema drift**：model 加了欄位但 DB 沒補，舊機升級時
+`create_all_tables()` 不會補欄位，ORM 查詢會整條 500（實例：舊機首頁 500，canvases 缺欄位）。
+
+- **SHOULD** 在 push 前執行 `python3 scripts/check_schema_drift.py --check`，確認 dev DB 與 model 一致
+- install.sh 升級 / 安裝時會自動跑 `check_schema_drift.py --apply` 補上缺欄位（ADD COLUMN IF NOT EXISTS，冪等），舊機升級不再因缺欄位 500
+
 ## 隱私與機密控制
 
 - **MUST** 在 push 前檢查改動內容不含：認證資訊（密碼 / API Key / Token）、內部 IP / 主機名、其他專案的私有資訊、用戶個資、知識庫實際內容快照
