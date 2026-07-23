@@ -49,6 +49,9 @@ export const MermaidBlock = Node.create({
             source: { default: '' },
             displayTitle: { default: '' },
             collapsed: { default: true },
+            // 顯示寬度模式：'100'（全開）| '50'（1/2）| '33'（1/3）
+            // 預設 '100' 維持既有圖形外觀不變；只有使用者主動切換才變窄
+            width: { default: '100' },
         }
     },
 
@@ -60,6 +63,7 @@ export const MermaidBlock = Node.create({
                 source: dom.textContent || '',
                 displayTitle: dom.getAttribute('data-title') || '',
                 collapsed: dom.getAttribute('data-collapsed') !== 'false',
+                width: MermaidBlockView.normalizeWidth(dom.getAttribute('data-width')),
             }),
         }]
     },
@@ -69,6 +73,7 @@ export const MermaidBlock = Node.create({
             'data-mermaid': '',
             'data-title': node.attrs.displayTitle || '',
             'data-collapsed': node.attrs.collapsed ? 'true' : 'false',
+            'data-width': MermaidBlockView.normalizeWidth(node.attrs.width),
             'class': 'mermaid-block-raw',
         }), node.attrs.source || '']
     },
@@ -194,9 +199,15 @@ class MermaidBlockView {
         header.appendChild(titleInput)
         this.titleInput = titleInput
 
-        const spacer = document.createElement('span')
-        spacer.style.flex = '1'
-        header.appendChild(spacer)
+        // 寬度模式切換：1/1 -> 1/2 -> 1/3 -> 1/1 循環
+        const widthBtn = document.createElement('button')
+        widthBtn.type = 'button'
+        widthBtn.className = 'mermaid-block-width'
+        widthBtn.tabIndex = -1
+        widthBtn.addEventListener('mousedown', (e) => e.preventDefault())
+        widthBtn.addEventListener('click', (e) => { e.preventDefault(); this._cycleWidth() })
+        header.appendChild(widthBtn)
+        this.widthBtn = widthBtn
 
         // 收合 / 展開切換
         const collapseBtn = document.createElement('button')
@@ -208,6 +219,8 @@ class MermaidBlockView {
         header.appendChild(collapseBtn)
         this.collapseBtn = collapseBtn
         this._refreshCollapseBtn(node.attrs.collapsed)
+        this._applyWidthClass(node.attrs.width)
+        this._refreshWidthBtn(node.attrs.width)
 
         const del = document.createElement('button')
         del.type = 'button'
@@ -241,7 +254,24 @@ class MermaidBlockView {
         this.textarea.addEventListener('blur', () => this._commitSource())
         this.dom.appendChild(this.textarea)
 
+        // 底部收合鈕：語法區可能很長，讓使用者不必捲回頂端才能收合
+        // 只在展開狀態顯示（收合時 source 已隱藏，footer 也一併隱藏）
+        const footerBtn = document.createElement('button')
+        footerBtn.type = 'button'
+        footerBtn.className = 'mermaid-block-collapse mermaid-block-footer'
+        footerBtn.tabIndex = -1
+        footerBtn.textContent = '收合語法 ▲'
+        footerBtn.title = '收合（只顯示圖形與標題）'
+        footerBtn.addEventListener('mousedown', (e) => e.preventDefault())
+        footerBtn.addEventListener('click', (e) => { e.preventDefault(); this._toggleCollapsed() })
+        this.dom.appendChild(footerBtn)
+        this.footerBtn = footerBtn
+
         this._renderPreview(this.textarea.value)
+    }
+
+    static normalizeWidth(w) {
+        return (w === '50' || w === '33') ? w : '100'
     }
 
     _autosizeTextarea() {
@@ -321,6 +351,33 @@ class MermaidBlockView {
         this.collapseBtn.title = collapsed ? '展開以顯示語法' : '收合（只顯示圖形與標題）'
     }
 
+    _cycleWidth() {
+        if (typeof this.getPos !== 'function') return
+        const pos = this.getPos()
+        if (pos == null) return
+        const order = { '100': '50', '50': '33', '33': '100' }
+        const next = order[MermaidBlockView.normalizeWidth(this.node.attrs.width)]
+        const tr = this.editor.view.state.tr.setNodeMarkup(pos, undefined, {
+            ...this.node.attrs,
+            width: next,
+        })
+        this.editor.view.dispatch(tr)
+    }
+
+    _applyWidthClass(width) {
+        const w = MermaidBlockView.normalizeWidth(width)
+        this.dom.classList.remove('w-100', 'w-50', 'w-33')
+        this.dom.classList.add('w-' + w)
+    }
+
+    _refreshWidthBtn(width) {
+        if (!this.widthBtn) return
+        const w = MermaidBlockView.normalizeWidth(width)
+        const label = { '100': '1/1', '50': '1/2', '33': '1/3' }
+        this.widthBtn.textContent = label[w]
+        this.widthBtn.title = '切換顯示寬度（目前 ' + label[w] + '，點擊循環 1/1 → 1/2 → 1/3）'
+    }
+
     _commitSource() {
         if (typeof this.getPos !== 'function') return
         const pos = this.getPos()
@@ -358,6 +415,8 @@ class MermaidBlockView {
         }
         this._applyCollapsedClass(node.attrs.collapsed)
         this._refreshCollapseBtn(node.attrs.collapsed)
+        this._applyWidthClass(node.attrs.width)
+        this._refreshWidthBtn(node.attrs.width)
         return true
     }
 

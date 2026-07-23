@@ -2557,9 +2557,9 @@ input[type="checkbox"].se-field-input {
 
 /* ===== Mermaid 區塊：標題輸入、收合行為、挑選對話框 ===== */
 .mermaid-block-title {
-    flex: 0 1 auto;
+    /* flex-grow 讓標題吃滿 header 剩餘寬度，長標題完整顯示不再截斷（取代原 max-width:320px 限制） */
+    flex: 1 1 auto;
     min-width: 80px;
-    max-width: 320px;
     border: 1px solid transparent;
     background: transparent;
     color: #1e293b;
@@ -2595,6 +2595,39 @@ input[type="checkbox"].se-field-input {
 .mermaid-block-collapse:hover {
     background: #e0f2fe;
 }
+
+/* 寬度模式切換鈕（1/1 / 1/2 / 1/3），沿用 collapse 外觀但等寬避免跳動 */
+.mermaid-block-width {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    font-size: 11px;
+    padding: 2px 6px;
+    cursor: pointer;
+    border-radius: 3px;
+    margin-right: 4px;
+    min-width: 34px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+.mermaid-block-width:hover {
+    background: #e0f2fe;
+}
+
+/* 底部收合鈕：置中、佔滿一列，展開時才出現 */
+.mermaid-block-footer {
+    display: block;
+    width: auto;
+    margin: 0 auto 6px auto;
+}
+.mermaid-block-wrap.collapsed .mermaid-block-footer {
+    display: none;
+}
+
+/* 顯示寬度模式：縮小容器寬度，Mermaid useMaxWidth 會讓 SVG 一併縮放 */
+.mermaid-block-wrap.w-100 { width: 100%; }
+.mermaid-block-wrap.w-50  { width: 50%; }
+.mermaid-block-wrap.w-33  { width: 33.33%; }
 
 /* 收合狀態：隱藏 source textarea；唯一展開入口是 header 的 [+] 按鈕 */
 .mermaid-block-source {
