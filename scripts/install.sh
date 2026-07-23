@@ -433,18 +433,23 @@ if [ "$ACTION" = "update" ]; then
 
     if [ "$local_hash" = "$remote_hash" ]; then
         log_info "程式碼已是最新版本 ($(git log --oneline -1))"
-        log_info "無需更新"
-        exit 0
+        log_info "程式碼無需更新，但仍會強制重裝依賴並套用 schema 補丁"
+        # 刻意不 exit：直接落到下方 [2] pip install / [3] schema 補丁 / [4] 重啟。
+        # 歷史坑（2026-07 公司機）：此處原本 hash 相同就 exit 0，導致 venv 缺的
+        # 新依賴（markdown/bleach 等）永遠補不上——git 早已同步、--update 卻在
+        # 裝依賴前就結束，gunicorn 因 ModuleNotFoundError 起不來、續跑記憶體舊版，
+        # 再跑幾次 --update 也只會說「已最新版」然後結束。改為 fall-through 後，
+        # 依賴補齊步驟（idempotent，缺才裝）一定會執行。
+    else
+        git reset --hard origin/master
+        log_info "更新至: $(git log --oneline -1)"
+
+        # 拉完後 exec 自己重啟，避免 bash 邊讀邊執行被改寫過的腳本檔造成偏移錯位
+        # （上一次此 bug 導致 schema patch 用了舊版 awk 解析，DB_PASS 落到預設值認證失敗）
+        export BBN_UPDATE_REEXEC=1
+        log_info "重新載入新版 install.sh 繼續..."
+        exec "$0" "$@"
     fi
-
-    git reset --hard origin/master
-    log_info "更新至: $(git log --oneline -1)"
-
-    # 拉完後 exec 自己重啟，避免 bash 邊讀邊執行被改寫過的腳本檔造成偏移錯位
-    # （上一次此 bug 導致 schema patch 用了舊版 awk 解析，DB_PASS 落到預設值認證失敗）
-    export BBN_UPDATE_REEXEC=1
-    log_info "重新載入新版 install.sh 繼續..."
-    exec "$0" "$@"
     fi  # end "if [ -z goto_schema_patch ]"
 
     # [2] 更新 Python 依賴（強制 HOME=/root 讓 pip cache 落到 root，避免 sudo -E 帶入用戶 HOME 導致 cache 被禁用）
