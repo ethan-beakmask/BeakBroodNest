@@ -508,12 +508,21 @@ print('  ORM 結構同步完成')
             || log_warn "  Pipeline 表結構補丁失敗（observe 對話拓樸可能空白）"
     fi
 
-    # seed_baseline 也是 idempotent（INSERT ... ON CONFLICT DO NOTHING / CREATE OR REPLACE VIEW）
+    # seed_baseline 也是 idempotent（CREATE OR REPLACE VIEW / ALTER ... IF NOT EXISTS）
     if [ -f "$INSTALL_DIR/scripts/seed_baseline.sql" ]; then
         PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
             -f "$INSTALL_DIR/scripts/seed_baseline.sql" -v ON_ERROR_STOP=1 -q \
-            && log_info "  基線 seed 補丁完成（主選單 / view 等）" \
+            && log_info "  基線 seed 補丁完成（pending_outputs view 等）" \
             || log_warn "  基線 seed 補丁失敗"
+    fi
+
+    # seed_reference：參考資料（選單 / schema / entry_schemas 等），由 gen_reference_seed.py 產生
+    # 全為 INSERT ... ON CONFLICT DO NOTHING，只補缺列、不覆寫既有列
+    if [ -f "$INSTALL_DIR/scripts/seed_reference.sql" ]; then
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -f "$INSTALL_DIR/scripts/seed_reference.sql" -v ON_ERROR_STOP=1 -q \
+            && log_info "  參考資料 seed 補丁完成（選單 / schema / 結構化物件類型等）" \
+            || log_warn "  參考資料 seed 補丁失敗（選單或結構化物件可能缺項）"
     fi
 
     # 白板獨立 structuredEntry 表（P3a）
@@ -857,12 +866,21 @@ create_all_tables()
 print('  資料表建立完成')
 "
 
-# 載入基線 seed（主選單、relation_type_registry、atom_schemas、tag_categories、pending_outputs view）
+# 載入基線 seed（pending_outputs view 等結構性 seed）
 if [ -f "$INSTALL_DIR/scripts/seed_baseline.sql" ]; then
     PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
         -f "$INSTALL_DIR/scripts/seed_baseline.sql" -v ON_ERROR_STOP=1 -q \
-        && log_info "  基線 seed 載入完成（主選單、因果鍊類型等）" \
-        || log_warn "  基線 seed 載入失敗（系統可能缺主選單，請手動執行 seed_baseline.sql）"
+        && log_info "  基線 seed 載入完成（pending_outputs view 等）" \
+        || log_warn "  基線 seed 載入失敗，請手動執行 seed_baseline.sql"
+fi
+
+# 載入參考資料 seed（選單、relation_type_registry、atom_schemas、entry_schemas 等）
+# 由 gen_reference_seed.py 從開發機 DB 產生；全為 ON CONFLICT DO NOTHING
+if [ -f "$INSTALL_DIR/scripts/seed_reference.sql" ]; then
+    PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+        -f "$INSTALL_DIR/scripts/seed_reference.sql" -v ON_ERROR_STOP=1 -q \
+        && log_info "  參考資料 seed 載入完成（主選單、結構化物件類型等）" \
+        || log_warn "  參考資料 seed 載入失敗（系統可能缺主選單或結構化物件，請手動執行 seed_reference.sql）"
 fi
 
 # 載入 Pipeline 表結構（conversations / conversation_turns / pipeline_runs / session_logs / p2_failures）

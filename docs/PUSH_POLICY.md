@@ -9,6 +9,20 @@
 - 測試未通過或無法驗證時，**MUST NOT** push 到 `github` 或 `origin`，先回報用戶
 - 「commit 是本地動作可隨時改寫」「push 是不可逆的對外揭露」，兩件事的決策標準不同
 
+## 參考資料同步（防「開發機正常、外部壞掉」）
+
+UI 可見性依賴 DB 參考資料（選單 `nav_menu`、`entry_schemas`、schema 定義等）。
+這些只存在開發機、忘了進版控時，外部部署會靜默缺功能（曾漏「閱覽器」選單、
+整組 `entry_schemas`）。防線是產生器 + git diff：
+
+- **MUST** 在 push 前執行 `python3 scripts/gen_reference_seed.py --check`
+  - 輸出 `[OK]` = 無 drift，可 push
+  - 輸出 `[DRIFT]` = 開發機 DB 有未回寫的參考資料，**先** `--write` 再 commit，才 push
+- `scripts/seed_reference.sql` 是**產生檔**，勿手改；要改內容改開發機 DB 後重產
+- 新增「參考表」時 **MUST** 把表加進 `gen_reference_seed.py` 的 `WHITELIST`（父表在前），
+  否則不會被納管
+- 密鑰 / 環境特定資料（`system_config`、`sensitive_terms`）**MUST NOT** 加進白名單
+
 ## 隱私與機密控制
 
 - **MUST** 在 push 前檢查改動內容不含：認證資訊（密碼 / API Key / Token）、內部 IP / 主機名、其他專案的私有資訊、用戶個資、知識庫實際內容快照
