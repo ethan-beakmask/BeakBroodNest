@@ -24,6 +24,10 @@
 #                          同機部署多份時必須改，避免互相覆蓋
 #   INSTALL_CRON           是否寫入 5 條排程到 /etc/crontab
 #                          yes/no/(空)；空值時互動詢問（非互動環境預設 yes）
+#   MCP_USER_SCOPE         是否把 MCP server 註冊到使用者的 ~/.claude.json (預設: yes)
+#                          yes 時該帳號在**任意目錄**都能用 beak_broodnest，且免逐專案批准
+#                          只寫 /opt/.mcp.json 的話，/opt 以外的目錄完全看不到此 MCP
+#                          設 no 則僅寫 /opt/.mcp.json（原行為）
 #   GITHUB_TOKEN           GitHub Personal Access Token (私有 repo 時需要)
 #   GITHUB_REPO            GitHub clone URL (預設: ethan-beakmask/BeakBroodNest)
 #
@@ -276,6 +280,156 @@ detect_install_owner() {
         fi
         echo "  無效選項，請重新輸入"
     done
+}
+
+# 決定要註冊 user scope MCP 的目標帳號清單（去重、必須真實存在）
+#   來源：INSTALL_OWNER（若已解析）、SUDO_USER、INSTALL_DIR 擁有者
+# 結果印在 stdout，一行一個帳號
+_mcp_target_users() {
+    local seen=" " u
+    for u in "${INSTALL_OWNER:-}" "${SUDO_USER:-}" "$(stat -c '%U' "$INSTALL_DIR" 2>/dev/null)"; do
+        [ -z "$u" ] && continue
+        [[ "$seen" == *" $u "* ]] && continue
+        id "$u" &>/dev/null || continue
+        seen="${seen}${u} "
+        echo "$u"
+    done
+    # 完全偵測不到時，至少讓執行安裝的 root 能用
+    # 注意：最後一個指令的回傳值即函式回傳值，set -e 下必須顯式 return 0，
+    # 否則 target_users=$(_mcp_target_users) 會讓整支腳本靜默中止
+    [ "$seen" = " " ] && echo "root"
+    return 0
+}
+
+# === 註冊 MCP server ===
+# 兩個層次，缺一不可：
+#   1. /opt/.mcp.json（project scope）—— 隨倉庫共享，但只在 cwd 位於 /opt 或其子目錄時
+#      才會被 Claude Code 發現，且每個專案首次使用需人工批准
+#   2. ~/.claude.json 頂層 mcpServers（user scope）—— 該帳號在**任意目錄**都能用，且免批准
+# 只做 1 會造成「/opt 以外的目錄完全看不到 beak_broodnest」（2026-07 公司機實例）。
+# 順帶清掉各 project 殘留的 disabledMcpjsonServers（誤按 No 造成，會讓 MCP 靜默消失）。
+# 多實例共存時，每個實例註冊獨立的 MCP server key (beak_broodnest_<suffix>)；
+# 預設安裝保持 beak_broodnest 不變，向後相容。
+register_mcp_servers() {
+    log_info "註冊 MCP server 到 /opt/.mcp.json (key=${MCP_SERVER_NAME})"
+    python3 - "$INSTALL_DIR" "$MCP_SERVER_NAME" <<'PYEOF'
+import json
+import os
+import sys
+
+install_dir, server_name = sys.argv[1], sys.argv[2]
+mcp_path = '/opt/.mcp.json'
+data = {'mcpServers': {}}
+if os.path.isfile(mcp_path):
+    try:
+        with open(mcp_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        data.setdefault('mcpServers', {})
+    except Exception as e:
+        print(f'[WARN] 既有 /opt/.mcp.json 無法解析（{e}），改寫為新檔', file=sys.stderr)
+        data = {'mcpServers': {}}
+
+data['mcpServers'][server_name] = {
+    'type': 'stdio',
+    'command': f'{install_dir}/venv/bin/python',
+    'args': [f'{install_dir}/ai_kb/mcp_server.py', '--stdio'],
+}
+
+tmp = mcp_path + '.tmp'
+with open(tmp, 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+os.replace(tmp, mcp_path)
+print(f'[OK] /opt/.mcp.json 已更新（server: {server_name}）')
+PYEOF
+
+    # --- user scope（可用 MCP_USER_SCOPE=no 停用）---
+    case "${MCP_USER_SCOPE:-yes}" in
+        n|N|no|No|NO|0|false)
+            log_warn "已停用 user scope MCP 註冊（MCP_USER_SCOPE=${MCP_USER_SCOPE}）"
+            log_warn "  /opt 以外的目錄將無法使用 ${MCP_SERVER_NAME}"
+            return 0
+            ;;
+    esac
+
+    local target_users
+    target_users=$(_mcp_target_users)
+    local u
+    for u in $target_users; do
+        local home_dir
+        home_dir=$(getent passwd "$u" | cut -d: -f6)
+        if [ -z "$home_dir" ] || [ ! -d "$home_dir" ]; then
+            log_warn "跳過 user scope 註冊：帳號 $u 沒有可用的家目錄"
+            continue
+        fi
+        python3 - "$INSTALL_DIR" "$MCP_SERVER_NAME" "$home_dir" "$u" <<'PYEOF'
+import json
+import os
+import pwd
+import sys
+
+install_dir, server_name, home_dir, user = sys.argv[1:5]
+cfg_path = os.path.join(home_dir, '.claude.json')
+
+data = {}
+if os.path.isfile(cfg_path):
+    try:
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError('頂層不是 JSON object')
+    except Exception as e:
+        # 這個檔含使用者所有專案歷史，解析失敗時絕不覆寫
+        print(f'[WARN] {cfg_path} 無法解析（{e}），跳過 user scope 註冊', file=sys.stderr)
+        sys.exit(0)
+
+servers = data.setdefault('mcpServers', {})
+desired = {
+    'type': 'stdio',
+    'command': f'{install_dir}/venv/bin/python',
+    'args': [f'{install_dir}/ai_kb/mcp_server.py', '--stdio'],
+}
+changed = servers.get(server_name) != desired
+servers[server_name] = desired
+
+# 清理各專案殘留的 disabledMcpjsonServers（誤按 No 會讓 MCP 靜默消失）
+cleaned = []
+projects = data.get('projects')
+if isinstance(projects, dict):
+    for proj_path, proj in projects.items():
+        if not isinstance(proj, dict):
+            continue
+        disabled = proj.get('disabledMcpjsonServers')
+        if isinstance(disabled, list) and server_name in disabled:
+            proj['disabledMcpjsonServers'] = [s for s in disabled if s != server_name]
+            cleaned.append(proj_path)
+            changed = True
+
+if not changed:
+    print(f'[OK] {cfg_path} 已是最新（server: {server_name}）')
+    sys.exit(0)
+
+st = os.stat(cfg_path) if os.path.isfile(cfg_path) else None
+tmp = cfg_path + '.bbn-tmp'
+with open(tmp, 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+    f.write('\n')
+if st is not None:
+    os.chmod(tmp, st.st_mode & 0o7777)
+    os.chown(tmp, st.st_uid, st.st_gid)
+else:
+    os.chmod(tmp, 0o600)
+    pw = pwd.getpwnam(user)
+    os.chown(tmp, pw.pw_uid, pw.pw_gid)
+os.replace(tmp, cfg_path)
+
+print(f'[OK] {cfg_path} 已註冊 user scope MCP（server: {server_name}）')
+for p in cleaned:
+    print(f'     已解除封鎖: {p}')
+PYEOF
+        log_info "  ${u}: 任意目錄皆可使用 ${MCP_SERVER_NAME}"
+    done
+    log_warn "  若 Claude Code 正在執行，需重開才會載入新的 MCP 設定"
 }
 
 # === 參數處理 ===
@@ -565,6 +719,10 @@ print('  ORM 結構同步完成（新表已建）')
                 || log_warn "  nodeId 回填失敗（請手動執行 backfill_tiptap_node_id.py --run）"
         fi
     fi
+
+    # MCP 註冊（升級也要跑）：舊版安裝只寫過 /opt/.mcp.json，沒有 user scope，
+    # 導致 /opt 以外的目錄看不到本 MCP；此處補齊並清掉 disabledMcpjsonServers 殘留
+    register_mcp_servers
 
     # [4] 重啟服務
     log_step "4/4" "重啟服務..."
@@ -1084,40 +1242,8 @@ if [ "$INSTALL_DIR" != "/opt/BeakBroodNest" ] && [ -f "$INSTALL_DIR/.claude/sett
     fi
 fi
 
-# === 註冊/更新 /opt/.mcp.json ===
-# 多實例共存時，每個實例註冊獨立的 MCP server key (beak_broodnest_<suffix>)
-# 預設安裝保持 beak_broodnest 不變，向後相容
-log_info "註冊 MCP server 到 /opt/.mcp.json (key=${MCP_SERVER_NAME})"
-python3 - "$INSTALL_DIR" "$MCP_SERVER_NAME" <<'PYEOF'
-import json
-import os
-import sys
-
-install_dir, server_name = sys.argv[1], sys.argv[2]
-mcp_path = '/opt/.mcp.json'
-data = {'mcpServers': {}}
-if os.path.isfile(mcp_path):
-    try:
-        with open(mcp_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        data.setdefault('mcpServers', {})
-    except Exception as e:
-        print(f'[WARN] 既有 /opt/.mcp.json 無法解析（{e}），改寫為新檔', file=sys.stderr)
-        data = {'mcpServers': {}}
-
-data['mcpServers'][server_name] = {
-    'type': 'stdio',
-    'command': f'{install_dir}/venv/bin/python',
-    'args': [f'{install_dir}/ai_kb/mcp_server.py', '--stdio'],
-}
-
-tmp = mcp_path + '.tmp'
-with open(tmp, 'w', encoding='utf-8') as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
-    f.write('\n')
-os.replace(tmp, mcp_path)
-print(f'[OK] /opt/.mcp.json 已更新（server: {server_name}）')
-PYEOF
+# === 註冊 MCP server（/opt/.mcp.json + 各使用者 user scope）===
+register_mcp_servers
 
 # === 啟動服務 ===
 log_info "啟動 BeakBroodNest..."

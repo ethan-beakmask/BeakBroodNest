@@ -205,18 +205,30 @@ gunicorn --bind 127.0.0.1:5171 --workers 2 human_ui.app:app
 
 ## MCP 工具
 
-讓 Claude 等 AI 透過 MCP 協議直接讀寫 BeakBroodNest。在 MCP 設定檔（如 `.mcp.json`）加入：
+讓 Claude 等 AI 透過 MCP 協議直接讀寫 BeakBroodNest。`install.sh` 會自動註冊到兩個位置：
+
+| 位置 | 作用範圍 | 說明 |
+| --- | --- | --- |
+| `/opt/.mcp.json` | cwd 位於 `/opt` 或其子目錄 | project scope，隨部署共享；每個專案首次使用需人工批准 |
+| `~/.claude.json` 頂層 `mcpServers` | 該帳號的**任意目錄** | user scope，免批准；由 `MCP_USER_SCOPE=no` 可停用 |
+
+只有 project scope 的話，`/opt` 以外的目錄完全看不到此 MCP，因此預設兩者都寫。
+手動設定時的內容：
 
 ```json
 {
   "mcpServers": {
     "beak_broodnest": {
       "command": "/path/to/BeakBroodNest/venv/bin/python",
-      "args": ["/path/to/BeakBroodNest/ai_kb/mcp_server.py"]
+      "args": ["/path/to/BeakBroodNest/ai_kb/mcp_server.py", "--stdio"]
     }
   }
 }
 ```
+
+若某個專案目錄下 MCP 突然消失，多半是曾經在批准提示按過 No，殘留在
+`~/.claude.json` 該專案的 `disabledMcpjsonServers`；重跑 `install.sh --update`
+會自動清掉。
 
 | 類別 | 工具 | 用途 |
 | --- | --- | --- |

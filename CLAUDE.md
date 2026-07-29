@@ -8,7 +8,9 @@
 - 技術棧: Python Flask + PostgreSQL + SQLAlchemy + MCP SDK
 - Port: 5170（對外經 nginx → gunicorn 127.0.0.1:5171，由 systemd 管理）
 - DB: `beak_broodnest`（user: `beak_broodnest`，密碼存於不入版控的 `config.ini`，由 `install.sh` 互動式設定）
-- MCP 設定: `/opt/.mcp.json`（故意置於父目錄讓所有 /opt/* 子專案向上搜尋共用 beak_broodnest；`/mcp` 命令 UI 會把路徑誤標為 `/opt/BeakBroodNest/.mcp.json`，那是 UI 拼接 project 路徑的顯示行為，實檔在父目錄）
+- MCP 設定: 兩層並存，由 `install.sh` 的 `register_mcp_servers()` 同時寫入
+  - `/opt/.mcp.json`（project scope，故意置於父目錄讓所有 /opt/* 子專案向上搜尋共用；`/mcp` 命令 UI 會把路徑誤標為 `/opt/BeakBroodNest/.mcp.json`，那是 UI 拼接 project 路徑的顯示行為，實檔在父目錄）
+  - `~/.claude.json` 頂層 `mcpServers`（user scope，讓該帳號**任意目錄**都能用，且免逐專案批准）。只寫 project scope 會導致 /opt 以外的目錄完全看不到 MCP；`MCP_USER_SCOPE=no` 可停用
 - 規劃文件: `docs/VISION.md`
 - 舊 MVP 參考: `OLD/`（不入版控）
 - 對外發佈: 直接 `git push github master`（本專案已整理為適合公開，認證走 ssh：`ethan-beakmask/BeakBroodNest`）
