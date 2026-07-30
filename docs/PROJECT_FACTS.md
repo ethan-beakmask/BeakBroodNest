@@ -35,6 +35,37 @@ EOF
 
 量測 API 效能（回應大小 + 耗時）也用同一套，把 `c.get` 包進計時即可。
 
+## 測試怎麼跑
+
+```bash
+cd /opt/BeakBroodNest && venv/bin/python -m pytest -q      # 全套，目前 57 passed
+```
+
+**不需要另外起 dev server**。測試一律走 Flask `test_client`（見上一節），2026-07-29 前
+`test_gantt_*.py` 曾硬打 `http://127.0.0.1:5172`，沒起 server 就 13 個全紅——那是已修掉的舊寫法，
+不要再照抄。
+
+寫新測試時的既定慣例（照 `tests/conftest.py` 與 `tests/test_standalone_entries.py`）：
+
+- 測試**自建 fixture 資料**，不依賴既有白板 / entry id。死寫 slug 或 id 的測試換台機器必掛
+- fixture 走 `core.db.session_scope()`，它離開時會 **commit**（資料真的進 DB），
+  所以 teardown 必須用**明確 id** 反向刪除，嚴禁 `title LIKE 'xxx%'` 之類掃全表的條件
+- 前提不滿足（缺 schema、缺白板）時 `pytest.skip`，不要 fail
+- 測試資料一律標 `owner='pytest'`，殘留檢查才有依據：
+  ```bash
+  cd /opt/BeakBroodNest && venv/bin/python -c "
+  import sys; sys.path.insert(0,'/opt/BeakBroodNest')
+  from core.db import init_engine, session_scope
+  from core.models import Canvas, KnowledgeAtom
+  init_engine('/opt/BeakBroodNest/config.ini')
+  with session_scope() as s:
+      print('殘留 canvas:', s.query(Canvas).filter(Canvas.owner=='pytest').count())
+      print('殘留 atom:', s.query(KnowledgeAtom).filter(KnowledgeAtom.owner=='pytest').count())"
+  ```
+
+**注意 `tests/` 不在版控**（`.gitignore:47` 排除）。因此測試的修改不會出現在 `git status`、
+不會隨 push 散佈、公司機那類部署也拿不到。這是待決議的技術債，見知識庫 atom 4907。
+
 ## DB 存取
 
 **用專案 DB 層，不要自己 parse `config.ini`**（section 名的坑：`core/db.py` 與 `scripts/review_analyzer.py` 讀法不同）。
