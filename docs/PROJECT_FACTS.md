@@ -35,38 +35,18 @@ EOF
 
 量測 API 效能（回應大小 + 耗時）也用同一套，把 `c.get` 包進計時即可。
 
-## 測試怎麼跑
+## 測試：本專案沒有自動化測試套件
 
-```bash
-cd /opt/BeakBroodNest && venv/bin/python -m pytest -q      # 全套，目前 57 passed
-```
+**`tests/` 目錄已於 2026-07-30 由用戶決定整個刪除，`pytest` 沒有東西可跑。**
+不要去找它、不要以為是自己漏 clone，也不要自作主張重建一套。
 
-**不需要另外起 dev server**。測試一律走 Flask `test_client`（見上一節），2026-07-29 前
-`test_gantt_*.py` 曾硬打 `http://127.0.0.1:5172`，沒起 server 就 13 個全紅——那是已修掉的舊寫法，
-不要再照抄。
+驗證改動一律靠**手動 / 端對端驗證**：用上一節的 `test_client` 打 API、用下一節的方式查 DB、
+用 `http://192.168.0.16:5170/beakbroodnest/` 實際操作 UI。push 前的要求見 `docs/PUSH_POLICY.md`。
 
-寫新測試時的既定慣例（照 `tests/conftest.py` 與 `tests/test_standalone_entries.py`）：
+需要臨時寫驗證腳本時，寫成一次性的 `venv/bin/python - <<'EOF'` 片段跑完就算，
+不要在專案內留下檔案。若真要落地成檔案，先問用戶要放哪。
 
-- 測試**自建 fixture 資料**，不依賴既有白板 / entry id。死寫 slug 或 id 的測試換台機器必掛
-- fixture 走 `core.db.session_scope()`，它離開時會 **commit**（資料真的進 DB），
-  所以 teardown 必須用**明確 id** 反向刪除，嚴禁 `title LIKE 'xxx%'` 之類掃全表的條件
-- 前提不滿足（缺 schema、缺白板）時 `pytest.skip`，不要 fail
-- 測試資料一律標 `owner='pytest'`，殘留檢查才有依據：
-  ```bash
-  cd /opt/BeakBroodNest && venv/bin/python -c "
-  import sys; sys.path.insert(0,'/opt/BeakBroodNest')
-  from core.db import init_engine, session_scope
-  from core.models import Canvas, KnowledgeAtom
-  init_engine('/opt/BeakBroodNest/config.ini')
-  with session_scope() as s:
-      print('殘留 canvas:', s.query(Canvas).filter(Canvas.owner=='pytest').count())
-      print('殘留 atom:', s.query(KnowledgeAtom).filter(KnowledgeAtom.owner=='pytest').count())"
-  ```
-
-**`tests/` 刻意不入版控**（`.gitignore` 排除，2026-07-30 用戶裁決維持）。因此測試的修改不會
-出現在 `git status`、不會隨 push 散佈、公司機那類部署也拿不到——**開發機是測試的唯一權威來源**。
-不要因為 `git status` 乾淨就以為沒動到測試，也不要試圖「修好」這件事。
-對 push 流程的影響見 `docs/PUSH_POLICY.md`。
+（歷史備份：刪除前的內容在 `backups/tests_removed_20260730.tar.gz`，該目錄不入版控。）
 
 ## DB 存取
 

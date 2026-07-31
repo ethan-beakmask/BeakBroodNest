@@ -43,9 +43,8 @@ orchestrator/windows/relay/config.yaml
 # 改名探索候選清單（個人草稿，不入版控）
 tools/name_candidates.csv
 
-# 內部測試腳本（不對外維護）
-# 2026-07-30 重新確認維持排除：測試只在開發機維護，不隨 repo 散佈。
-# 代價與對 push 流程的影響寫在 docs/PUSH_POLICY.md「測試完整性」，動這行前先讀。
+# 測試目錄（2026-07-30 已由用戶決定整個刪除，本專案不維護自動化測試）
+# 條目保留是為了擋掉日後順手重建的 tests/；要恢復測試前先讀 docs/PUSH_POLICY.md
 tests/
 
 # Node.js (Tiptap build)
