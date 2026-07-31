@@ -63,8 +63,10 @@ cd /opt/BeakBroodNest && venv/bin/python -m pytest -q      # 全套，目前 57 
       print('殘留 atom:', s.query(KnowledgeAtom).filter(KnowledgeAtom.owner=='pytest').count())"
   ```
 
-**注意 `tests/` 不在版控**（`.gitignore:47` 排除）。因此測試的修改不會出現在 `git status`、
-不會隨 push 散佈、公司機那類部署也拿不到。這是待決議的技術債，見知識庫 atom 4907。
+**`tests/` 刻意不入版控**（`.gitignore` 排除，2026-07-30 用戶裁決維持）。因此測試的修改不會
+出現在 `git status`、不會隨 push 散佈、公司機那類部署也拿不到——**開發機是測試的唯一權威來源**。
+不要因為 `git status` 乾淨就以為沒動到測試，也不要試圖「修好」這件事。
+對 push 流程的影響見 `docs/PUSH_POLICY.md`。
 
 ## DB 存取
 

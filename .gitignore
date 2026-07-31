@@ -44,6 +44,8 @@ orchestrator/windows/relay/config.yaml
 tools/name_candidates.csv
 
 # 內部測試腳本（不對外維護）
+# 2026-07-30 重新確認維持排除：測試只在開發機維護，不隨 repo 散佈。
+# 代價與對 push 流程的影響寫在 docs/PUSH_POLICY.md「測試完整性」，動這行前先讀。
 tests/
 
 # Node.js (Tiptap build)
