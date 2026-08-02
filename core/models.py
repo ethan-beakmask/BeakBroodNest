@@ -106,6 +106,12 @@ class KnowledgeAtom(Base):
     schema_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('atom_schemas.id'), nullable=True
     )  # E 類型時關聯的 schema
+    ref_code: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # 人類與 LLM 共用的全域短代號（如 BBN-137）
+    project_canvas_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('canvases.id', ondelete='SET NULL'), nullable=True
+    )  # 卡片所屬專案白板，與 canvas_atoms 的擺放位置分離
 
     # 生命週期
     lifecycle: Mapped[str] = mapped_column(
@@ -189,6 +195,8 @@ class KnowledgeAtom(Base):
             'thumbnail_url': self.thumbnail_url,
             'atom_type': self.atom_type,
             'schema_id': self.schema_id,
+            'ref_code': self.ref_code,
+            'project_canvas_id': self.project_canvas_id,
             'lifecycle': self.lifecycle,
             'vitality_score': self.vitality_score,
             'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -353,6 +361,9 @@ class Canvas(Base):
     project_path: Mapped[str | None] = mapped_column(
         String(500), nullable=True
     )  # 關聯的本地專案目錄路徑（如 /opt/BeakBroodNest），供 AI 依 cwd 查待辦
+    code: Mapped[str | None] = mapped_column(
+        String(8), nullable=True
+    )  # 專案短前綴，供卡片短代號使用（如 BBN）
     snapshot: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )  # 歸檔時凍結的完整白板快照（原子內容、連線、群組）
@@ -397,6 +408,7 @@ class Canvas(Base):
             'is_archived': self.is_archived,
             'is_project': self.is_project,
             'project_path': self.project_path,
+            'code': self.code,
             'viewport_x': self.viewport_x,
             'viewport_y': self.viewport_y,
             'viewport_zoom': self.viewport_zoom,

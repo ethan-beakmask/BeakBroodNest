@@ -17,7 +17,7 @@ from sqlalchemy.orm import joinedload
 from core.models import (
     Canvas, CanvasAtom, CanvasStandaloneEntry,
     AtomEntry, EntrySchema, EntrySchemaField, EntryFieldValue,
-    StandaloneEntry, KnowledgeAtom,
+    StandaloneEntry, KnowledgeAtom, UnifiedRelation, Tag, atom_tags,
 )
 
 
@@ -66,6 +66,24 @@ def _atom_entry_field_values_map(s, entry_ids: Iterable[int]) -> dict:
     return result
 
 
+def _atom_tags_map(s, atom_ids: Iterable[int]) -> dict:
+    """批次取 atom 的標籤名稱，回 {atom_id: [tag_name, ...]}。"""
+    atom_ids = list({aid for aid in atom_ids if aid is not None})
+    if not atom_ids:
+        return {}
+    rows = (
+        s.query(atom_tags.c.atom_id, Tag.name)
+        .join(Tag, Tag.id == atom_tags.c.tag_id)
+        .filter(atom_tags.c.atom_id.in_(atom_ids))
+        .order_by(Tag.name)
+        .all()
+    )
+    result: dict[int, list[str]] = {}
+    for atom_id, tag_name in rows:
+        result.setdefault(atom_id, []).append(tag_name)
+    return result
+
+
 def _canvas_for_atoms(s, atom_ids: Iterable[int]) -> dict:
     """{atom_id: (canvas, canvas_atom_pos_x, pos_y)}，同 atom 在多白板取最新更新者"""
     atom_ids = list(atom_ids)
@@ -111,6 +129,106 @@ def _canvas_for_standalones(s, se_ids: Iterable[int]) -> dict:
     return out
 
 
+def _atom_ref(atom: KnowledgeAtom | None, atom_id: int | None) -> str | None:
+    """人類可讀代號；尚未發 ref_code 時用 a{id} fallback。"""
+    if atom is not None and atom.ref_code:
+        return atom.ref_code
+    if atom_id is not None:
+        return f'a{atom_id}'
+    return None
+
+
+def _relations_map(s, atom_ids: Iterable[int], task_schema_id: int) -> dict:
+    """批次取 task atom 的 contains parent 與未完成 blocks 來源。
+
+    回傳 {atom_id: {'parent_ref': str|None, 'blocked_by': [str, ...]}}。
+    """
+    atom_ids = list({aid for aid in atom_ids if aid is not None})
+    if not atom_ids:
+        return {}
+
+    rels = (
+        s.query(UnifiedRelation)
+        .filter(
+            UnifiedRelation.to_atom_id.in_(atom_ids),
+            UnifiedRelation.relation_type.in_(('contains', 'blocks')),
+            UnifiedRelation.is_deleted == False,  # noqa: E712
+            UnifiedRelation.from_atom_id.isnot(None),
+        )
+        .all()
+    )
+    parent_by_child: dict[int, int] = {}
+    blockers_by_child: dict[int, list[int]] = {}
+    related_atom_ids: set[int] = set()
+    blocker_ids: set[int] = set()
+
+    for rel in rels:
+        if rel.to_atom_id is None or rel.from_atom_id is None:
+            continue
+        related_atom_ids.add(rel.from_atom_id)
+        if rel.relation_type == 'contains':
+            parent_by_child[rel.to_atom_id] = rel.from_atom_id
+        elif rel.relation_type == 'blocks':
+            blockers_by_child.setdefault(rel.to_atom_id, []).append(rel.from_atom_id)
+            blocker_ids.add(rel.from_atom_id)
+
+    atoms_by_id: dict[int, KnowledgeAtom] = {}
+    if related_atom_ids:
+        atoms = (
+            s.query(KnowledgeAtom)
+            .filter(
+                KnowledgeAtom.id.in_(related_atom_ids),
+                KnowledgeAtom.is_deleted == False,  # noqa: E712
+            )
+            .all()
+        )
+        atoms_by_id = {a.id: a for a in atoms}
+
+    blocker_done: dict[int, bool] = {}
+    if blocker_ids:
+        blocker_entries = (
+            s.query(AtomEntry)
+            .filter(
+                AtomEntry.atom_id.in_(blocker_ids),
+                AtomEntry.schema_id == task_schema_id,
+            )
+            .all()
+        )
+        entries_by_atom: dict[int, list[AtomEntry]] = {}
+        for entry in blocker_entries:
+            entries_by_atom.setdefault(entry.atom_id, []).append(entry)
+
+        blocker_fv_map = _atom_entry_field_values_map(s, [e.id for e in blocker_entries])
+        for blocker_id in blocker_ids:
+            entries = entries_by_atom.get(blocker_id, [])
+            if not entries:
+                blocker_done[blocker_id] = False
+                continue
+            blocker_done[blocker_id] = all(
+                blocker_fv_map.get(entry.id, {}).get('status', 'planning')
+                in ('completed', 'cancelled')
+                for entry in entries
+            )
+
+    out: dict[int, dict[str, object]] = {}
+    for atom_id in atom_ids:
+        parent_id = parent_by_child.get(atom_id)
+        blocked_by = []
+        for blocker_id in blockers_by_child.get(atom_id, []):
+            if blocker_done.get(blocker_id, False):
+                continue
+            blocker_atom = atoms_by_id.get(blocker_id)
+            if blocker_atom is None:
+                continue
+            blocked_by.append(_atom_ref(blocker_atom, blocker_id))
+
+        out[atom_id] = {
+            'parent_ref': _atom_ref(atoms_by_id.get(parent_id), parent_id) if parent_id else None,
+            'blocked_by': blocked_by,
+        }
+    return out
+
+
 def query_task_entries(
     s,
     canvas_ids: Iterable[int] | None = None,
@@ -136,6 +254,7 @@ def query_task_entries(
       raw_text, summary
       schema_code, schema_icon, schema_color, schema_name
       field_values: dict (urgency/category/planned_start/...)
+      ref_code, progress, parent_ref, blocked_by
       status, urgency, planned_start, planned_end
       created_at, updated_at
     """
@@ -172,6 +291,8 @@ def query_task_entries(
     if atom_entries:
         ae_fv_map = _atom_entry_field_values_map(s, [e.id for e in atom_entries])
         atom_canvas = _canvas_for_atoms(s, [e.atom_id for e in atom_entries])
+        atom_relations = _relations_map(s, [e.atom_id for e in atom_entries], task_schema.id)
+        atom_tags_by_id = _atom_tags_map(s, [e.atom_id for e in atom_entries])
 
         for ae in atom_entries:
             if not ae.atom or ae.atom.is_deleted:
@@ -185,7 +306,7 @@ def query_task_entries(
 
             fv = ae_fv_map.get(ae.id, {})
             ps = fv.get('planned_start', '').strip()
-            status = fv.get('status', 'planning')
+            status = (fv.get('status') or '').strip() or 'planning'
 
             if only_no_planned_start and ps:
                 continue
@@ -195,6 +316,7 @@ def query_task_entries(
                 continue
 
             title = ae.atom.title or ''
+            rel_info = atom_relations.get(ae.atom_id, {})
             items.append({
                 'source': 'atom_entry',
                 'entry_id': ae.id,
@@ -209,6 +331,11 @@ def query_task_entries(
                 'title': title,
                 'raw_text': ae.raw_text or '',
                 'summary': ae.summary or '',
+                'ref_code': ae.atom.ref_code,
+                'progress': fv.get('progress', ''),
+                'parent_ref': rel_info.get('parent_ref'),
+                'blocked_by': rel_info.get('blocked_by', []),
+                'tags': atom_tags_by_id.get(ae.atom_id, []),
                 **schema_info,
                 'field_values': fv,
                 'status': status,
@@ -245,7 +372,7 @@ def query_task_entries(
                     fv[k] = str(v)
 
             ps = fv.get('planned_start', '').strip()
-            status = fv.get('status', 'planning')
+            status = (fv.get('status') or '').strip() or 'planning'
 
             if only_no_planned_start and ps:
                 continue
@@ -270,6 +397,11 @@ def query_task_entries(
                 'title': title,
                 'raw_text': se.raw_text or '',
                 'summary': se.summary or '',
+                'ref_code': None,
+                'progress': fv.get('progress', ''),
+                'parent_ref': None,
+                'blocked_by': [],
+                'tags': [],
                 **schema_info,
                 'field_values': fv,
                 'status': status,

@@ -67,6 +67,14 @@
 
         .todos-link { color:#3b82f6; text-decoration:none; }
         .todos-link:hover { text-decoration:underline; }
+        .ref-fallback { color:#adb5bd; }
+        .parent-mark { color:#6c757d; margin-right:4px; }
+        .blocked-tag { display:inline-block; margin-left:6px; padding:1px 5px;
+            font-size:10px; border-radius:2px; background:#fee2e2; color:#991b1b;
+            font-weight:600; line-height:1.4; }
+        .unanswered-tag { display:inline-block; margin-left:6px; padding:1px 5px;
+            font-size:10px; border-radius:2px; background:#e9ecef; color:#495057;
+            font-weight:600; line-height:1.4; }
     </style>
 </head>
 <body>
@@ -92,9 +100,18 @@
         <!-- Toolbar -->
         <div class="todos-toolbar">
             <strong style="font-size:14px;">待辦清單</strong>
-            <span style="font-size:11px;color:#6c757d;">無預計開始時間的 ;;td / ;;cal</span>
+            <span style="font-size:11px;color:#6c757d;">所有尚未完成的 ;;td / ;;cal</span>
             <div class="ms-auto d-flex align-items-center gap-3" style="font-size:12px;">
                 <label><input type="checkbox" x-model="includeDone" @change="reload()"> 包含已完成</label>
+                <label><input type="checkbox" x-model="onlyUndated" @change="reload()"> 只看未排程</label>
+                <label>
+                    待答：
+                    <select x-model="answerScope" @change="reload()" style="font-size:12px;">
+                        <option value="all">全部</option>
+                        <option value="only">只看待答</option>
+                        <option value="exclude">隱藏待答</option>
+                    </select>
+                </label>
                 <label>
                     排序：
                     <select x-model="order" @change="reload()" style="font-size:12px;">
@@ -151,12 +168,18 @@
                             </th>
                             <th style="width:60px;">來源</th>
                             <th style="width:64px;">nodeId</th>
-                            <th style="width:90px;">編號</th>
+                            <th class="sortable" style="width:90px;" @click="setSort('entry')">
+                                編號 <span x-text="sortMark('entry')"></span>
+                            </th>
+                            <th class="sortable" style="width:96px;" @click="setSort('date')">
+                                排程日 <span x-text="sortMark('date')"></span>
+                            </th>
+                            <th style="width:70px;">操作</th>
                             <th>標題 / 任務文字</th>
                             <th style="width:120px;">白板</th>
                             <th style="width:80px;">狀態</th>
                             <th style="width:50px;">急</th>
-                            <th style="width:70px;">操作</th>
+                            <th style="width:70px;">進度</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -173,19 +196,51 @@
                                           x-text="it.source==='atom_entry' ? '卡片':'白板'"></span>
                                 </td>
                                 <td x-text="it.node_id || '-'" style="color:#6c757d;font-family:monospace;font-size:11px;"></td>
-                                <td style="color:#6c757d;font-family:monospace;font-size:11px;">
+                                <td style="font-family:monospace;font-size:11px;">
                                     <template x-if="it.source==='atom_entry'">
-                                        <a href="#" class="todos-link"
-                                           @click.prevent="window.openAtomCard && window.openAtomCard(it.atom_id)"
-                                           x-text="'a'+it.atom_id+'/e'+it.entry_id"
-                                           title="點此開啟卡片內容"></a>
+                                        <span>
+                                            <a href="#" class="todos-link"
+                                               @click.prevent="window.openAtomCard && window.openAtomCard(it.atom_id)"
+                                               x-text="it.ref_code || ('a'+it.atom_id+'/e'+it.entry_id)"
+                                               :class="it.ref_code ? '' : 'ref-fallback'"
+                                               title="點此開啟卡片內容"></a>
+                                        </span>
                                     </template>
                                     <template x-if="it.source==='standalone_entry'">
-                                        <span x-text="'se'+it.entry_id"></span>
+                                        <span class="ref-fallback" x-text="'se'+it.entry_id"></span>
+                                    </template>
+                                </td>
+                                <td style="font-family:monospace;font-size:11px;">
+                                    <span x-text="plannedDate(it.planned_start)"
+                                          :class="it.planned_start ? '' : 'ref-fallback'"></span>
+                                </td>
+                                <td>
+                                    <template x-if="it.source==='atom_entry'">
+                                        <a class="todos-link"
+                                           :href="'/beakbroodnest/?open=' + it.atom_id"
+                                           title="在白板開啟 tiptap 編輯器">開啟</a>
+                                    </template>
+                                    <template x-if="it.source==='standalone_entry'">
+                                        <a class="todos-link"
+                                           :href="'/beakbroodnest/canvas/' + it.canvas_slug"
+                                           title="到白板">開啟</a>
                                     </template>
                                 </td>
                                 <td class="task-text">
-                                    <div x-text="it.title" style="font-weight:500;"></div>
+                                    <div style="font-weight:500;">
+                                        <template x-if="it.parent_ref">
+                                            <span class="parent-mark" :title="'母任務：' + it.parent_ref">↳</span>
+                                        </template>
+                                        <span x-text="it.title"></span>
+                                        <template x-if="hasUnansweredTag(it)">
+                                            <span class="unanswered-tag"
+                                                  title="這是尚未回答的決策點">待答</span>
+                                        </template>
+                                        <template x-if="it.blocked_by && it.blocked_by.length">
+                                            <span class="blocked-tag"
+                                                  :title="'被以下項目阻塞：' + it.blocked_by.join(', ')">被擋</span>
+                                        </template>
+                                    </div>
                                     <div x-text="(it.raw_text||'').slice(0,120)"
                                          x-show="it.source==='atom_entry' && it.raw_text"
                                          style="color:#6c757d;font-size:11px;"></div>
@@ -203,18 +258,9 @@
                                     <span class="urgency-pill" :class="'u-'+it.urgency"
                                           x-text="it.urgency"></span>
                                 </td>
-                                <td>
-                                    <template x-if="it.source==='atom_entry'">
-                                        <a class="todos-link"
-                                           :href="'/beakbroodnest/?open=' + it.atom_id"
-                                           title="在白板開啟 tiptap 編輯器">開啟</a>
-                                    </template>
-                                    <template x-if="it.source==='standalone_entry'">
-                                        <a class="todos-link"
-                                           :href="'/beakbroodnest/canvas/' + it.canvas_slug"
-                                           title="到白板">開啟</a>
-                                    </template>
-                                </td>
+                                <td x-text="progressText(it.progress)"
+                                    :class="progressText(it.progress)==='-' ? 'ref-fallback' : ''"
+                                    style="font-family:monospace;font-size:11px;"></td>
                             </tr>
                         </template>
                     </tbody>
@@ -265,8 +311,11 @@ function todosApp() {
         includeProject: true,
         includeFree: true,
         includeDone: false,
+        onlyUndated: false,
+        answerScope: 'all',
         canvasSlug: '',
         order: 'desc',
+        sort: 'date',
 
         get projectCanvases() { return this.canvases.filter(c => c.is_project); },
         get freeCanvases() { return this.canvases.filter(c => !c.is_project); },
@@ -275,6 +324,36 @@ function todosApp() {
         },
 
         rowKey(it) { return it.source + ':' + it.entry_id; },
+
+        setSort(s) {
+            if (this.sort === s && s === 'entry') {
+                this.order = this.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sort = s;
+            }
+            this.reload();
+        },
+
+        sortMark(s) {
+            if (this.sort !== s) return '↕';
+            if (s === 'date') return '↑';
+            return this.order === 'asc' ? '↑' : '↓';
+        },
+
+        plannedDate(v) {
+            if (!v) return '-';
+            return String(v).split(/[T ]/)[0] || '-';
+        },
+
+        progressText(v) {
+            const s = (v || '').toString().trim();
+            if (!s || s === '0' || s === '0%') return '-';
+            return s.endsWith('%') ? s : s + '%';
+        },
+
+        hasUnansweredTag(it) {
+            return Array.isArray(it.tags) && it.tags.includes('沒回答');
+        },
 
         async init() {
             await this.loadCanvases();
@@ -301,6 +380,9 @@ function todosApp() {
                 include_project: this.includeProject ? '1' : '0',
                 include_free: this.includeFree ? '1' : '0',
                 include_done: this.includeDone ? '1' : '0',
+                date_scope: this.onlyUndated ? 'undated' : 'all',
+                answer_scope: this.answerScope,
+                sort: this.sort,
                 order: this.order,
             });
             if (this.canvasSlug) qs.set('canvas_slug', this.canvasSlug);

@@ -3,8 +3,11 @@
 import json
 from pathlib import Path
 
+from sqlalchemy import text
+
 from core.db import session_scope
 from core.models import Canvas
+from core.ref_code import ensure_project_code
 from core.task_query import query_task_entries
 
 
@@ -39,6 +42,78 @@ def _find_canvas_by_cwd(s, cwd: str) -> Canvas | None:
 def register(mcp):
 
     @mcp.tool()
+    def project_setup(
+        project_path: str,
+        code: str,
+        name: str = '',
+        description: str = '',
+    ) -> str:
+        """新專案要開始收待辦時的第一步。
+
+        一次完成白板建立、專案目錄綁定與短代號設定；可重複執行，
+        同樣參數再次呼叫會回傳既有白板，不會重複建立。
+        """
+        normalized_path = (project_path or '').strip()
+        if not normalized_path:
+            return json.dumps({'error': 'project_path 不可為空'}, ensure_ascii=False)
+
+        normalized_name = (name or '').strip()
+        with session_scope() as s:
+            canvas = (
+                s.query(Canvas)
+                .filter(
+                    Canvas.project_path == normalized_path,
+                    Canvas.is_archived == False,  # noqa: E712
+                )
+                .first()
+            )
+            if canvas is None and normalized_name:
+                canvas = (
+                    s.query(Canvas)
+                    .filter(
+                        Canvas.name == normalized_name,
+                        Canvas.is_archived == False,  # noqa: E712
+                    )
+                    .first()
+                )
+
+            created = False
+            if canvas is None:
+                fallback_name = Path(normalized_path).name or normalized_path
+                canvas = Canvas(
+                    name=normalized_name or fallback_name,
+                    description=description,
+                    is_project=True,
+                    canvas_type='whiteboard',
+                    owner='claude',
+                )
+                s.add(canvas)
+                s.flush()
+                created = True
+
+            canvas.project_path = normalized_path
+            try:
+                normalized_code = ensure_project_code(s, canvas, code)
+            except ValueError as e:
+                s.rollback()
+                return json.dumps({'error': str(e)}, ensure_ascii=False)
+
+            next_seq = s.execute(
+                text('SELECT next_seq FROM project_ref_counters WHERE canvas_id = :cid'),
+                {'cid': canvas.id},
+            ).scalar_one_or_none() or 1
+
+            return json.dumps({
+                'canvas_id': canvas.id,
+                'slug': canvas.slug,
+                'name': canvas.name,
+                'code': normalized_code,
+                'project_path': canvas.project_path,
+                'created': created,
+                'next_seq': next_seq,
+            }, ensure_ascii=False)
+
+    @mcp.tool()
     def project_tasks(cwd: str) -> str:
         """依當前工作目錄查詢對應專案的待辦與行事曆。
 
@@ -48,6 +123,7 @@ def register(mcp):
           canvas: 匹配的白板資訊，若無關聯回傳 null
           todos: 無 planned_start 的 task entries（純列表）
           calendar: 有 planned_start 的 task entries（時間軸）
+          task entry 會包含 ref_code/progress/parent_ref/blocked_by 欄位
           message: 若無白板或無資料時的說明文字
         """
         with session_scope() as s:

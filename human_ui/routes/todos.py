@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""待辦頁：所有 task entry 中無 planned_start 者（含卡片內 + 白板獨立）
+"""待辦頁：所有尚未完成的 task entry（含卡片內 + 白板獨立）
 
 對稱於 /calendar：
-  /calendar  -> 有 planned_start 的 task entry（含時間軸視圖）
-  /todos     -> 無 planned_start 的 task entry（純列表）
+  /todos     -> status 不在 completed/cancelled 的 task entry 權威清單
+  /calendar  -> 同一批資料中有 planned_start 者的時間軸視圖
 
-;;td 與 ;;cal 是同一個 task schema，差別僅在 field_values.planned_start 有無值。
-加上 planned_start 自動歸 /calendar，移除自動歸 /todos。
+;;td 與 ;;cal 是同一個 task schema，planned_start 只是排程欄位；
+排上日期不代表完成，因此仍會留在 /todos。
+answer_scope 可篩出或隱藏尚未回答的決策點。
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from core.task_query import query_task_entries
 
 bp = Blueprint('todos', __name__)
 logger = logging.getLogger('beak_broodnest')
+UNANSWERED_TAG = '沒回答'
 
 
 @bp.route('/todos')
@@ -47,13 +49,16 @@ def todos_canvases():
 
 @bp.route('/todos/api/items')
 def todos_items():
-    """查無 planned_start 的 task entries（卡片 + 白板獨立）
+    """查尚未完成的 task entries（卡片 + 白板獨立）
 
     參數：
       include_project: '1'/'0'（預設 1）
       include_free: '1'/'0'（預設 1）
       canvas_slug: 限制單一白板
       include_done: '1'/'0'（預設 0）
+      date_scope: 'all'|'undated'（預設 all）
+      answer_scope: 'all'|'only'|'exclude'（預設 all）
+      sort: 'date'|'entry'（預設 date）
       order: 'asc'|'desc'（依 entry_id；預設 desc）
     """
     include_project = request.args.get('include_project', '1') == '1'
@@ -61,6 +66,15 @@ def todos_items():
     include_done = request.args.get('include_done', '0') == '1'
     canvas_slug = (request.args.get('canvas_slug') or '').strip()
     order = request.args.get('order', 'desc')
+    date_scope = request.args.get('date_scope', 'all')
+    if date_scope not in ('all', 'undated'):
+        date_scope = 'all'
+    answer_scope = request.args.get('answer_scope', 'all')
+    if answer_scope not in ('all', 'only', 'exclude'):
+        answer_scope = 'all'
+    sort = request.args.get('sort', 'date')
+    if sort not in ('entry', 'date'):
+        sort = 'date'
 
     with session_scope() as s:
         canvas_ids = None
@@ -73,7 +87,7 @@ def todos_items():
         items = query_task_entries(
             s,
             canvas_ids=canvas_ids,
-            only_no_planned_start=True,
+            only_no_planned_start=(date_scope == 'undated'),
             include_done=include_done,
         )
 
@@ -84,9 +98,20 @@ def todos_items():
             or ((not it['canvas_is_project']) and include_free)
         ]
 
-        # 排序：依 entry_id（atom_entry 用 entry_id；standalone 用 entry_id），可選方向
-        reverse = (order != 'asc')
-        items.sort(key=lambda x: x['entry_id'], reverse=reverse)
+        if answer_scope == 'only':
+            items = [it for it in items if UNANSWERED_TAG in (it.get('tags') or [])]
+        elif answer_scope == 'exclude':
+            items = [it for it in items if UNANSWERED_TAG not in (it.get('tags') or [])]
+
+        if sort == 'date':
+            def date_key(x):
+                ps = (x.get('planned_start') or '').strip()
+                return (0, ps, 0) if ps else (1, '', -x['entry_id'])
+            items.sort(key=date_key)
+        else:
+            # 排序：依 entry_id（atom_entry 用 entry_id；standalone 用 entry_id），可選方向
+            reverse = (order != 'asc')
+            items.sort(key=lambda x: x['entry_id'], reverse=reverse)
 
         canvas_info = None
         if canvas_slug:

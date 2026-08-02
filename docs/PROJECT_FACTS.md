@@ -201,3 +201,105 @@ sudo systemctl restart beakbroodnest.service && systemctl is-active beakbroodnes
 ```
 
 改動 `human_ui/` 下的 Python 需重啟才生效；只改 `static/` 或 `templates/` 通常不必，但瀏覽器要強制重新整理。
+
+## 待辦系統（2026-08-02 起）
+
+### 卡片內容的真實來源是 entries，不是 `atom.content`
+
+**動任何「幫卡片補結構」的程式前必讀。** `card-editor.js:736` 的 `loadEntries()`
+最後是 `setContent({type:'doc', content})`——整份覆蓋。所以：
+
+> 只要一張卡有 `atom_entries`，`knowledge_atoms.content` 就**永遠不會**顯示在白板上。
+
+2026-08-02 因此出過事：`note_task_adopt` 替 18 張既有知識卡補了 task entry，
+那些卡原本沒有任何 entry、內容靠 `atom.content` 顯示，收編後在白板上全部變空
+（資料沒丟，只是看不到）。修法是 `core/task_service.ensure_freetext_entries()`：
+把 `content` **逐行**拆成 freetext entries（逐段不行，段內換行在 tiptap 會消失）。
+
+驗收時不能只查 DB 有沒有寫進去，要從**人類會看的入口**看一次。卡片有兩個入口且行為不同：
+`/todos` 的「編號」欄開 modal（讀 `atom.content`）、「開啟」欄開白板 tiptap（讀 entries）。
+
+### 短代號與專案代號
+
+| 專案 | 白板 id | slug | code |
+|------|---------|------|------|
+| BeakBroodNest | 24 | Ghyy2Acy | `BBN` |
+| BeakPlatform | 29 | tMU_fnXu | `PF` |
+
+短代號格式 `BBN-137`，發號唯一入口是 `core/ref_code.py` 的 `assign_ref_code()`
+（底層走 DB 函式 `next_ref_code()` + `project_ref_counters` 計數表，併發安全）。
+**代號一旦發過號就不能改**（`ensure_project_code()` 會擋）。
+
+新專案接上系統：`project_setup(project_path, code, name)`，冪等。
+沒有 `code` 的白板無法發號，`note_task_create` 會直接失敗。
+
+### MCP 工具分工
+
+**這些都是 MCP 工具**（定義在 `ai_kb/tools/task.py` 與 `ai_kb/tools/project.py`），
+在 Claude Code session 中直接呼叫即可，不需要寫 Python、不需要起 server。
+下面的 `FakeMCP` 只是「想在 shell 裡驗證」時用的旁路。
+
+| 工具 | 主要參數 | 用途 |
+|------|----------|------|
+| `project_setup` | `project_path`（絕對路徑，目錄不必已存在）、`code`、`name`、`description` | 新專案接上系統，冪等 |
+| `note_task_create` | `title`、`content`、`project`、`parent_ref`、`urgency`（H/M/L）、`planned_start`、`planned_duration`、`note`、`tags` | 新建待辦（唯一入口，`parent_ref` 會自動建 contains 邊） |
+| `note_task_adopt` | `ref`（短代號或 atom id）、`project`、`urgency`、`parent_ref` | 既有知識卡就地收編，冪等 |
+| `note_task_update` | `ref`、`progress`、`urgency`、`planned_start`、`planned_end`、`note` | 只改欄位，無副作用 |
+| `note_task_status` | `ref`、`status`、`reason` | 只改狀態（含 pause/reopen log、完成前檢查未完成子任務） |
+| `project_tasks` | `cwd` | 依目錄查該專案待辦，與 `/todos` 同源 |
+
+`project` 參數三種寫法都吃：專案代號（`BBN`，大小寫不敏感）、白板 slug、
+以 `/` 開頭的專案目錄路徑（走 `project_path` 最長前綴匹配）。
+省略 `project` 但有給 `parent_ref` 時，會繼承母卡的專案。
+
+### 新專案端到端範例
+
+```
+project_setup(project_path='/opt/BeakGuard', code='GD', name='BeakGuard')
+  -> {"canvas_id":.., "slug":"..", "code":"GD", "created":true, "next_seq":1}
+
+note_task_create(title='規劃防火牆節點資料模型', content='...', project='GD', urgency='H')
+  -> {"ref_code":"GD-1", "atom_id":.., "entry_id":.., "freetext_entries":N}
+
+project_tasks(cwd='/opt/BeakGuard')     # 確認查得到
+```
+
+人類端確認：`http://192.168.0.16:5170/beakbroodnest/todos`，左側「單一白板」選新專案；
+或直接 `/beakbroodnest/todos/api/items?canvas_slug=<slug>`。
+
+**`code` 不要自己決定。** 代號一旦發過號就不可變更，動手前先問用戶要用什麼代號。
+
+### 不用起 MCP server 就能測工具
+
+```python
+class FakeMCP:
+    def __init__(self): self.tools = {}
+    def tool(self):
+        def deco(fn): self.tools[fn.__name__] = fn; return fn
+        return deco
+```
+
+```bash
+cd /opt/BeakBroodNest && venv/bin/python - <<'EOF'
+import sys, json; sys.path.insert(0,'/opt/BeakBroodNest')
+from core.db import init_engine; init_engine('/opt/BeakBroodNest/config.ini')   # 必須先做
+class F:
+    def __init__(s): s.tools={}
+    def tool(s):
+        def d(fn): s.tools[fn.__name__]=fn; return fn
+        return d
+m=F()
+from ai_kb.tools import task; task.register(m)
+print(json.loads(m.tools['note_task_create'](title='測試', project='BBN')))
+EOF
+```
+
+測完記得清乾淨：刪 atom / atom_entries / entry_field_values / entry_field_change_log /
+canvas_atoms / unified_relations，並把 `project_ref_counters` 的 `next_seq` 改回原值
+（否則正式發號會跳號）。
+
+### `/todos` 的收錄判準
+
+`status` 不在 `{completed, cancelled}` 的**全部** task entry，不論有無 `planned_start`。
+`/calendar` 是同一批資料中「有日期者」的視圖，不是另一個集合。
+`planned_start` 只是欄位與排序依據，不決定「算不算待辦」。

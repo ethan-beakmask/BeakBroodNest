@@ -50,6 +50,28 @@
 - 建立因果關係 -> `note_relate`（blocks/follows/supports 等）
 - 不要重複儲存已存在的知識，先 `note_search` 確認
 
+## 待辦與任務
+- 建立待辦一律用 `note_task_create`，禁止再用 `note_store` 搭配 `[待辦]` 標題前綴或 `待辦` 標籤的舊寫法。舊寫法建出來的卡不會出現在 `/todos`，人類看不到
+- 待辦的權威清單是 `/todos` 頁面與 `project_tasks(cwd=...)`，兩者同源
+- 四個工具分工：`note_task_create`（新建）/ `note_task_adopt`（既有卡收編）/ `note_task_update`（只改 progress、urgency、日期等欄位）/ `note_task_status`（只改狀態，含 pause/reopen log 與完成前的子任務檢查）
+- 一件待辦在實作時展開成多張卡時，必須用 `parent_ref` 建立 contains 關係；卡與卡之間有先後依賴時用 `note_relate(relation_type='blocks')`。關係漏建不會報錯，但事後追不回來
+- 短代號（如 `BBN-137`）是人類與 AI 的共同稱呼，回報進度時用短代號，不要講 atom id
+- 2026-08-02 之前用舊寫法建立的待辦卡不做遷移；需要時用 `note_task_adopt` 逐張收編
+
+### 新專案第一次收待辦
+先呼叫 `project_setup(project_path, code, name)`：白板不存在就建、綁目錄、設短代號前綴，冪等可重複執行。沒有 `code` 的白板無法發號，`note_task_create` 會直接失敗。
+代號命名規則：去掉 `Beak` 前綴取剩餘字首（BeakPlatform -> `PF`），但 BeakBroodNest 維持慣用的 `BBN`。**代號一旦發過號就不可變更**，設定前先確認。
+
+### 未回答的決策點（`沒回答` 標籤）
+使用者實際會遺漏的不是待辦本身，而是「AI 提了多個選項、只回答其中幾項，剩下的沒表態就往下走」——之後對話被摘要或換新對話，兩邊都忘了。記錄責任在 AI。
+
+- **時機**：提出多個選項後，若使用者的回覆沒有涵蓋全部，**就在自己的下一則回應中當場記錄**。不可以留到 `/upcom` 收尾才補——對話可能在收尾前就被摘要，屆時連提過什麼都不記得了
+- **門檻**：只記「不做會留下缺口」的選項。純風格偏好、可有可無的替代方案不記，否則清單會被稀釋成雜訊而失去作用
+- **顆粒度**：一個決策點一張卡，不是一個選項一張卡。選項之間通常互相關聯，拆開會失去語境
+- **做法**：`note_task_create(tags=['沒回答'], urgency='L')`，content 要記：當時提了哪些選項、使用者選了什麼、哪幾項沒回答、以及日期
+- **解除**：使用者日後回答了 -> 要做就用 `note_update` 移除 `沒回答` 標籤留在待辦；不做就 `note_task_status(status='cancelled')`
+- `/todos` 頁面以灰色「待答」標籤標示，右上「待答」下拉可切換 全部 / 只看待答 / 隱藏待答
+
 ## 目錄結構
 ```
 core/               共用資料層（框架無關 SQLAlchemy）

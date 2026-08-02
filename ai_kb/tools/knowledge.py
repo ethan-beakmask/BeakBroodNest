@@ -15,6 +15,7 @@ from core.models import (
 from core import relations as rel_service
 from core import consistency as consistency_service
 from core import embeddings as embed_service
+from core.ref_code import resolve_ref
 
 logger = logging.getLogger('beak_broodnest.mcp')
 
@@ -565,11 +566,13 @@ def register(mcp):
 
     @mcp.tool()
     def note_relate(
-        from_atom_id: int,
-        to_atom_id: int,
-        relation_type: str,
+        from_atom_id: int = 0,
+        to_atom_id: int = 0,
+        relation_type: str = '',
         label: str = '',
         confidence: float = 1.0,
+        from_ref: str = '',
+        to_ref: str = '',
     ) -> str:
         """在兩個知識原子之間建立有向關係。
 
@@ -587,9 +590,23 @@ def register(mcp):
           工作流: blocks     -- A 未完成前 B 無法開始
 
         confidence: 0.0~1.0，AI 產生的關聯建議標低一些（如 0.7）。
+        建議用 from_ref="BBN-137" / to_ref="BBN-138" 這種短代號，比記數字 id 可靠。
+        既有 from_atom_id / to_atom_id 數字 id 呼叫方式仍可使用。
         """
         with session_scope() as s:
             try:
+                if from_ref:
+                    atom = resolve_ref(s, from_ref)
+                    if not atom:
+                        return json.dumps({'error': f'找不到來源卡片：{from_ref}'}, ensure_ascii=False)
+                    from_atom_id = atom.id
+                if to_ref:
+                    atom = resolve_ref(s, to_ref)
+                    if not atom:
+                        return json.dumps({'error': f'找不到目標卡片：{to_ref}'}, ensure_ascii=False)
+                    to_atom_id = atom.id
+                if not from_atom_id or not to_atom_id:
+                    return json.dumps({'error': '必須提供 from_ref/from_atom_id 與 to_ref/to_atom_id'}, ensure_ascii=False)
                 rel = rel_service.create_relation(
                     s, relation_type=relation_type,
                     from_atom_id=from_atom_id, to_atom_id=to_atom_id,
@@ -616,6 +633,8 @@ def register(mcp):
           {
             "from_atom_id": int,
             "to_atom_id": int,
+            "from_ref": "BBN-137",
+            "to_ref": "BBN-138",
             "relation_type": str,  -- 同 note_relate 的允許值
             "label": str,          -- 選填
             "confidence": float    -- 選填，預設 1.0
@@ -631,14 +650,29 @@ def register(mcp):
             for i, r in enumerate(relations):
                 from_id = r.get('from_atom_id')
                 to_id = r.get('to_atom_id')
+                from_ref = r.get('from_ref', '')
+                to_ref = r.get('to_ref', '')
                 rel_type = r.get('relation_type', '')
                 label = r.get('label', '')
                 confidence = r.get('confidence', 1.0)
 
+                if from_ref:
+                    atom = resolve_ref(s, from_ref)
+                    if not atom:
+                        results.append({'index': i, 'error': f'找不到來源卡片：{from_ref}'})
+                        continue
+                    from_id = atom.id
+                if to_ref:
+                    atom = resolve_ref(s, to_ref)
+                    if not atom:
+                        results.append({'index': i, 'error': f'找不到目標卡片：{to_ref}'})
+                        continue
+                    to_id = atom.id
+
                 if not from_id or not to_id or not rel_type:
                     results.append({
                         'index': i,
-                        'error': '缺少必要欄位 (from_atom_id, to_atom_id, relation_type)',
+                        'error': '缺少必要欄位 (from_ref/from_atom_id, to_ref/to_atom_id, relation_type)',
                     })
                     continue
 
