@@ -196,6 +196,28 @@ for r in s.execute(text("""SELECT turn_seq, to_char(timestamp,'MM-DD HH24:MI') t
 EOF
 ```
 
+## 前端：哪些檔案要 build、哪些直接載入
+
+`human_ui/static/js/` 下**同時存在兩種檔案**，改錯地方會出現「程式碼改了但畫面沒變」：
+
+| 路徑 | 載入方式 | 改完要做什麼 |
+|---|---|---|
+| `human_ui/static/js/*.js`（如 `whiteboard.js`、`whiteboard-card-editor.js`、`api.js`） | `<script src>` 直接載入 | 什麼都不用，強制重新整理即可 |
+| `human_ui/static/js/src/*.js`（如 `card-editor.js`、`structured-entry.js`、`slash-command.js`） | 打包進 `card-editor.bundle.js` | **必須 `npm run build`**，否則改動不會生效 |
+
+```bash
+cd /opt/BeakBroodNest && npm run build   # esbuild src/card-editor.js -> card-editor.bundle.js
+```
+
+`whiteboard.html` 兩種都載入（`card-editor.bundle.js` 在前、`whiteboard-card-editor.js` 在後），
+所以光看網頁原始碼分不出某段邏輯屬於哪一邊，要看檔案實際位置。
+
+### tiptap 的 `editable` 管不到 `;;物件` 的欄位
+
+`structured-entry.js` 的 NodeView 內部欄位是獨立 DOM，**不受 tiptap `editable: false` 控制**。
+把編輯器設成唯讀時，使用者照樣能在 `;;` 區塊打字，但變更要靠 `saveEditor()` 寫回、
+而那條路徑被唯讀擋掉 —— 畫面像存了，實際什麼都沒送出。詳見 BBN-31（atom 5094）。
+
 ## 服務重啟
 
 ```bash
