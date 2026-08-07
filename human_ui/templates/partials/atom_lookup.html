@@ -341,7 +341,9 @@ function atomLookup() {
         canvasHref() {
             // 帶 ?open=<id> 進白板，whiteboard.js init() 會自動 openCardEditor()
             // 編輯權限由 whiteboard-card-editor.js 的 editable 旗標控（非 ethan owner 開出來是 read-only）
-            return this.atom ? `/beakbroodnest/?open=${this.atom.id}` : '#';
+            if (!this.atom) return '#';
+            const suffix = window.BBN_EDIT_SOURCE === 'todos' ? '&from=todos' : '';
+            return `/beakbroodnest/?open=${this.atom.id}${suffix}`;
         },
 
         // 只有人類自己擁有的 atom 才顯示「在白板編輯」按鈕。

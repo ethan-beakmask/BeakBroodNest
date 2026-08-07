@@ -363,8 +363,9 @@ function whiteboardApp(canvasId) {
                 // ?open=<atom_id> 自動開啟卡片編輯器（行事曆等外部頁面跳轉用）
                 try {
                     var openId = parseInt(urlParams.get('open'), 10);
+                    var openFrom = urlParams.get('from') === 'todos' ? 'todos' : null;
                     if (!isNaN(openId) && typeof self0.openCardEditor === 'function') {
-                        self0.openCardEditor(openId);
+                        self0.openCardEditor(openId, openFrom);
                     }
                 } catch (e) { console.warn('open param failed', e); }
             });

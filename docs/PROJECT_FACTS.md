@@ -377,3 +377,23 @@ canvas_atoms / unified_relations，並把 `project_ref_counters` 的 `next_seq` 
 `status` 不在 `{completed, cancelled}` 的**全部** task entry，不論有無 `planned_start`。
 `/calendar` 是同一批資料中「有日期者」的視圖，不是另一個集合。
 `planned_start` 只是欄位與排序依據，不決定「算不算待辦」。
+
+### 卡片被人類改過的訊號：`updated_by` / `updated_via`（2026-08-07 起）
+
+`knowledge_atoms` 有兩個純紀錄欄位，**不參與任何權限判斷**（權限仍只看 `owner`）：
+
+| 欄位 | 值 | 意義 |
+|------|-----|------|
+| `updated_by` | `ethan` / `claude` | 最後一次**更新**是誰做的 |
+| `updated_via` | `ui` / `todos` / `mcp` | 從哪個入口做的 |
+
+- 建立時**不填**。`NULL` = 這張卡從未被更新過，或是 2026-08-07 migration 034 之前的舊更新
+- `ethan` + `todos` = 使用者是從 `/todos` 待辦頁點進去編輯的。使用者宣告他一律從那裡開卡編輯，
+  所以這個入口本身就是「人類要改這張卡」的意圖訊號（前端從 `?open=<id>&from=todos` 一路帶到
+  `PUT /api/atoms/<id>` 的 `edit_source`）
+- 讀卡（`note_get`）時看到 `updated_by='ethan'`，代表**卡片內容已被人改過**，不要拿記憶中的舊版本
+  當現況；特別是帶「沒回答」標籤的決策點卡，這是使用者已經回答的訊號
+- 寫入端共四條，改動任一條記得一起維護：`human_ui/routes/atoms.py::update_atom`、
+  `human_ui/routes/entries.py::sync_entries`、`human_ui/routes/beak_gantt.py`（子任務插入母卡
+  `content_json`）、`ai_kb/tools/knowledge.py::note_update`
+- `edit_source` 只認 `'todos'`，其他值一律當 `ui`，前端字串不會直接進 DB（DB 端另有 CHECK 兜底）

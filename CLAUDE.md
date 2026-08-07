@@ -92,6 +92,7 @@
 - **做法**：`note_task_create(tags=['沒回答'], urgency='L')`，content 要記：當時提了哪些選項、使用者選了什麼、哪幾項沒回答、以及日期
 - **解除**：使用者日後回答了 -> 要做就用 `note_update` 移除 `沒回答` 標籤留在待辦；不做就 `note_task_status(status='cancelled')`
 - `/todos` 頁面以灰色「待答」標籤標示，右上「待答」下拉可切換 全部 / 只看待答 / 隱藏待答
+- **讀卡時看 `updated_by`**：值為 `ethan` 代表使用者親手改過這張卡（`updated_via='todos'` = 從待辦頁編輯，那是他宣告的編輯入口），內容一律以卡上為準，不要沿用記憶或摘要裡的舊版本。細節與寫入端清單見 `docs/PROJECT_FACTS.md`
 
 ## 目錄結構
 ```

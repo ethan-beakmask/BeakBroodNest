@@ -142,6 +142,12 @@ class KnowledgeAtom(Base):
         String(100), default='ethan'
     )  # ethan, claude, agent:<task_id>, claude@<host>, tool:<name>
 
+    # 最後一次「更新」的身份與入口，純紀錄，不參與權限判斷。
+    # 建立時不填 -- NULL 表示這張卡建立後從未被更新過（或是 034 migration 之前的舊更新）。
+    # updated_via: ui（白板一般編輯）/ todos（人類從待辦頁進來編輯）/ mcp（AI 工具）
+    updated_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    updated_via: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
     # 敏感度標記（為 #3013 跨機同步 / #3014 匿名共享 預埋）
     sensitivity: Mapped[str] = mapped_column(
         String(20), default='internal'
@@ -206,6 +212,8 @@ class KnowledgeAtom(Base):
             'source': self.source,
             'source_detail': self.source_detail,
             'owner': self.owner,
+            'updated_by': self.updated_by,
+            'updated_via': self.updated_via,
             'sensitivity': self.sensitivity,
         }
         if include_tags:

@@ -268,6 +268,9 @@ def update_atom(atom_id):
         if 'title' in data or 'content' in data:
             atom.needs_embedding = True
 
+        atom.updated_by = 'ethan'
+        atom.updated_via = 'todos' if data.get('edit_source') == 'todos' else 'ui'
+
         s.flush()
         return jsonify(atom.to_dict(include_tags=True))
 

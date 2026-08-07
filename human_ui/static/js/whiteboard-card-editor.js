@@ -75,10 +75,12 @@ function whiteboardCardEditorMixin() {
             return 'display:grid; grid-template-columns:repeat(' + this.customLayoutCols + ',1fr); grid-template-rows:repeat(' + this.customLayoutRows + ',1fr);';
         },
 
-        async openCardEditor(atomId) {
+        async openCardEditor(atomId, editSource) {
+            var normalizedEditSource = editSource === 'todos' ? 'todos' : null;
             // 如果已開啟同一張，聚焦
             var existing = this.openEditors.find(e => e.atomId === atomId);
             if (existing) {
+                if (normalizedEditSource === 'todos') existing.editSource = 'todos';
                 this._focusEditor(existing.id);
                 return;
             }
@@ -124,6 +126,7 @@ function whiteboardCardEditorMixin() {
                 atomType: typeCfg.label || atom.atom_type,
                 isBlocked: isBlocked,
                 dirty: false,
+                editSource: normalizedEditSource,
                 // 待辦卡是人機共同介面（人類要能回答 AI 提的「沒回答」決策點），
                 // 所以 owner 不是 ethan 也放行；後端 update_atom 有對應的例外。
                 readonly: this.isSnapshot
@@ -540,6 +543,9 @@ function whiteboardCardEditorMixin() {
             var updatePayload = isPdfMedia
                 ? { title: title, content_json: json }
                 : { title: title, content: md, content_json: json };
+            if (ed.editSource === 'todos') {
+                updatePayload.edit_source = 'todos';
+            }
             var saveResp = await API.updateAtom(ed.atomId, updatePayload);
 
             // pending placement：首次儲存時才擺放到白板（位置為點擊新增卡片時記錄的滑鼠座標）

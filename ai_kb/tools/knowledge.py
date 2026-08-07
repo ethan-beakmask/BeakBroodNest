@@ -574,6 +574,9 @@ def register(mcp):
             if title or content or append_content:
                 atom.needs_embedding = True
 
+            atom.updated_by = 'claude'
+            atom.updated_via = 'mcp'
+
             s.flush()
 
             return json.dumps({

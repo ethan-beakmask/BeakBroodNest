@@ -217,7 +217,7 @@
                                 <td>
                                     <template x-if="it.source==='atom_entry'">
                                         <a class="todos-link"
-                                           :href="'/beakbroodnest/?open=' + it.atom_id"
+                                           :href="'/beakbroodnest/?open=' + it.atom_id + '&from=todos'"
                                            title="在白板開啟 tiptap 編輯器">開啟</a>
                                     </template>
                                     <template x-if="it.source==='standalone_entry'">
@@ -301,6 +301,8 @@
 </div>
 
 <script>
+window.BBN_EDIT_SOURCE = 'todos';
+
 function todosApp() {
     return {
         canvases: [],

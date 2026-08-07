@@ -332,6 +332,9 @@ def create_beak_gantt_task(slug):
             doc['content'] = content
             parent_atom.content_json = doc
             flag_modified(parent_atom, 'content_json')
+            # 甘特圖把子任務 entry 插進母卡的 content_json，也是人類對既有卡的內容變更
+            parent_atom.updated_by = 'ethan'
+            parent_atom.updated_via = 'ui'
 
             s.flush()
             return jsonify({

@@ -730,6 +730,15 @@ print('  ORM 結構同步完成（新表已建）')
             || log_warn "  白板 audience 欄位補丁失敗（AI 可能搜不到自己的白板內容）"
     fi
 
+    # 人類/AI 編輯歸屬欄位（knowledge_atoms.updated_by / updated_via）。
+    # 缺了不影響既有功能，但 AI 讀不到人類從待辦入口編輯卡片的訊號。
+    if [ -f "$INSTALL_DIR/migrations/034_atom_updated_by.up.sql" ]; then
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -f "$INSTALL_DIR/migrations/034_atom_updated_by.up.sql" -v ON_ERROR_STOP=1 -q \
+            && log_info "  原子 updated_by/updated_via 欄位補丁完成" \
+            || log_warn "  原子 updated_by/updated_via 欄位補丁失敗（AI 可能讀不到人類編輯訊號）"
+    fi
+
     # MCP 註冊（升級也要跑）：舊版安裝只寫過 /opt/.mcp.json，沒有 user scope，
     # 導致 /opt 以外的目錄看不到本 MCP；此處補齊並清掉 disabledMcpjsonServers 殘留
     register_mcp_servers

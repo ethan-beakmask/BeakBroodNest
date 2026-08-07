@@ -355,6 +355,10 @@ def sync_entries(atom_id):
             texts.append(e.raw_text)
         atom.content = '\n\n'.join(texts)
         atom.updated_at = datetime.datetime.now()
+        # 這條也會改寫 atom.content，不記歸屬的話人類的編輯會留在舊值上（多半是 claude）。
+        # 本 API 只有人類 UI 會呼叫，身份固定 ethan；edit_source 只認 'todos'，其餘一律 ui。
+        atom.updated_by = 'ethan'
+        atom.updated_via = 'todos' if data.get('edit_source') == 'todos' else 'ui'
 
         s.flush()
         return jsonify({
