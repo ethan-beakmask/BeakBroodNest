@@ -11,10 +11,17 @@ from core.db import session_scope
 from core.models import KnowledgeAtom, Tag, CanvasAtom, Canvas
 from core import relations as rel_service
 from core import embeddings as embed_service
+from core.task_service import get_task_entry
 from core.tiptap_node_id import backfill_missing_node_ids
 
 bp = Blueprint('atoms', __name__)
 logger = logging.getLogger('beak_broodnest')
+
+
+def is_task_atom(s, atom_id: int) -> bool:
+    """這張卡是不是待辦。待辦是人機共同介面，owner 唯讀鎖對它放行。"""
+    entry, _schema = get_task_entry(s, atom_id)
+    return entry is not None
 
 
 @bp.route('/api/atoms', methods=['GET'])
@@ -199,6 +206,10 @@ def get_atom(atom_id):
         result['is_blocked'] = len(blockers) > 0
         result['blockers'] = [{'id': b.id, 'title': b.title, 'lifecycle': b.lifecycle} for b in blockers]
 
+        # 待辦是人類與 AI 的共同介面，人類必須改得動 AI 建的待辦卡（例如回答
+        # 「沒回答」的決策點），因此前端據此放行 owner 唯讀鎖。見 update_atom()。
+        result['is_task'] = is_task_atom(s, atom_id)
+
         return jsonify(result)
 
 
@@ -216,8 +227,13 @@ def update_atom(atom_id):
         if not atom:
             return jsonify({'error': '卡片不存在'}), 404
 
-        # Owner 保護：UI 預設身份 ethan，非本人原子拒絕寫入
-        if atom.owner != 'ethan' and not data.get('force_owner_override'):
+        # Owner 保護：UI 預設身份 ethan，非本人原子拒絕寫入。
+        # 例外：待辦卡是人類與 AI 的共同介面 —— CLAUDE.md 的「未回答的決策點」規範
+        # 明確要求人類日後回答那些卡，而那些卡全是 AI 建的。互鎖若照舊擋，人類就
+        # 無法回答問過他的問題，也消不掉標題裡的 [沒回答] 前綴。
+        if (atom.owner != 'ethan'
+                and not data.get('force_owner_override')
+                and not is_task_atom(s, atom_id)):
             return jsonify({
                 'error': f'原子屬於 {atom.owner}，無法從 UI 修改。',
                 'owner': atom.owner,

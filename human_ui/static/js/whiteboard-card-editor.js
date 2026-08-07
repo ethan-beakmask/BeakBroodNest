@@ -124,7 +124,10 @@ function whiteboardCardEditorMixin() {
                 atomType: typeCfg.label || atom.atom_type,
                 isBlocked: isBlocked,
                 dirty: false,
-                readonly: this.isSnapshot || (atom.owner || 'ethan') !== 'ethan',
+                // 待辦卡是人機共同介面（人類要能回答 AI 提的「沒回答」決策點），
+                // 所以 owner 不是 ethan 也放行；後端 update_atom 有對應的例外。
+                readonly: this.isSnapshot
+                    || (!atom.is_task && (atom.owner || 'ethan') !== 'ethan'),
                 _contentJson: atom.content_json || null,
                 _content: atom.content || '',
                 _knownServerTs: atom.updated_at || '',
@@ -150,7 +153,7 @@ function whiteboardCardEditorMixin() {
                     content: atom.content || '',
                     onChange: function() { if (!initializing) self._markEditorDirty(editorId); },
                     onStateChange: function() { self._refreshToolbarState(editorId); },
-                    editable: (atom.owner || 'ethan') === 'ethan',
+                    editable: !!atom.is_task || (atom.owner || 'ethan') === 'ethan',
                 });
 
                 // content_json 是文件結構唯一真實來源（保留表格/清單等結構）；
