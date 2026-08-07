@@ -62,8 +62,9 @@
 
 - 隔離判準：**卡片出現的白板全都是 `human` → 排除**；只要它同時在任何一張 `ai` 或 `shared` 白板上就視為刻意分享，照樣回傳。不在任何白板上的卡（多半是對話存進來的正式知識）一律不隔離
 - `note_search` 與 `note_overview` 的最近活躍清單預設套用。要查使用者白板傳 `include_human_boards=True`；排除生效時回傳帶 `human_boards_hidden` 總數
-- 判定邏輯集中在 `core/visibility.py`，**不要另外用 `owner` 或標籤推測可見性**
+- 判定邏輯集中在 `core/visibility.py`，**不要另外用 `owner`、`source` 或標籤推測可見性**
 - `owner` 只代表建立者，且搬動或複製白板都不改變。它另外還兼寫入權限閘門（`note_update` 與 `human_ui/routes/atoms.py:220` 的雙向互鎖），再拿去做可見性判斷會把三個語意綁死
+- **`source='ai'` / `owner='claude'` 只反映建立途徑，不代表內容是 AI 產出。** 使用者常把 Claude 的回答與自己的提問貼進白板當筆記，那些卡照樣帶 AI 來源標記（實例見 atom 5091：四張白板上 27 張「AI 卡」其實是使用者的剪貼雜記）。判斷內容歸屬只能看使用者親手宣告的白板 `audience`
 - 不用 `lifecycle` 隔離：白板 API 只顯示 `active`/`aging`，把人類卡改成 `archived` 會讓卡片從使用者自己的白板上消失
 - 新白板預設值：MCP `canvas_create` 預設 `ai`、`project_setup` 固定 `ai`、人類 UI 建的預設 `human`（fail-closed）
 - 使用者可在白板「設定 → AI 可見性」自行切換三態
