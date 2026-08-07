@@ -174,11 +174,6 @@ function whiteboardCardEditorMixin() {
                     }
                 } catch (e) { /* no entries yet, use content as-is */ }
 
-                // 接收 NodeView 的 task action 事件（暫停/恢復/取消/重啟）
-                host.addEventListener('beak-task-action', function(ev) {
-                    self._handleTaskAction(editorId, atomId, ce, ev.detail);
-                });
-
                 // FindReplace extension 觸發的熱鍵事件（Ctrl+Shift+F / H）
                 host.addEventListener('ce:open-find', function() {
                     self.ceOpenFind(editorId);
@@ -433,46 +428,9 @@ function whiteboardCardEditorMixin() {
             if (ed) ed.dirty = true;
         },
 
-        // task action 派發：呼叫後端、把回傳的 fieldValues 寫回對應 NodeView，避免 stale UI
-        async _handleTaskAction(editorId, atomId, ce, detail) {
-            if (!detail || !detail.action) return;
-            try {
-                var resp = await API.taskAction(atomId, detail.action, detail.reason, 'card');
-                if (!resp || !resp.ok) {
-                    this.showToast('操作失敗：' + (resp && resp.error || '未知錯誤'), 'error');
-                    return;
-                }
-                // 把新的 field_values 寫回該 entry 對應 node
-                if (resp.field_values && ce && ce.editor) {
-                    var pos = typeof detail.getPos === 'function' ? detail.getPos() : null;
-                    if (pos != null) {
-                        var view = ce.editor.view;
-                        var node = view.state.doc.nodeAt(pos);
-                        if (node && node.type.name === 'structuredEntry') {
-                            view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, {
-                                ...node.attrs,
-                                fieldValues: { ...(node.attrs.fieldValues || {}), ...resp.field_values },
-                            }));
-                        }
-                    }
-                }
-                // 後端已寫 DB，本地 atom.updated_at 跟著推進；同步 ca cache + _knownServerTs
-                var ca = this.atoms && this.atoms.find(function(a) { return a.atom_id === atomId; });
-                if (ca && ca.atom) {
-                    ca.atom.updated_at = new Date().toISOString();
-                }
-                var ed = this.openEditors.find(function(e) { return e.id === editorId; });
-                if (ed) ed._knownServerTs = new Date().toISOString();
-                this.showToast('已 ' + this._taskActionLabel(detail.action), 'success');
-            } catch (err) {
-                console.error('task action failed:', err);
-                this.showToast('操作失敗：' + (err.message || err), 'error');
-            }
-        },
-
-        _taskActionLabel(a) {
-            return ({ pause: '暫停', resume: '恢復', cancel: '取消', reopen: '重啟' })[a] || a;
-        },
+        // 2026-08-07 移除 _handleTaskAction / _taskActionLabel：
+        // NodeView 的暫停/恢復/取消/重啟按鈕已拿掉，這條事件鏈沒有觸發端了。
+        // 後端 /task/action endpoint 與 API.taskAction 保留（gantt 與未來 UI 仍可用）。
 
         // 標題輸入框按 Enter 後將焦點移到內容編輯區開頭
         focusEditorContent(editorId) {

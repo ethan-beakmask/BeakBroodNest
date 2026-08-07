@@ -545,10 +545,11 @@ class StructuredEntryView {
             this.tagRow.appendChild(this.editBtn)
         }
 
-        // task 專屬 action 按鈕：暫停 / 恢復 / 取消 / 重啟
-        if ((this.node.attrs.schemaCode || '') === 'task') {
-            this._buildTaskActionButtons()
-        }
+        // 2026-08-07 移除 task 專屬 action 按鈕（暫停/恢復/取消/重啟）。
+        // 那組按鈕隨 status 變換內容、UI 上沒有任何說明，而使用者的狀態轉移一律
+        // 透過 AI 走 MCP note_task_status（那條路徑會順帶檢查關聯與影響再回報），
+        // 人類端從沒用過。後端 apply_action 與 /task/action endpoint 保留不動。
+        // 需要復原時見 git 紀錄（commit 41b06cd 引入）。
 
         // 刪除(freetext 不顯示;但實務 freetext 走 paragraph,structuredEntry 內不會出現)
         if ((this.node.attrs.schemaCode || 'freetext') !== 'freetext') {
@@ -562,51 +563,6 @@ class StructuredEntryView {
                 this._deleteEntry()
             })
             this.tagRow.appendChild(this.deleteBtn)
-        }
-    }
-
-    _buildTaskActionButtons() {
-        // 依目前 status 決定哪些動作可用，避免按下後端拒絕的無效操作
-        const fv = this.node.attrs.fieldValues || {}
-        const status = fv.status || 'planning'
-        const entryId = this.node.attrs.entryId
-        const actions = []
-        if (status === 'in_progress') {
-            actions.push({ key: 'pause', label: '暫停', title: '暫停此任務' })
-            actions.push({ key: 'cancel', label: '取消', title: '取消此任務' })
-        } else if (status === 'paused') {
-            actions.push({ key: 'resume', label: '恢復', title: '恢復進行中' })
-            actions.push({ key: 'cancel', label: '取消', title: '取消此任務' })
-        } else if (status === 'completed' || status === 'cancelled') {
-            actions.push({ key: 'reopen', label: '重啟', title: '重新開啟此任務' })
-        } else {
-            // planning：沒有 pause / reopen 可做；取消允許（直接放棄計畫中的任務）
-            actions.push({ key: 'cancel', label: '取消', title: '取消此計畫' })
-        }
-        for (const a of actions) {
-            const btn = document.createElement('button')
-            btn.type = 'button'
-            btn.className = 'se-task-action-btn se-task-action-' + a.key
-            btn.textContent = a.label
-            btn.title = a.title + (entryId ? '' : '（請先儲存卡片）')
-            btn.disabled = !entryId
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                if (!entryId) return
-                const reason = prompt(a.label + ' 原因（可空白）:', '') || ''
-                // 由 host (whiteboard-card-editor) 接手 API 呼叫 + 更新 node attrs
-                this.dom.dispatchEvent(new CustomEvent('beak-task-action', {
-                    detail: {
-                        action: a.key,
-                        reason: reason,
-                        entryId: entryId,
-                        getPos: () => this.getPos(),
-                    },
-                    bubbles: true,
-                }))
-            })
-            this.tagRow.appendChild(btn)
         }
     }
 

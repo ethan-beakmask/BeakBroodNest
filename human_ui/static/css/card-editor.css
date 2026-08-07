@@ -2219,24 +2219,8 @@ input[type="checkbox"].se-field-input {
     font-size: 11px;
     line-height: 1.5;
 }
-/* task action buttons in tag row */
-.se-task-action-btn {
-    margin-left: 4px;
-    padding: 1px 8px;
-    font-size: 11px;
-    line-height: 1.4;
-    background: #f1f5f9;
-    color: #334155;
-    border: 1px solid #cbd5e1;
-    border-radius: 3px;
-    cursor: pointer;
-}
-.se-task-action-btn:hover { background: #e2e8f0; color: #0f172a; }
-.se-task-action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.se-task-action-pause   { color: #b45309; border-color: #fed7aa; background: #fff7ed; }
-.se-task-action-resume  { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
-.se-task-action-cancel  { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
-.se-task-action-reopen  { color: #1d4ed8; border-color: #bfdbfe; background: #eff6ff; }
+/* task action buttons（暫停/恢復/取消/重啟）已於 2026-08-07 從 NodeView 移除，
+   對應樣式一併刪除。狀態轉移改由 MCP note_task_status 或 entry 的 [編輯] 進行。 */
 
 /* idcard 全展唯讀 */
 .se-idcard-readonly {

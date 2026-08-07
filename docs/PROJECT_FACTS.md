@@ -397,3 +397,19 @@ canvas_atoms / unified_relations，並把 `project_ref_counters` 的 `next_seq` 
   `human_ui/routes/entries.py::sync_entries`、`human_ui/routes/beak_gantt.py`（子任務插入母卡
   `content_json`）、`ai_kb/tools/knowledge.py::note_update`
 - `edit_source` 只認 `'todos'`，其他值一律當 `ui`，前端字串不會直接進 DB（DB 端另有 CHECK 兜底）
+
+### AI 無法登入 Web UI，前端的端對端驗證要請使用者操作
+
+`/beakbroodnest/*` 全站受 `app.before_request` 保護，登入是 form POST + DB 裡的
+`auth_password_hash`（`human_ui/app.py:174`），**明文密碼只有使用者知道**。三條看似可行的
+繞道全部走不通，不要再試一次：
+
+| 想法 | 為何不行 |
+|---|---|
+| JS 注入 session cookie | `SESSION_COOKIE_HTTPONLY = True`（`app.py:86`），JS 寫不進去 |
+| 直連 gunicorn 127.0.0.1:5171 | 一樣過 `before_request`，回 401 |
+| 改 DB 的 `auth_password_hash` 換成臨時密碼 | 動使用者的認證資料，還原失敗會把他鎖在外面，不做 |
+
+所以分工是：**後端邏輯用 `test_client` 自己驗到底**（含模擬前端會送的 payload），
+**純前端鏈路（DOM 事件、URL 參數、編輯器行為）請使用者點一次**，再回 DB 查結果確認。
+`test_client` 灌 session 的寫法見本文件前面「API 測試」一節，那條路徑不受上述限制。
