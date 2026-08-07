@@ -15,6 +15,7 @@ from core.models import (
 from core import relations as rel_service
 from core import consistency as consistency_service
 from core import embeddings as embed_service
+from core import visibility
 from core.ref_code import resolve_ref
 
 logger = logging.getLogger('beak_broodnest.mcp')
@@ -136,6 +137,7 @@ def register(mcp):
         search_mode: str = 'keyword',
         sort: str = '',
         scope: str = 'default',
+        include_human_boards: bool = False,
     ) -> str:
         """搜尋知識庫中的原子。
 
@@ -159,6 +161,13 @@ def register(mcp):
         scope: 搜尋範圍
           default -- 僅搜尋 active + aging（預設，減少噪音）
           full    -- 搜尋全部生命週期（含 archived/terminal）
+        include_human_boards: 是否納入使用者自用白板上的內容（預設 False）
+
+        白板分成 human / ai / shared 三種受眾。只出現在 human 白板上的卡片是
+        使用者的草稿與想法，預設一律排除，避免被當成知識引用；卡片只要同時放在
+        ai 或 shared 白板上就視為刻意分享，照樣會回傳。要查使用者白板的內容，
+        把 include_human_boards 設為 True。排除生效時回傳會多一個
+        human_boards_hidden，數字是被隔離的卡片總數（不是本次查詢的命中數）。
 
         tag 與 tags 同時提供時,tag 會併入 tags 一起做 AND 篩選。
         semantic/hybrid 模式需要 query 非空,否則自動退回 keyword 模式。
@@ -185,6 +194,8 @@ def register(mcp):
             all_tags = list(tags) if tags else []
             if tag and tag not in all_tags:
                 all_tags.append(tag)
+
+            exclude_human_boards = visibility.should_exclude(include_human_boards)
 
             tag_filtered_ids = None
             if all_tags:
@@ -244,6 +255,11 @@ def register(mcp):
                     q = q.filter(KnowledgeAtom.schema_id == schema_id)
                 if tag_filtered_ids is not None:
                     q = q.filter(KnowledgeAtom.id.in_(tag_filtered_ids))
+                if exclude_human_boards:
+                    q = q.filter(
+                        sa_text(visibility.sql_condition('knowledge_atoms'))
+                        .bindparams(**visibility.bind_params())
+                    )
                 return q
 
             def _keyword_search():
@@ -332,6 +348,9 @@ def register(mcp):
                 if tag_filtered_ids is not None:
                     conditions.append("a.id = ANY(:tag_ids)")
                     params['tag_ids'] = tag_filtered_ids
+                if exclude_human_boards:
+                    conditions.append(visibility.sql_condition('a'))
+                    params.update(visibility.bind_params())
 
                 where_sql = " AND ".join(conditions)
 
@@ -417,12 +436,15 @@ def register(mcp):
                         seen_ids.add(item['id'])
                 results = merged[:limit]
 
-            return json.dumps({
+            payload = {
                 'total': len(results),
                 'returned': len(results),
                 'search_mode': search_mode,
                 'items': results,
-            }, ensure_ascii=False)
+            }
+            if exclude_human_boards:
+                payload['human_boards_hidden'] = visibility.count_hidden(s, lifecycle, scope)
+            return json.dumps(payload, ensure_ascii=False)
 
     @mcp.tool()
     def note_get(atom_id: int) -> str:

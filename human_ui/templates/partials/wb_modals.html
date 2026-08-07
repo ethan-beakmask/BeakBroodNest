@@ -1244,6 +1244,24 @@
                             </div>
 
                             <div class="form-group" style="margin-top:16px;">
+                                <label style="font-size:12px;font-weight:600;">AI 可見性</label>
+                                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">
+                                    決定 AI 搜尋知識庫時讀不讀這張白板上的卡片。卡片同時放在多張白板時，只要有一張開放就讀得到
+                                </div>
+                                <div style="display:flex;gap:16px;margin-top:6px;">
+                                    <template x-for="opt in canvasAudienceOptions" :key="'aud-'+opt.value">
+                                        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                                            <input type="radio" name="canvasAudience"
+                                                   :checked="canvas && canvas.audience === opt.value"
+                                                   @change="setCanvasAudience(opt.value)">
+                                            <span x-text="opt.label"></span><span
+                                                style="color:var(--text-muted);font-size:11px;" x-text="opt.hint"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <div class="form-group" style="margin-top:16px;">
                                 <label style="font-size:12px;font-weight:600;">白板標籤</label>
                                 <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">點擊切換歸屬；側邊欄「其他白板」會用這些標籤過濾</div>
                                 <div style="display:flex;flex-wrap:wrap;gap:4px;">

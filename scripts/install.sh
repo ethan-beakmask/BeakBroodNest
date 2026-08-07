@@ -720,6 +720,16 @@ print('  ORM 結構同步完成（新表已建）')
         fi
     fi
 
+    # 白板 AI 可見性欄位（canvases.audience）：drift 修復只會補出 nullable 無預設的欄位，
+    # 留 NULL 會讓所有白板被當成使用者自用，AI 連自己的待辦白板都搜不到。
+    # 此檔冪等補上 default / backfill / NOT NULL / CHECK，確保最終狀態一致。
+    if [ -f "$INSTALL_DIR/migrations/033_canvas_audience.up.sql" ]; then
+        PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+            -f "$INSTALL_DIR/migrations/033_canvas_audience.up.sql" -v ON_ERROR_STOP=1 -q \
+            && log_info "  白板 audience 欄位補丁完成" \
+            || log_warn "  白板 audience 欄位補丁失敗（AI 可能搜不到自己的白板內容）"
+    fi
+
     # MCP 註冊（升級也要跑）：舊版安裝只寫過 /opt/.mcp.json，沒有 user scope，
     # 導致 /opt 以外的目錄看不到本 MCP；此處補齊並清掉 disabledMcpjsonServers 殘留
     register_mcp_servers

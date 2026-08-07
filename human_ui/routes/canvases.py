@@ -242,12 +242,17 @@ def create_canvas():
     if not data or 'name' not in data:
         return jsonify({'error': '需要 name 欄位'}), 400
 
+    audience = data.get('audience', 'human')
+    if audience not in ('human', 'ai', 'shared'):
+        return jsonify({'error': f'無效的 audience: {audience}'}), 400
+
     with session_scope() as s:
         canvas = Canvas(
             name=data['name'],
             description=data.get('description', ''),
             canvas_type=data.get('canvas_type', 'whiteboard'),
             owner=data.get('owner', 'ethan'),
+            audience=audience,
         )
         s.add(canvas)
         s.flush()
@@ -696,8 +701,11 @@ def update_canvas(slug):
         if data.get('is_archived') and not canvas.is_archived:
             canvas.snapshot = _build_canvas_snapshot(s, canvas.id)
 
+        if 'audience' in data and data['audience'] not in ('human', 'ai', 'shared'):
+            return jsonify({'error': f"無效的 audience: {data['audience']}"}), 400
+
         for field in ('name', 'description', 'canvas_type', 'owner', 'is_archived',
-                       'is_project',
+                       'is_project', 'audience',
                        'viewport_x', 'viewport_y', 'viewport_zoom', 'settings'):
             if field in data:
                 setattr(canvas, field, data[field])

@@ -364,6 +364,9 @@ class Canvas(Base):
     code: Mapped[str | None] = mapped_column(
         String(8), nullable=True
     )  # 專案短前綴，供卡片短代號使用（如 BBN）
+    audience: Mapped[str] = mapped_column(
+        String(10), nullable=False, default='human'
+    )  # human=使用者自用(AI 預設不讀) / ai=AI 工作區 / shared=雙方共用
     snapshot: Mapped[dict | None] = mapped_column(
         JSONB, nullable=True
     )  # 歸檔時凍結的完整白板快照（原子內容、連線、群組）
@@ -409,6 +412,7 @@ class Canvas(Base):
             'is_project': self.is_project,
             'project_path': self.project_path,
             'code': self.code,
+            'audience': self.audience,
             'viewport_x': self.viewport_x,
             'viewport_y': self.viewport_y,
             'viewport_zoom': self.viewport_zoom,

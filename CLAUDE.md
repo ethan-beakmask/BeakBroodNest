@@ -50,6 +50,26 @@
 - 建立因果關係 -> `note_relate`（blocks/follows/supports 等）
 - 不要重複儲存已存在的知識，先 `note_search` 確認
 
+## 白板人機分離（2026-08-07 起）
+白板分成兩套，AI 只動自己那套：
+
+- **人類白板**：`audience='human'`，名稱慣例加 `👤 ` 前綴，`project_path` 與 `code` 皆為 NULL。使用者在上面隨手記錄、隨意拉線，**AI 不得寫入、不得搬動卡片位置、不得改名**
+- **AI 白板**：`audience='ai'`，名稱無前綴、`owner='claude'`，持有 `project_path` 與 `code`。BBN=canvas 71、PF=canvas 72
+- 專案關聯**只認 `canvases.project_path`**（`project_tasks` 走最長前綴匹配），與白板名稱無關。改名不會改變任何關聯
+
+### AI 可見性（`canvases.audience` 三態）
+`human`（使用者自用，AI 預設不讀）/ `ai`（AI 工作區）/ `shared`（雙方共用，AI 會讀）。
+
+- 隔離判準：**卡片出現的白板全都是 `human` → 排除**；只要它同時在任何一張 `ai` 或 `shared` 白板上就視為刻意分享，照樣回傳。不在任何白板上的卡（多半是對話存進來的正式知識）一律不隔離
+- `note_search` 與 `note_overview` 的最近活躍清單預設套用。要查使用者白板傳 `include_human_boards=True`；排除生效時回傳帶 `human_boards_hidden` 總數
+- 判定邏輯集中在 `core/visibility.py`，**不要另外用 `owner` 或標籤推測可見性**
+- `owner` 只代表建立者，且搬動或複製白板都不改變。它另外還兼寫入權限閘門（`note_update` 與 `human_ui/routes/atoms.py:220` 的雙向互鎖），再拿去做可見性判斷會把三個語意綁死
+- 不用 `lifecycle` 隔離：白板 API 只顯示 `active`/`aging`，把人類卡改成 `archived` 會讓卡片從使用者自己的白板上消失
+- 新白板預設值：MCP `canvas_create` 預設 `ai`、`project_setup` 固定 `ai`、人類 UI 建的預設 `human`（fail-closed）
+- 使用者可在白板「設定 → AI 可見性」自行切換三態
+- **`shared` 只解除讀取隔離，不解除人機分離**：AI 讀得到，但使用者的卡仍不得改內容、不得搬位置、不得改白板名稱（`note_update` 的 owner 互鎖照舊擋）。改 audience 也不會建立專案關聯，那只認 `project_path`
+- 新專案要收待辦時，`project_setup` 建的是 AI 白板，**名稱不要加 icon 前綴**
+
 ## 待辦與任務
 - 建立待辦一律用 `note_task_create`，禁止再用 `note_store` 搭配 `[待辦]` 標題前綴或 `待辦` 標籤的舊寫法。舊寫法建出來的卡不會出現在 `/todos`，人類看不到
 - 待辦的權威清單是 `/todos` 頁面與 `project_tasks(cwd=...)`，兩者同源

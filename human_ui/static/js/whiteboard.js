@@ -1724,6 +1724,20 @@ function whiteboardApp(canvasId) {
             this.showToast(flag ? '已設為專案白板' : '已設為自由白板', 'success');
         },
 
+        canvasAudienceOptions: [
+            { value: 'human', label: '自用', hint: '（AI 不讀，草稿與想法）' },
+            { value: 'shared', label: '共用', hint: '（AI 會讀）' },
+            { value: 'ai', label: 'AI 工作區', hint: '（AI 的待辦與專案卡）' },
+        ],
+
+        async setCanvasAudience(value) {
+            if (!this.canvas) return;
+            await API.updateCanvas(this.canvasId, { audience: value });
+            this.canvas.audience = value;
+            const label = (this.canvasAudienceOptions.find(o => o.value === value) || {}).label || value;
+            this.showToast('AI 可見性已設為「' + label + '」', 'success');
+        },
+
         async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/beakbroodnest/canvas/' + c.slug; },
 
         async deleteCanvas(slug) {

@@ -108,7 +108,9 @@ grep 'status=' /opt/tmp/scripts-nightly_pipeline.log | tail -3
 
 ## Schema migration 慣例
 
-**沒有自動 runner。** `human_ui/app.py:92` 的 `_migrations_done` 只呼叫 `ensure_canvas_slugs()`，不會掃 `migrations/` 目錄；`scripts/install.sh` 也不引用該目錄（它另走「Schema 補丁」路徑，跑的是 `scripts/init_*.sql` 那批 `CREATE TABLE IF NOT EXISTS`）。
+**沒有自動 runner。** `human_ui/app.py:92` 的 `_migrations_done` 只呼叫 `ensure_canvas_slugs()`，不會掃 `migrations/` 目錄；`scripts/install.sh` 也不通掃該目錄（它另走「Schema 補丁」路徑，跑的是 `scripts/init_*.sql` 那批 `CREATE TABLE IF NOT EXISTS`）。
+
+**唯一例外是 `033_canvas_audience.up.sql`**，install.sh 有單獨一段執行它。原因：`check_schema_drift.py --apply` 補欄位只會補成 nullable 無預設，`canvases.audience` 留 NULL 會讓所有白板被判定成使用者自用，AI 連自己的待辦白板都搜不到。要加同類「必須有 default/NOT NULL/CHECK」的欄位時，比照辦理另外掛一段。
 
 `migrations/NNN_名稱.up.sql` / `.down.sql` 是**人工撰寫、人工套用**的。慣例（照 `031_turn_evaluations.up.sql`）：
 
@@ -202,6 +204,51 @@ sudo systemctl restart beakbroodnest.service && systemctl is-active beakbroodnes
 
 改動 `human_ui/` 下的 Python 需重啟才生效；只改 `static/` 或 `templates/` 通常不必，但瀏覽器要強制重新整理。
 
+### 改了 `ai_kb/` 或 `core/`：gunicorn 重啟救不了 MCP
+
+**MCP server 不是常駐服務，systemctl 管不到它。** 每個 Claude Code session 啟動時各自
+spawn 一個子進程（`ps -ef | grep mcp_server.py` 會看到多個，parent 各是不同的 claude 進程），
+程式碼在啟動當下就載入定型。
+
+所以改了 `ai_kb/tools/*.py` 或它們 import 的 `core/*.py` 之後：
+
+- **當前 session 的 MCP 工具仍是舊版**，怎麼重啟 gunicorn 都一樣
+- 要生效只能**開新的 Claude Code session**（其他人正在跑的 session 也各自維持舊版，直到他們重開）
+- 想在當前 session 立刻驗證新邏輯，用 FakeMCP 旁路直接呼叫函式（本檔「待辦系統」段有範例），
+  那是直接 import 檔案，拿得到最新程式碼
+
+沒有安裝步驟：`/opt/.mcp.json` 與 `~/.claude.json` 指的就是 repo 裡的
+`/opt/BeakBroodNest/ai_kb/mcp_server.py`，改完不必重跑 `install.sh`、不必重新註冊。
+
+## 白板 AI 可見性（2026-08-07 起）
+
+`canvases.audience` 三態決定 AI 搜尋時讀不讀白板上的卡片：`human`（使用者自用，
+預設不讀）/ `ai` / `shared`。判定集中在 `core/visibility.py`，`note_search` 與
+`note_overview` 預設套用。
+
+- 隔離條件是**卡片出現的白板全都是 `human`**；同時放在任何一張 `ai`/`shared` 白板上就讀得到。不在任何白板上的 atom 一律不隔離
+- 要查使用者白板：`note_search(..., include_human_boards=True)`
+- **不要用 `owner` 或標籤推測可見性**。`atom.owner` 是建立者兼寫入權限閘門（`note_update` 擋非 claude、`human_ui/routes/atoms.py:220` 擋非 ethan），不是受眾
+- 白板 UI 可自行切換：設定 → AI 可見性
+
+`shared` 的邊界（改 audience 前先看清楚）：
+
+- **只解除讀取隔離，不等於解除人機分離。** `shared` 白板上使用者的卡，AI 仍然不得改內容、不得搬位置、不得改白板名稱；`note_update` 的 owner 互鎖也照舊擋（要改得 `force_owner_override=True`，那需要使用者明示）
+- **不會建立專案關聯。** 專案關聯只認 `project_path`，改 audience 不會讓白板變成專案待辦白板，`project_tasks` 也不會因此撈到它
+- 名稱前綴是給人看的慣例，與 audience 無關；使用者的白板改成 `shared` 後仍保留 `👤 ` 前綴
+
+### `note_get` 只吃 atom id，不吃短代號
+
+`note_get(atom_id: int)` 直接比對 `KnowledgeAtom.id`，傳 `'BBN-23'` 不會解析。
+接受短代號的是 `note_task_*` 系列（走 `core/ref_code.resolve_ref()`，大小寫不敏感）。
+手上只有短代號要看完整內容時，先 `note_search(query='BBN-23')` 或查
+`SELECT id FROM knowledge_atoms WHERE ref_code='BBN-23'` 取得 atom id。
+
+### 操作 canvas_atoms / 群組時的兩個地雷
+
+- `canvas_group_members` 的欄位是 **`canvas_atom_id`**（指 `canvas_atoms.id`），不是 `atom_id`。直接寫 `WHERE atom_id=...` 會報 UndefinedColumn
+- `canvas_atoms` 的 `z_index`、`visual_style` 是 NOT NULL 但**沒有 DB 層 default**（default 在 ORM），裸 `INSERT INTO canvas_atoms (canvas_id, atom_id, pos_x, pos_y)` 必定 NotNullViolation。**用 ORM 的 `CanvasAtom(...)` 建立**，或自己補齊欄位
+
 ## 待辦系統（2026-08-02 起）
 
 ### 卡片內容的真實來源是 entries，不是 `atom.content`
@@ -223,8 +270,13 @@ sudo systemctl restart beakbroodnest.service && systemctl is-active beakbroodnes
 
 | 專案 | 白板 id | slug | code |
 |------|---------|------|------|
-| BeakBroodNest | 24 | Ghyy2Acy | `BBN` |
-| BeakPlatform | 29 | tMU_fnXu | `PF` |
+| BeakBroodNest | **71** | `5FwdAE1l` | `BBN` |
+| BeakPlatform | **72** | `2a_YbjqA` | `PF` |
+
+**2026-08-07 人機分離換過白板**：舊的 24（`Ghyy2Acy`）與 29（`tMU_fnXu`）已改名為
+`👤 BeakBroodNest` / `👤 BeakPlatform`，清掉 `code` 與 `project_path`，成為使用者自用白板。
+看到舊 id 或舊 slug 的資料一律是分離前的舊紀錄。`ref_code` 存在
+`knowledge_atoms.ref_code`，`resolve_ref()` 不經白板，所以搬白板不影響短代號解析。
 
 短代號格式 `BBN-137`，發號唯一入口是 `core/ref_code.py` 的 `assign_ref_code()`
 （底層走 DB 函式 `next_ref_code()` + `project_ref_counters` 計數表，併發安全）。

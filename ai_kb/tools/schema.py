@@ -3,7 +3,7 @@
 import json
 import logging
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import joinedload
 
 from core.db import session_scope
@@ -12,6 +12,7 @@ from core.models import (
     AtomSchema, SchemaField,
 )
 from core import relations as rel_service
+from core import visibility
 
 logger = logging.getLogger('beak_broodnest.mcp')
 
@@ -151,8 +152,14 @@ def register(mcp):
 
             total = base.count()
 
+            # 最近活躍清單排除使用者自用白板的內容，避免每次對話開場就被草稿佔滿；
+            # 上面的各項計數維持全量，概覽本來就該反映知識庫全貌。
             recent = (
                 base.order_by(KnowledgeAtom.updated_at.desc())
+                .filter(
+                    text(visibility.sql_condition('knowledge_atoms'))
+                    .bindparams(**visibility.bind_params())
+                )
                 .limit(10)
                 .all()
             )

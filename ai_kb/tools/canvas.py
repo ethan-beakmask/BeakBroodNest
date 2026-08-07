@@ -36,15 +36,24 @@ def register(mcp):
         description: str = '',
         canvas_type: str = 'whiteboard',
         owner: str = 'claude',
+        audience: str = 'ai',
     ) -> str:
         """建立新畫布。
 
         canvas_type: whiteboard / mindmap / flowchart / cornell / template
         owner: 擁有者 (ethan/claude/agent:xxx)，預設 claude
+        audience: 受眾，決定 AI 搜尋時讀不讀這張白板上的卡片
+          ai     -- AI 工作區（預設，AI 自己建的白板）
+          shared -- 雙方共用
+          human  -- 使用者自用，AI 預設不讀；名稱慣例加 👤 前綴
+
+        AI 不要建 audience='human' 的白板，那是使用者自己的空間。
         """
         valid_types = ('whiteboard', 'mindmap', 'flowchart', 'cornell', 'template')
         if canvas_type not in valid_types:
             return json.dumps({'error': f'無效的 canvas_type: {canvas_type}'})
+        if audience not in ('human', 'ai', 'shared'):
+            return json.dumps({'error': f'無效的 audience: {audience}'}, ensure_ascii=False)
 
         with session_scope() as s:
             canvas = Canvas(
@@ -52,6 +61,7 @@ def register(mcp):
                 description=description,
                 canvas_type=canvas_type,
                 owner=owner,
+                audience=audience,
             )
             s.add(canvas)
             s.flush()
@@ -60,6 +70,7 @@ def register(mcp):
                 'slug': canvas.slug,
                 'name': canvas.name,
                 'canvas_type': canvas.canvas_type,
+                'audience': canvas.audience,
                 'message': f'畫布已建立 (id={canvas.id}, slug={canvas.slug})',
             }, ensure_ascii=False)
 

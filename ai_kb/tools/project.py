@@ -86,6 +86,7 @@ def register(mcp):
                     is_project=True,
                     canvas_type='whiteboard',
                     owner='claude',
+                    audience='ai',
                 )
                 s.add(canvas)
                 s.flush()
