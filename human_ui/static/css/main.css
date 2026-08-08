@@ -121,7 +121,11 @@ body {
     font-size: 12px; font-weight: 700; border-radius: 4px; flex-shrink: 0;
 }
 
-.sidebar-item .icon-wb { background: #dbeafe; color: #2563eb; }
+/* 白板受眾圖示（2026-08-08 起，取代原本每張白板都一樣、分不出任何東西的 W 佔位）。
+   底色與 whiteboard.css 的 .aud-badge 三態同一組色，讓側欄與 header 看起來是同一套語言。 */
+.sidebar-item .icon-aud-human  { background: #f1f5f9; color: #475569; font-size: 13px; }
+.sidebar-item .icon-aud-ai     { background: #eff6ff; color: #1d4ed8; font-size: 13px; }
+.sidebar-item .icon-aud-shared { background: #f0fdf4; color: #166534; font-size: 13px; }
 
 /* ---- Buttons ---- */
 .btn {

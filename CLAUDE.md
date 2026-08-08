@@ -53,8 +53,9 @@
 ## 白板人機分離（2026-08-07 起）
 白板分成兩套，AI 只動自己那套：
 
-- **人類白板**：`audience='human'`，名稱慣例加 `👤 ` 前綴，`project_path` 與 `code` 皆為 NULL。使用者在上面隨手記錄、隨意拉線，**AI 不得寫入、不得搬動卡片位置、不得改名**
-- **AI 白板**：`audience='ai'`，名稱無前綴、`owner='claude'`，持有 `project_path` 與 `code`。BBN=canvas 71、PF=canvas 72
+- **人類白板**：`audience='human'`，`project_path` 與 `code` 皆為 NULL。使用者在上面隨手記錄、隨意拉線，**AI 不得寫入、不得搬動卡片位置、不得改名**
+- **AI 白板**：`audience='ai'`，`owner='claude'`，持有 `project_path` 與 `code`。BBN=canvas 71、PF=canvas 72
+- **名稱不帶任何受眾前綴**（2026-08-08 起，29 張人類白板的 `👤 ` 前綴已由使用者授權移除）。受眾改由 UI 顯示：側欄清單每項的圖示（人形／機器人／雙人）與 header 的文字徽章都直接讀 `audience` 欄位算出來，不會漏也不必手動維護。**不要再建議使用者加前綴，也不要用名稱猜受眾**
 - 專案關聯**只認 `canvases.project_path`**（`project_tasks` 走最長前綴匹配），與白板名稱無關。改名不會改變任何關聯
 
 ### AI 可見性（`canvases.audience` 三態）

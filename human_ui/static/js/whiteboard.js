@@ -146,6 +146,7 @@ function whiteboardApp(canvasId) {
         newAtom: { title: '', content: '', atom_type: 'A' },
         newAtomPos: { x: 100, y: 100 },
         newCanvasName: '',
+        newCanvasAudience: 'human',
         newTagName: '',
         newTagColor: '#6b7280',
         tagSourceFilter: 'human',  // 'human' | 'ai' | 'all'，預設只看自己建立的
@@ -1739,7 +1740,30 @@ function whiteboardApp(canvasId) {
             this.showToast('AI 可見性已設為「' + label + '」', 'success');
         },
 
-        async createCanvas() { if (!this.newCanvasName.trim()) return; const c = await API.createCanvas({ name: this.newCanvasName.trim() }); window.location.href = '/beakbroodnest/canvas/' + c.slug; },
+        // 白板受眾（audience）顯示用：三態各自的短標籤與說明
+        audienceLabel(a) {
+            return ({ human: '人類', ai: 'AI', shared: '共用' })[a] || '人類';
+        },
+        // 白板受眾圖示：側欄清單靠它一眼分辨這張白板是誰的（取代原本每張都一樣的 W 佔位）
+        audienceIcon(a) {
+            return ({ human: '\u{1F464}', ai: '\u{1F916}', shared: '\u{1F465}' })[a] || '\u{1F464}';
+        },
+        audienceTitle(a) {
+            return ({
+                human: '人類白板：只有你使用，AI 不會讀取這裡的內容',
+                ai: 'AI 白板：AI 的工作區（專案待辦），AI 會讀寫',
+                shared: '共用白板：你與 AI 都會使用，AI 會讀取內容',
+            })[a] || '人類白板：只有你使用，AI 不會讀取這裡的內容';
+        },
+
+        async createCanvas() {
+            if (!this.newCanvasName.trim()) return;
+            const c = await API.createCanvas({
+                name: this.newCanvasName.trim(),
+                audience: this.newCanvasAudience || 'human',
+            });
+            window.location.href = '/beakbroodnest/canvas/' + c.slug;
+        },
 
         async deleteCanvas(slug) {
             if (this.canvases.length <= 1) return;

@@ -2031,3 +2031,18 @@
     background: #dbeafe !important;
 }
 
+/* 白板受眾徽章（human / ai / shared）-- 讓人類一眼看出這張白板 AI 讀不讀 */
+.aud-badge {
+    display: inline-block;
+    font-size: 10px;
+    line-height: 1.4;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.aud-human  { color: #475569; background: #f1f5f9; border-color: #cbd5e1; }
+.aud-ai     { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.aud-shared { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }

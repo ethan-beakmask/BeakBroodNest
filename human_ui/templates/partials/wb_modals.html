@@ -560,6 +560,32 @@
                         <input class="form-control" x-model="newCanvasName" placeholder="輸入名稱..."
                                @keydown.enter="createCanvas()">
                     </div>
+                    <div class="form-group">
+                        <label>這張白板給誰用</label>
+                        <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">
+                            <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;font-weight:normal;">
+                                <input type="radio" value="human" x-model="newCanvasAudience" style="margin-top:3px;">
+                                <span>
+                                    <span class="aud-badge aud-human">人類</span>
+                                    <span style="font-size:12px;color:var(--text-muted);">只有你使用，AI 不會讀取這裡的內容</span>
+                                </span>
+                            </label>
+                            <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;font-weight:normal;">
+                                <input type="radio" value="shared" x-model="newCanvasAudience" style="margin-top:3px;">
+                                <span>
+                                    <span class="aud-badge aud-shared">共用</span>
+                                    <span style="font-size:12px;color:var(--text-muted);">你與 AI 都會使用，AI 會讀取內容</span>
+                                </span>
+                            </label>
+                            <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;font-weight:normal;">
+                                <input type="radio" value="ai" x-model="newCanvasAudience" style="margin-top:3px;">
+                                <span>
+                                    <span class="aud-badge aud-ai">AI</span>
+                                    <span style="font-size:12px;color:var(--text-muted);">AI 的工作區，AI 會讀寫</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" @click="showNewCanvasModal=false">取消</button>

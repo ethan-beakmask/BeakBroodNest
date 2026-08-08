@@ -224,7 +224,30 @@ cd /opt/BeakBroodNest && npm run build   # esbuild src/card-editor.js -> card-ed
 sudo systemctl restart beakbroodnest.service && systemctl is-active beakbroodnest.service
 ```
 
-改動 `human_ui/` 下的 Python 需重啟才生效；只改 `static/` 或 `templates/` 通常不必，但瀏覽器要強制重新整理。
+| 改了什麼 | 要做什麼 |
+|---|---|
+| `human_ui/` 下的 Python | 重啟服務 |
+| `templates/`（Jinja） | **重啟服務** — 模板由 gunicorn 進程持有，不重啟永遠是舊版 |
+| `static/`（CSS/JS） | 不用重啟，瀏覽器強制重新整理即可 |
+
+**模板那條踩過**（2026-08-08）：改了模板、只叫使用者強制刷新，結果他兩個瀏覽器重載多次
+看到的都是舊模板配新 CSS 的殘缺畫面（舊 class 名還在、新樣式套不上），一度以為是快取問題。
+症狀特徵是「HTML 結構是舊的、樣式是新的」。
+
+改完模板要驗證伺服器實際吐出什麼，不必等使用者回報：
+
+```bash
+cd /opt/BeakBroodNest && venv/bin/python - <<'EOF'
+from human_ui.app import app
+c = app.test_client()
+with c.session_transaction() as s:
+    s['authenticated'] = True; s['username'] = 'test'
+html = c.get('/beakbroodnest/canvas/<slug>').get_data(as_text=True)
+print(html.count('你新加的 class 或字串'))
+EOF
+```
+
+這條路徑拿得到 Jinja 渲染後的 HTML（Alpine 執行前），足以確認模板版本是否更新。
 
 ### 改了 `ai_kb/` 或 `core/`：gunicorn 重啟救不了 MCP
 

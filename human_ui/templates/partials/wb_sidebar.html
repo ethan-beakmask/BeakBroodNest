@@ -11,7 +11,9 @@
                     <a :href="'/beakbroodnest/canvas/' + c.slug"
                        class="sidebar-item"
                        :class="{ active: c.slug == canvasId }">
-                        <span class="icon icon-wb">W</span>
+                        <span class="icon" :class="'icon-aud-' + (c.audience || 'human')"
+                              :title="audienceTitle(c.audience || 'human')"
+                              x-text="audienceIcon(c.audience || 'human')"></span>
                         <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
                         <button class="btn-ghost" style="padding:2px 4px; font-size:11px; opacity:0.5;"
                                 @click.prevent.stop="if(confirm('刪除此白板?')) deleteCanvas(c.slug)"
@@ -59,7 +61,9 @@
                                class="sidebar-item"
                                style="border-radius:0;"
                                :class="{ active: c.slug == canvasId }">
-                                <span class="icon icon-wb">W</span>
+                                <span class="icon" :class="'icon-aud-' + (c.audience || 'human')"
+                                      :title="audienceTitle(c.audience || 'human')"
+                                      x-text="audienceIcon(c.audience || 'human')"></span>
                                 <span x-text="c.name" style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
                             </a>
                         </template>

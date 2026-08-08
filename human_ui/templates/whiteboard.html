@@ -43,6 +43,10 @@
             <button class="btn-ghost btn-sm" style="font-size:12px;" @click="settingsCanvasName = canvas ? canvas.name : ''; showUISettingsModal=true">設定</button>
             <a href="/beakbroodnest/help" target="_blank" class="btn-ghost btn-sm" title="Help" style="font-size:12px;">?</a>
             <a href="/beakbroodnest/logout" class="btn-ghost btn-sm" title="Logout" style="font-size:12px;">Logout</a>
+            <span x-show="canvas" class="aud-badge"
+                  :class="'aud-' + (canvas ? canvas.audience : 'human')"
+                  :title="audienceTitle(canvas ? canvas.audience : 'human')"
+                  x-text="audienceLabel(canvas ? canvas.audience : 'human')"></span>
             <span class="text-sm text-muted" x-text="canvas ? canvas.name : ''"></span>
             <span x-show="isSnapshot" style="font-size:11px;padding:2px 8px;background:#f59e0b;color:#fff;border-radius:3px;font-weight:600;">ARCHIVED</span>
         </div>
