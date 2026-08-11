@@ -35,6 +35,42 @@ EOF
 
 量測 API 效能（回應大小 + 耗時）也用同一套，把 `c.get` 包進計時即可。
 
+## 前端頁面視覺驗證：CDP 瀏覽器過不了登入，改走 static 免登入預覽
+
+登入密碼是 werkzeug hash 存在 DB（`system_config.auth_password_hash`），**AI 拿不到明文，
+無法用 chrome-devtools MCP 登入**；直接導向 `/beakbroodnest/todos` 只會被踢回 `/login`。
+但 `/beakbroodnest/static/` 不受 `before_request` 保護（`curl` 取 `static/vendor/alpine.min.js`
+回 200），這就是缺口：**用 test_client 取得已渲染的頁面 HTML，塞一段 stub fetch 餵真實 API JSON，
+寫進 `human_ui/static/` 當臨時檔，再用瀏覽器開它**。Alpine 會照常跑，看得到真實資料與版面。
+
+```bash
+cd /opt/BeakBroodNest && venv/bin/python - <<'EOF'
+import sys, json; sys.path.insert(0,'/opt/BeakBroodNest')
+from human_ui.app import app
+c = app.test_client()
+with c.session_transaction() as s:
+    s['authenticated'] = True; s['username'] = 'test'
+html = c.get('/beakbroodnest/todos').get_data(as_text=True)
+data = c.get('/beakbroodnest/todos/api/items').get_json()
+stub = """<script>
+const _f = window.fetch;
+window.fetch = async function(u, o) {
+  if (String(u).includes('/todos/api/items'))
+    return new Response(JSON.stringify(%s), {status:200, headers:{'Content-Type':'application/json'}});
+  return _f.apply(this, arguments);
+};
+</script>""" % json.dumps(data, ensure_ascii=False)
+open('/opt/BeakBroodNest/human_ui/static/_tmp_preview.html','w').write(html.replace('</head>', stub+'</head>', 1))
+EOF
+# 瀏覽器開 http://192.168.0.16:5170/beakbroodnest/static/_tmp_preview.html
+# 驗完務必刪除：rm -f /opt/BeakBroodNest/human_ui/static/_tmp_preview.html
+```
+
+臨時檔放在對外免登入路徑，**驗完立刻刪**，也不可放任何真實敏感資料以外的機密。
+`take_screenshot` 對這台 Chrome 偶爾會 `Page.captureScreenshot timed out`，
+先 `select_page(bringToFront=true)` 再截圖成功率較高；只是要確認 DOM 綁定有沒有生效時，
+`evaluate_script` 讀 `.textContent` 比截圖快得多。
+
 ## 測試：本專案沒有自動化測試套件
 
 **`tests/` 目錄已於 2026-07-30 由用戶決定整個刪除，`pytest` 沒有東西可跑。**
@@ -280,7 +316,24 @@ spawn 一個子進程（`ps -ef | grep mcp_server.py` 會看到多個，parent �
 
 - **只解除讀取隔離，不等於解除人機分離。** `shared` 白板上使用者的卡，AI 仍然不得改內容、不得搬位置、不得改白板名稱；`note_update` 的 owner 互鎖也照舊擋（要改得 `force_owner_override=True`，那需要使用者明示）
 - **不會建立專案關聯。** 專案關聯只認 `project_path`，改 audience 不會讓白板變成專案待辦白板，`project_tasks` 也不會因此撈到它
-- 名稱前綴是給人看的慣例，與 audience 無關；使用者的白板改成 `shared` 後仍保留 `👤 ` 前綴
+- **名稱不帶任何受眾前綴**（2026-08-08 起，原本 29 張人類白板的 `👤 ` 前綴已由使用者授權移除）。受眾一律由 UI 讀 `audience` 欄位算出，不要用名稱猜、也不要建議使用者加前綴
+
+### 受眾徽章的顯示規格（要在新頁面顯示受眾時照抄這組）
+
+同一套符號與配色已經出現在三個地方，新增頁面時直接沿用，不要另創一套：
+
+| 位置 | 實作 |
+|---|---|
+| 白板側欄清單 | `templates/partials/wb_sidebar.html` 的 `.icon`＋`.icon-aud-*`，色定義在 `static/css/main.css` |
+| 白板 header 文字徽章 | `templates/whiteboard.html` 的 `.aud-badge`＋`.aud-*`，色定義在 `static/css/whiteboard.css` |
+| `/todos` 白板欄與白板下拉 | `templates/todos.html` 的 `.aud-icon`＋`.aud-*`，helper 在同檔 `todosApp()` 內 |
+
+- 符號：`human` 人形 / `ai` 機器人 / `shared` 雙人（`audienceIcon()`，`static/js/whiteboard.js` 是母本）
+- 文字：`human` 人類 / `ai` AI / `shared` 共用（`audienceLabel()`）
+- tooltip 用 `audienceTitle()` 那三句完整說明，三處字串一致
+- 色：human `#f1f5f9`/`#475569`、ai `#eff6ff`/`#1d4ed8`、shared `#f0fdf4`/`#166534`
+- **`<select>` 的 `<option>` 只吃純文字**，塞不了帶底色的 span，改用符號當文字前綴（`canvasOptionLabel()` 就是幹這件事）
+- 資料來源：白板清單 API 回 `audience`；待辦／行事曆的每一筆由 `core/task_query.py` 的 `query_task_entries()` 回 `canvas_audience`（2026-08-11 加）
 
 ### `note_get` 只吃 atom id，不吃短代號
 
