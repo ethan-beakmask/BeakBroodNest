@@ -42,7 +42,13 @@ def todos_canvases():
             .all()
         )
         return jsonify([
-            {'slug': c.slug, 'name': c.name, 'is_project': c.is_project}
+            {
+                'slug': c.slug,
+                'name': c.name,
+                'is_project': c.is_project,
+                # audience 給前端畫受眾徽章（人形／機器人／雙人），與白板側欄同一套語言
+                'audience': c.audience or 'human',
+            }
             for c in rows
         ])
 
@@ -117,7 +123,10 @@ def todos_items():
         if canvas_slug:
             cv = s.query(Canvas).filter(Canvas.slug == canvas_slug).first()
             if cv:
-                canvas_info = {'slug': cv.slug, 'name': cv.name, 'is_project': cv.is_project}
+                canvas_info = {
+                    'slug': cv.slug, 'name': cv.name, 'is_project': cv.is_project,
+                    'audience': cv.audience or 'human',
+                }
 
         return jsonify({'items': items, 'canvas': canvas_info})
 

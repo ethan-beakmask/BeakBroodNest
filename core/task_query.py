@@ -248,7 +248,7 @@ def query_task_entries(
     Returns: list of dict，每筆含：
       source: 'atom_entry' | 'standalone_entry'
       entry_id, atom_id (atom_entry only), node_id
-      canvas_id, canvas_slug, canvas_name, canvas_is_project
+      canvas_id, canvas_slug, canvas_name, canvas_is_project, canvas_audience
       pos_x, pos_y
       title (atom.title 或 raw_text 開頭)
       raw_text, summary
@@ -326,6 +326,7 @@ def query_task_entries(
                 'canvas_slug': canvas.slug,
                 'canvas_name': canvas.name,
                 'canvas_is_project': canvas.is_project,
+                'canvas_audience': canvas.audience or 'human',
                 'pos_x': pos_x,
                 'pos_y': pos_y,
                 'title': title,
@@ -392,6 +393,7 @@ def query_task_entries(
                 'canvas_slug': canvas.slug,
                 'canvas_name': canvas.name,
                 'canvas_is_project': canvas.is_project,
+                'canvas_audience': canvas.audience or 'human',
                 'pos_x': pos_x,
                 'pos_y': pos_y,
                 'title': title,
