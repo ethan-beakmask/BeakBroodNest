@@ -71,6 +71,26 @@ EOF
 先 `select_page(bringToFront=true)` 再截圖成功率較高；只是要確認 DOM 綁定有沒有生效時，
 `evaluate_script` 讀 `.textContent` 比截圖快得多。
 
+### 白板頁要驗時的兩個差異（2026-08-17 實測）
+
+**一、抓 HTML 要用 canvas 網址。** `c.get('/beakbroodnest/')` 回的是 **302**，
+`Location` 指向 `/beakbroodnest/canvas/<slug>`（最近開啟的白板）。拿 302 的 body 去
+寫預覽檔會得到 211 bytes 的「Redirecting...」頁，Alpine 根本沒載入。直接抓
+`c.get('/beakbroodnest/canvas/VU2vAFxo')`（slug 從 `canvases` 表取）。
+
+**二、白板初始化會打一串 API，不必逐支餵真資料。** stub 只精準回應要驗的那幾支，
+其餘一律 `return J({})`，白板會渲染成空白板但 Alpine 正常運作 —— 要驗的是面板 /
+徽章，不是卡片佈局。接著**直接操作 Alpine 狀態開面板**，比模擬點擊可靠：
+
+```javascript
+const d = Alpine.$data(document.querySelector('[x-data]'));
+d.selectedAtomDetails = await (await fetch('/beakbroodnest/api/atoms/5216')).json();
+d.showAtomInfoModal = true;          // 之後 querySelector 讀徽章文字驗證
+```
+
+同一招也適合驗條件分支：直接灌不同的假物件（例如 `task: null` 的非待辦卡）
+比去 DB 找符合條件的真卡快得多。
+
 ## 測試：本專案沒有自動化測試套件
 
 **`tests/` 目錄已於 2026-07-30 由用戶決定整個刪除，`pytest` 沒有東西可跑。**
