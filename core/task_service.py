@@ -116,6 +116,24 @@ def get_task_entry(s, atom_id):
     return entry, task_schema
 
 
+def get_task_view(s, atom_id):
+    """讀取待辦卡的顯示用欄位；非待辦卡回 None。
+
+    唯讀，供 UI 畫徽章用。狀態的權威值只有 entry 的 status 欄位 --
+    UI 不得改從標題文字推測（2026-08-16 曾發生 AI 只在標題加 [已完成]
+    前綴、status 仍是 planning，卡片因此留在 /todos 待辦清單上）。
+    """
+    entry, _schema = get_task_entry(s, atom_id)
+    if not entry:
+        return None
+    values = _field_values_dict(s, entry)
+    raw_status = values.get('status') or 'planning'
+    return {
+        'status': _STATUS_LEGACY.get(raw_status, raw_status),
+        'urgency': values.get('urgency') or '',
+    }
+
+
 def get_field_map(s, schema_id):
     """取得 schema 欄位對照表。"""
     fields = s.query(EntrySchemaField).filter_by(schema_id=schema_id).all()

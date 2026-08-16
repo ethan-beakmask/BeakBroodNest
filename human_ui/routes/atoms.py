@@ -11,7 +11,7 @@ from core.db import session_scope
 from core.models import KnowledgeAtom, Tag, CanvasAtom, Canvas
 from core import relations as rel_service
 from core import embeddings as embed_service
-from core.task_service import get_task_entry
+from core.task_service import get_task_entry, get_task_view
 from core.tiptap_node_id import backfill_missing_node_ids
 
 bp = Blueprint('atoms', __name__)
@@ -208,7 +208,11 @@ def get_atom(atom_id):
 
         # 待辦是人類與 AI 的共同介面，人類必須改得動 AI 建的待辦卡（例如回答
         # 「沒回答」的決策點），因此前端據此放行 owner 唯讀鎖。見 update_atom()。
-        result['is_task'] = is_task_atom(s, atom_id)
+        # task 另帶 status/urgency 讓卡片畫徽章：狀態不顯示出來，寫的人就會
+        # 改去標題塞 [已完成]，權威欄位與標題必然漂移。
+        task_view = get_task_view(s, atom_id)
+        result['is_task'] = task_view is not None
+        result['task'] = task_view
 
         return jsonify(result)
 

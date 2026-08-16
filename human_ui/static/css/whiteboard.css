@@ -2046,3 +2046,28 @@
 .aud-human  { color: #475569; background: #f1f5f9; border-color: #cbd5e1; }
 .aud-ai     { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
 .aud-shared { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
+
+/* 卡片徽章（短代號 + 待辦狀態 + 急迫度）-- 與白板受眾徽章同一手法：
+   直接讀權威欄位算出來，不靠標題文字人工標記 */
+.wb-atom-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.wb-atom-badge {
+    display: inline-block;
+    font-size: 11px;
+    line-height: 1.5;
+    padding: 1px 7px;
+    border-radius: 3px;
+    font-weight: 700;
+    white-space: nowrap;
+    background: #e5e7eb;
+    color: #374151;
+}
+.wb-atom-badge.refcode { background: #e0e7ff; color: #3730a3;
+                         font-family: ui-monospace, SFMono-Regular, monospace; }
+.wb-atom-badge.st-planning    { background: #e0e7ff; color: #3730a3; }
+.wb-atom-badge.st-in_progress { background: #bfdbfe; color: #1e3a8a; }
+.wb-atom-badge.st-paused      { background: #fed7aa; color: #9a3412; }
+.wb-atom-badge.st-completed   { background: #d1fae5; color: #065f46; }
+.wb-atom-badge.st-cancelled   { background: #e5e7eb; color: #6b7280; }
+.wb-atom-badge.ug-H { background: #fecaca; color: #991b1b; }
+.wb-atom-badge.ug-M { background: #fef3c7; color: #92400e; }
+.wb-atom-badge.ug-L { background: #f1f5f9; color: #334155; }

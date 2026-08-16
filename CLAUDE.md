@@ -78,6 +78,7 @@
 - 四個工具分工：`note_task_create`（新建）/ `note_task_adopt`（既有卡收編）/ `note_task_update`（只改 progress、urgency、日期等欄位）/ `note_task_status`（只改狀態，含 pause/reopen log 與完成前的子任務檢查）
 - 一件待辦在實作時展開成多張卡時，必須用 `parent_ref` 建立 contains 關係；卡與卡之間有先後依賴時用 `note_relate(relation_type='blocks')`。關係漏建不會報錯，但事後追不回來
 - 短代號（如 `BBN-137`）是人類與 AI 的共同稱呼，回報進度時用短代號，不要講 atom id
+- **狀態只寫進 `status` 欄位，禁止在標題加 `[已完成]` 之類的前綴**。標題前綴不會被 `/todos` 的過濾看到（過濾只讀 `status`，見 `core/task_query.py:315`），卡片會繼續留在待辦清單上。2026-08-16 PF-107/112/113 三張就是這樣：標題寫著 `[已完成]`、`status` 還是 `planning`。做完就呼叫 `note_task_status(status='completed')`；狀態現在直接顯示在卡片徽章上（`atom_lookup` 與白板詳情面板），不需要也不該用標題轉述
 - 2026-08-02 之前用舊寫法建立的待辦卡不做遷移；需要時用 `note_task_adopt` 逐張收編
 
 ### 新專案第一次收待辦

@@ -1756,6 +1756,17 @@ function whiteboardApp(canvasId) {
             })[a] || '人類白板：只有你使用，AI 不會讀取這裡的內容';
         },
 
+        // 待辦狀態的中文標籤。未知值原樣顯示，schema 日後加狀態時看得出來是新的
+        taskStatusLabel(st) {
+            return ({
+                planning: '規劃中',
+                in_progress: '進行中',
+                paused: '暫停',
+                completed: '已完成',
+                cancelled: '已取消',
+            })[st] || (st || '?');
+        },
+
         async createCanvas() {
             if (!this.newCanvasName.trim()) return;
             const c = await API.createCanvas({

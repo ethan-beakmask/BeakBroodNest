@@ -19,6 +19,11 @@
                 <div class="bc-al-head">
                     <div class="bc-al-title-wrap">
                         <span class="bc-al-idtag" x-text="'#' + (atom?.id ?? '')"></span>
+                        <!-- 短代號是人機共同稱呼（CLAUDE.md），只有 atom id 的話使用者
+                             得自己回查才能跟 AI 對話 -->
+                        <template x-if="atom?.ref_code">
+                            <span class="bc-al-refcode" x-text="atom.ref_code"></span>
+                        </template>
                         <span class="bc-al-title" x-text="atom?.title || (loading ? '載入中...' : (error || ''))"></span>
                     </div>
                     <div class="bc-al-actions">
@@ -39,6 +44,16 @@
                         <div>
                             <!-- meta -->
                             <div class="bc-al-meta">
+                                <!-- 待辦狀態擺第一位：這是最常要判讀的一項，且權威值只在
+                                     task entry 的 status 欄位，不是標題文字 -->
+                                <template x-if="atom.task">
+                                    <span class="bc-al-chip" :class="'st-' + atom.task.status"
+                                          x-text="taskStatusLabel(atom.task.status)"></span>
+                                </template>
+                                <template x-if="atom.task && atom.task.urgency">
+                                    <span class="bc-al-chip" :class="'ug-' + atom.task.urgency"
+                                          x-text="'急迫度 ' + atom.task.urgency"></span>
+                                </template>
                                 <span class="bc-al-chip" :class="'type-' + atom.atom_type" x-text="'type ' + atom.atom_type"></span>
                                 <span class="bc-al-chip" :class="'lc-' + atom.lifecycle" x-text="atom.lifecycle"></span>
                                 <span class="bc-al-chip" x-text="'owner ' + (atom.owner || '?')"></span>
@@ -180,6 +195,12 @@
     font-size: 12px; color: #2563eb; font-weight: 600;
     background: #dbeafe; padding: 2px 6px; border-radius: 4px;
 }
+.bc-al-refcode {
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 12px; color: #3730a3; font-weight: 700;
+    background: #e0e7ff; padding: 2px 6px; border-radius: 4px;
+    white-space: nowrap;
+}
 .bc-al-title { font-size: 15px; font-weight: 700; color: #111827;
                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bc-al-actions { display: flex; align-items: center; gap: 8px; }
@@ -210,6 +231,15 @@
 .bc-al-chip.lc-aging { background: #fef3c7; color: #92400e; }
 .bc-al-chip.lc-archived { background: #e5e7eb; color: #6b7280; }
 .bc-al-chip.lc-terminal { background: #fecaca; color: #991b1b; }
+/* 待辦狀態：完成／取消刻意做成低彩度，待處理的三態才搶眼 */
+.bc-al-chip.st-planning { background: #e0e7ff; color: #3730a3; font-weight: 700; }
+.bc-al-chip.st-in_progress { background: #bfdbfe; color: #1e3a8a; font-weight: 700; }
+.bc-al-chip.st-paused { background: #fed7aa; color: #9a3412; font-weight: 700; }
+.bc-al-chip.st-completed { background: #d1fae5; color: #065f46; font-weight: 700; }
+.bc-al-chip.st-cancelled { background: #e5e7eb; color: #6b7280; font-weight: 700; }
+.bc-al-chip.ug-H { background: #fecaca; color: #991b1b; }
+.bc-al-chip.ug-M { background: #fef3c7; color: #92400e; }
+.bc-al-chip.ug-L { background: #f1f5f9; color: #334155; }
 
 .bc-al-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
 .bc-al-tag { font-size: 11px; color: #2563eb; background: #eff6ff; padding: 2px 6px; border-radius: 3px; }
@@ -328,6 +358,18 @@ function atomLookup() {
             // 後備：跳脫 + 保留換行
             const esc = c.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             return '<pre style="white-space:pre-wrap;">' + esc + '</pre>';
+        },
+
+        // 待辦狀態的中文標籤。未知值直接原樣顯示，不要靜默吞掉 --
+        // schema 日後加狀態時，畫面要看得出來是新的而不是沒有
+        taskStatusLabel(st) {
+            return {
+                planning: '規劃中',
+                in_progress: '進行中',
+                paused: '暫停',
+                completed: '已完成',
+                cancelled: '已取消',
+            }[st] || (st || '?');
         },
 
         fmtTs(s) {
