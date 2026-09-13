@@ -22,7 +22,7 @@ import { NodeSelection, TextSelection, Plugin } from '@tiptap/pm/state'
 import { openEntryModal } from './entry-modal.js'
 
 // 共用：在 selection 路徑上找 structuredEntry 的 depth (回傳 -1 表示不在 entry 內)
-function _entryDepth(state) {
+export function _entryDepth(state) {
     const { $from } = state.selection
     for (let d = $from.depth; d > 0; d--) {
         if ($from.node(d).type.name === 'structuredEntry') return d

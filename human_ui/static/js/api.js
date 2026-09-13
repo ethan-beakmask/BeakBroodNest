@@ -304,3 +304,6 @@ const API = {
 
 // 頁面載入後立即暖機 session key（減少首次 POST 延遲）
 _bbnCrypto.warmup();
+
+// 讓 Tiptap bundle 內的 extension（如 PasteImage）能經由 window.API 取用上傳函式
+window.API = API;

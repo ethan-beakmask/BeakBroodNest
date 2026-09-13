@@ -1170,6 +1170,19 @@
     max-width: 100%;
     height: auto;
 }
+.wb-markdown img[data-border="1"] {
+    border: 1px solid #6b7280;
+    padding: 2px;
+    box-sizing: border-box;
+    background: #fff;
+}
+.wb-markdown .tt-fig { display: inline-block; max-width: 100%; line-height: 0; }
+.wb-markdown .tt-fig img { display: block; max-width: 100%; }
+.wb-markdown .tt-figcap {
+    display: block; width: 0; min-width: 100%;
+    text-align: center; font-size: 0.85em; line-height: 1.3;
+    color: #6b7280; padding: 2px 0 4px; white-space: normal;
+}
 
 /* ---- 框選矩形 ---- */
 .wb-box-select {

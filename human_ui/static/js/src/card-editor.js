@@ -147,6 +147,7 @@ import { HtmlBlock } from './html-block-node.js'
 import { SlashCommand } from './slash-command.js'
 import { SelectionToolbar } from './selection-toolbar.js'
 import { PasteTextTable } from './paste-text-table.js'
+import { PasteImage } from './paste-image.js'
 import { openSectionNav } from './section-nav.js'
 import { FindReplace, findKey } from './find-replace.js'
 import { NodeIdExtension } from './node-id-extension.js'
@@ -244,6 +245,7 @@ class CardEditor {
                 SelectionToolbar,
                 ListHotkeys,
                 PasteTextTable,
+                PasteImage,
                 FindReplace,
                 NodeIdExtension,
             ],

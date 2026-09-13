@@ -340,6 +340,8 @@ function whiteboardApp(canvasId) {
             if (rm === 'optimized')     { this.rtOptEnabled = true; }
             if (rm === 'opt-straight')  { this.rtLineStyle = 'straight'; this.rtOptEnabled = true; }
 
+            // 讓 Tiptap extension（如 PasteImage）不必拿到 Alpine scope 也能發 toast
+            window.showToast = this.showToast.bind(this);
             this.initMarked();
             this.loadRecentCanvases();
             this.loadCanvasTagFilter();
