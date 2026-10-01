@@ -12,6 +12,11 @@ from core.db import session_scope
 from core.models import (
     KnowledgeAtom, SensitiveTerm, SanitizeSession,
 )
+from .param_forms import (
+    ParamFormatError,
+    param_format_error_payload,
+    parse_extra_replacements,
+)
 
 logger = logging.getLogger('beak_broodnest.mcp.sanitize')
 
@@ -72,7 +77,7 @@ def register(mcp):
         purpose: str = '',
         sensitivity_level: str = 'confidential',
         scope: str = 'global',
-        extra_replacements: dict[str, str] | None = None,
+        extra_replacements: str | dict[str, str] | None = None,
     ) -> str:
         """對內容進行脫敏處理，產出可安全對外分享的文本。
 
@@ -86,10 +91,19 @@ def register(mcp):
         purpose: 用途說明，如 "StackOverflow 求助"
         sensitivity_level: 脫敏等級 (public/internal/confidential/restricted)
         scope: 詞彙表範圍篩選 (global 或專案名)
-        extra_replacements: 額外的手動替換 {"原始值": "佔位前綴"}
+        extra_replacements: 推薦字串形式，多行「原文=>佔位前綴」，例如:
+          內部主機=>INTERNAL_HOST
+          王小明=>PERSON
+          請勿用陣列 / 物件傳中文，會被拒絕。相容形式為 dict（僅限純 ASCII）。
 
         回傳: 脫敏後的文本 + session_id（用於 note_restore）
         """
+        if isinstance(extra_replacements, str):
+            try:
+                extra_replacements = parse_extra_replacements(extra_replacements)
+            except ParamFormatError as e:
+                return json.dumps(param_format_error_payload(e), ensure_ascii=False)
+
         if sensitivity_level not in VALID_SENSITIVITY:
             return json.dumps({
                 'error': f'無效的 sensitivity_level: {sensitivity_level}，'

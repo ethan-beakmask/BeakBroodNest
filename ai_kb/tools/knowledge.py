@@ -18,6 +18,12 @@ from core import consistency as consistency_service
 from core import embeddings as embed_service
 from core import visibility
 from core.ref_code import resolve_ref
+from .param_forms import (
+    ParamFormatError,
+    param_format_error_payload,
+    parse_field_values,
+    parse_relations,
+)
 
 
 def normalize_tags(tags):
@@ -47,7 +53,7 @@ def register(mcp):
         tags: str | list[str] | None = None,
         lifecycle: str = 'active',
         schema_id: int | None = None,
-        field_values: dict[str, str] | None = None,
+        field_values: str | dict[str, str] | None = None,
         sensitivity: str = 'internal',
     ) -> str:
         """儲存一筆知識原子到知識庫。
@@ -59,7 +65,11 @@ def register(mcp):
         owner: 擁有者 (ethan/claude/agent:xxx/claude@host/tool:name)，預設 claude
         tags: 逗號分隔字串（例 'BeakAgent,待辦'；請用字串不要用陣列），不存在的標籤會自動建立
         schema_id: E 類型時關聯的 schema ID
-        field_values: E 類型的結構化欄位值，格式 {"欄位name": "值"}
+        field_values: 推薦字串形式，多行「欄位name=值」，續行直接換行接在上一個欄位值後，例如:
+          status=進行中
+          note=第一行
+            第二行補充
+          請勿用陣列 / 物件傳中文，會被拒絕。相容形式為 dict（僅限純 ASCII）。
         sensitivity: 敏感度 (public/internal/confidential/restricted)，預設 internal
 
         回傳建立的原子 ID 與摘要。
@@ -72,11 +82,34 @@ def register(mcp):
         if sensitivity not in valid_sensitivity:
             return json.dumps({'error': f'無效的 sensitivity: {sensitivity}，允許值: {", ".join(valid_sensitivity)}'})
 
+        field_values_from_string = False
+        if isinstance(field_values, str):
+            try:
+                field_values = parse_field_values(field_values)
+            except ParamFormatError as e:
+                return json.dumps(param_format_error_payload(e), ensure_ascii=False)
+            # 空字串視同沒給，不觸發字串形式的嚴格檢查
+            field_values_from_string = bool(field_values)
+            if field_values_from_string and not schema_id:
+                return json.dumps({'error': 'field_values 需要搭配 schema_id'}, ensure_ascii=False)
+
         with session_scope() as s:
-            if atom_type == 'E' and schema_id:
+            if (atom_type == 'E' and schema_id) or field_values_from_string:
                 schema = s.query(AtomSchema).filter(AtomSchema.id == schema_id).first()
                 if not schema:
                     return json.dumps({'error': f'Schema {schema_id} 不存在'})
+                if field_values_from_string:
+                    valid_fields = [f.name for f in schema.fields]
+                    valid_field_set = set(valid_fields)
+                    unknown_fields = sorted(
+                        name for name in field_values
+                        if name not in valid_field_set
+                    )
+                    if unknown_fields:
+                        return json.dumps({
+                            'error': f'未知欄位: {", ".join(unknown_fields)}',
+                            'valid_fields': valid_fields,
+                        }, ensure_ascii=False)
 
             atom = KnowledgeAtom(
                 title=title,
@@ -664,11 +697,15 @@ def register(mcp):
 
     @mcp.tool()
     def note_relate_batch(
-        relations: list[dict],
+        relations: str | list[dict],
     ) -> str:
         """批次建立多條因果關係。
 
-        relations: 關係列表，每個元素為 dict:
+        relations: 推薦字串形式，多行「from_ref -> to_ref : relation_type [: label]」，例如:
+          BBN-137 -> BBN-138 : supports : 補充中文標籤
+          BBN-139 -> BBN-140 : references
+          字串形式不支援 confidence，固定使用預設 1.0。
+          請勿用陣列 / 物件傳中文，會被拒絕。相容形式為 list[dict]（僅限純 ASCII）:
           {
             "from_atom_id": int,
             "to_atom_id": int,
@@ -681,6 +718,12 @@ def register(mcp):
 
         回傳每條關係的建立結果（成功或錯誤）。
         """
+        if isinstance(relations, str):
+            try:
+                relations = parse_relations(relations)
+            except ParamFormatError as e:
+                return json.dumps(param_format_error_payload(e), ensure_ascii=False)
+
         if not relations:
             return json.dumps({'error': 'relations 不可為空'})
 

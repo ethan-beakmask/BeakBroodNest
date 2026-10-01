@@ -464,6 +464,12 @@ print(json.loads(m.tools['note_task_create'](title='測試', project='BBN')))
 EOF
 ```
 
+**FakeMCP 直接呼叫各模組的 `register()`，不經參數守門**（守門掛在 `register_all()` 的
+`GuardedMCP`，見 `docs/MCP_PARAM_GUARD_SPEC.md`）。要驗守門或 FastMCP 的型別轉換，改用
+`from ai_kb.mcp_server import mcp` 後 `asyncio.run(mcp.call_tool(名稱, 參數dict))`；
+不想留資料就把該工具模組的 `session_scope` 換成結尾 rollback 的版本
+（sequence 仍會前進，id 會跳號，無害）。
+
 測完記得清乾淨：刪 atom / atom_entries / entry_field_values / entry_field_change_log /
 canvas_atoms / unified_relations，並把 `project_ref_counters` 的 `next_seq` 改回原值
 （否則正式發號會跳號）。

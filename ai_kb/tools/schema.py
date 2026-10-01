@@ -13,6 +13,7 @@ from core.models import (
 )
 from core import relations as rel_service
 from core import visibility
+from .param_forms import ParamFormatError, param_format_error_payload, parse_fields
 
 logger = logging.getLogger('beak_broodnest.mcp')
 
@@ -25,7 +26,7 @@ def register(mcp):
         slug: str,
         description: str = '',
         icon: str = '',
-        fields: list[dict] | None = None,
+        fields: str | list[dict] | None = None,
     ) -> str:
         """建立一個 E 類型套表的 schema 定義。
 
@@ -33,7 +34,10 @@ def register(mcp):
         slug: 唯一識別碼（英文小寫+底線，如 perf_test）
         description: 用途說明
         icon: 圖示（選填）
-        fields: 欄位定義列表，每個欄位為 dict:
+        fields: 推薦字串形式，多行「name|label|field_type[|required[|options]]」，例如:
+          status|狀態|select|required|待辦,進行中,完成
+          memo|備註|text|optional
+          請勿用陣列 / 物件傳中文，會被拒絕。相容形式為 list[dict]（僅限純 ASCII）:
           {
             "name": "欄位識別名（英文）",
             "label": "欄位顯示名（中文）",
@@ -45,6 +49,12 @@ def register(mcp):
 
         回傳建立的 schema ID 與欄位列表。
         """
+        if isinstance(fields, str):
+            try:
+                fields = parse_fields(fields)
+            except ParamFormatError as e:
+                return json.dumps(param_format_error_payload(e), ensure_ascii=False)
+
         with session_scope() as s:
             existing = s.query(AtomSchema).filter(AtomSchema.slug == slug).first()
             if existing:
