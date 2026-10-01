@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """核心知識工具: note_store/search/get/update/relate/relate_batch/forget/blocked/trace/check/suggest_relations"""
 import json
+import re
 import datetime
 import logging
 
@@ -18,6 +19,17 @@ from core import embeddings as embed_service
 from core import visibility
 from core.ref_code import resolve_ref
 
+
+def normalize_tags(tags):
+    """Accept a comma-separated string or a list; return a clean list or None."""
+    if tags is None:
+        return None
+    if isinstance(tags, str):
+        parts = re.split(r'[,，、]', tags)
+    else:
+        parts = list(tags)
+    return [t.strip() for t in parts if t and t.strip()]
+
 logger = logging.getLogger('beak_broodnest.mcp')
 
 
@@ -32,7 +44,7 @@ def register(mcp):
         source: str = 'ai',
         source_detail: str = '',
         owner: str = 'claude',
-        tags: list[str] | None = None,
+        tags: str | list[str] | None = None,
         lifecycle: str = 'active',
         schema_id: int | None = None,
         field_values: dict[str, str] | None = None,
@@ -45,7 +57,7 @@ def register(mcp):
         lifecycle: active(活躍) / aging(老化) / archived(歸檔) / terminal(終止)
         source: human / ai / import / derived
         owner: 擁有者 (ethan/claude/agent:xxx/claude@host/tool:name)，預設 claude
-        tags: 標籤名稱列表，不存在的標籤會自動建立
+        tags: 逗號分隔字串（例 'BeakAgent,待辦'；請用字串不要用陣列），不存在的標籤會自動建立
         schema_id: E 類型時關聯的 schema ID
         field_values: E 類型的結構化欄位值，格式 {"欄位name": "值"}
         sensitivity: 敏感度 (public/internal/confidential/restricted)，預設 internal
@@ -81,6 +93,7 @@ def register(mcp):
             s.add(atom)
             s.flush()
 
+            tags = normalize_tags(tags)
             if tags:
                 tag_objects = []
                 for tag_name in tags:
@@ -129,7 +142,7 @@ def register(mcp):
         atom_type: str = '',
         lifecycle: str = '',
         tag: str = '',
-        tags: list[str] | None = None,
+        tags: str | list[str] | None = None,
         source: str = '',
         owner: str = '',
         schema_id: int | None = None,
@@ -145,7 +158,7 @@ def register(mcp):
         atom_type: 篩選類型 (A/B/C/D/E/F)
         lifecycle: 篩選生命週期 (active/aging/archived/terminal)
         tag: 篩選單一標籤名稱(向下相容)
-        tags: 多標籤 AND 篩選,原子必須同時擁有所有指定標籤
+        tags: 多標籤 AND 篩選，逗號分隔字串（請用字串不要用陣列），原子必須同時擁有所有指定標籤
         source: 篩選來源 (human/ai/import/derived)
         owner: 篩選擁有者 (ethan/claude/agent:xxx)
         schema_id: 篩選 E 類型的 schema ID
@@ -191,7 +204,7 @@ def register(mcp):
                 query = new_query
 
         with session_scope() as s:
-            all_tags = list(tags) if tags else []
+            all_tags = normalize_tags(tags) or []
             if tag and tag not in all_tags:
                 all_tags.append(tag)
 
@@ -513,7 +526,7 @@ def register(mcp):
         content: str = '',
         atom_type: str = '',
         lifecycle: str = '',
-        tags: list[str] | None = None,
+        tags: str | list[str] | None = None,
         append_content: str = '',
         sensitivity: str = '',
         force_owner_override: bool = False,
@@ -522,7 +535,7 @@ def register(mcp):
 
         只有提供的欄位會被更新（空字串表示不更新）。
         append_content: 在現有內容後追加（不覆蓋），適合漸進式補充。
-        tags: 提供時會替換所有標籤，不存在的標籤會自動建立。
+        tags: 逗號分隔字串（例 'BeakAgent,已完成'；請用字串不要用陣列）；提供時會替換所有標籤，不存在的標籤會自動建立。
         sensitivity: 敏感度 (public/internal/confidential/restricted)
         force_owner_override: 強制覆寫非自己擁有的原子（預設 False，需明確啟用）
 
@@ -560,6 +573,7 @@ def register(mcp):
             if sensitivity:
                 atom.sensitivity = sensitivity
 
+            tags = normalize_tags(tags)
             if tags is not None:
                 tag_objects = []
                 for tag_name in tags:

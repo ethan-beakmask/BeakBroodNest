@@ -15,6 +15,7 @@ from core.task_service import (
     unfinished_children, update_task_fields,
 )
 from ai_kb.tools.project import _find_canvas_by_cwd
+from ai_kb.tools.knowledge import normalize_tags
 
 
 def _error(message: str) -> str:
@@ -100,6 +101,7 @@ def _create_relation_once(s, from_atom_id: int, to_atom_id: int, relation_type: 
 
 
 def _attach_tags(s, atom, tags):
+    tags = normalize_tags(tags)
     if not tags:
         return
     tag_objects = []
@@ -157,7 +159,7 @@ def register(mcp):
         planned_start: str = '',
         planned_duration: str = '',
         note: str = '',
-        tags: list[str] | None = None,
+        tags: str | list[str] | None = None,
     ) -> str:
         """AI 建立待辦的唯一入口。
 
