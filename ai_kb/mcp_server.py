@@ -5,7 +5,9 @@ BeakBroodNest MCP Server -- AI 知識庫介面
 讓 Claude Code 直接操作知識原子，取代 MEMORY.md 的讀寫流程
 
 工具已拆分至 tools/ 子模組：
-  tools/knowledge.py    -- 核心知識工具 (12 個)
+  tools/knowledge.py           -- 核心知識工具 (5 個)
+  tools/knowledge_search.py    -- 知識搜尋 (1 個)
+  tools/knowledge_relations.py -- 知識關係 (5 個)
   tools/schema.py       -- Schema + Overview (3 個)
   tools/orchestrator.py -- 任務派發 (4 個)
   tools/canvas.py       -- 畫布操作 (5 個)

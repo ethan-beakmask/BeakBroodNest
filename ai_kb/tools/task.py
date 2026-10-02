@@ -15,7 +15,7 @@ from core.task_service import (
     unfinished_children, update_task_fields,
 )
 from ai_kb.tools.project import _find_canvas_by_cwd
-from ai_kb.tools.knowledge import normalize_tags
+from ai_kb.tools.param_forms import normalize_tags
 
 
 def _error(message: str) -> str:

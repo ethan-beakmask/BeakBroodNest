@@ -46,6 +46,17 @@ def _unexpected_type(value, fmt: str) -> ParamFormatError:
     return ParamFormatError(1, repr(value), fmt, '型別不合法')
 
 
+def normalize_tags(tags):
+    """Accept a comma-separated string or a list; return a clean list or None."""
+    if tags is None:
+        return None
+    if isinstance(tags, str):
+        parts = re.split(r'[,，、]', tags)
+    else:
+        parts = list(tags)
+    return [t.strip() for t in parts if t and t.strip()]
+
+
 def parse_field_values(value) -> dict[str, str]:
     """解析 note_store field_values 的字串形式。"""
     if value is None:

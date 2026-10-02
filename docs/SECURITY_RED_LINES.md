@@ -8,7 +8,7 @@
    -- 認證資訊洩漏是不可逆的；一旦進入 git 歷史，即使刪除也可被還原。
 
 2. **MUST** 對所有 SQL 使用參數化查詢（SQLAlchemy ORM 或 `sa.text()` 搭配 `:param` 綁定）。**MUST NOT** 使用 f-string 或字串拼接組合 SQL 的 WHERE / ORDER BY 子句。
-   -- 本專案已存在 f-string 拼接 SQL 的歷史程式碼（knowledge.py），新程式碼絕對禁止重蹈覆轍，舊程式碼應在觸及時修正。
+   -- 本專案已存在 f-string 拼接 SQL 的歷史程式碼（ai_kb/tools/knowledge_search.py 的 note_search 語意搜尋），新程式碼絕對禁止重蹈覆轍，舊程式碼應在觸及時修正。
 
 3. **MUST NOT** 使用 `eval()`、`exec()`、`compile()` 執行動態程式碼。
    -- 知識庫內容來自 LLM 和人類輸入，任何一方都可能注入可執行片段。
