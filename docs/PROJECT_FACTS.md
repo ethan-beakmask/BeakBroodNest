@@ -506,6 +506,29 @@ print(json.loads(content[0].text))
   用 `python3 -m pyflakes ai_kb/tools/*.py`（系統 python 才有 pyflakes，venv 沒裝）
 - **本機 `venv/bin/pip` 不能直接執行**（shebang 還指向搬家前的 `/opt/BeakNote/venv`，
   報 `cannot execute: required file not found`）。一律用 `venv/bin/python -m pip ...`
+- **動到 venv 的套件後要重啟兩個服務**：`beakbroodnest.service` 與 `beakbroodnest-listener.service`
+  共用同一個 venv。`pip uninstall` 可能留下空目錄骨架（2026-10-02 移除 nvidia 套件後
+  `site-packages/nvidia/` 還在、裡面 0 個檔案），用 `find <目錄> -depth -type d -empty -delete` 收掉
+
+**改寫查詢邏輯後比對新舊結果，不要用「先存基準檔、改完再比」**（2026-10-02 BBN-40 實測）。
+知識庫隨時有新卡與新 embedding 進來：基準檔產出 36 秒後，一張新卡的 embedding 進了 DB，
+排序類案例多出一筆，`cmp` 必然失敗，與改寫無關。做法是讓新舊兩份實作在同一時間點各跑一次，
+並以「舊-新-舊」三次確認期間資料沒變（兩次舊版輸出相同，才能拿來跟新版比）：
+
+```bash
+cd /opt/BeakBroodNest && O=/opt/tmp/codex/20261002-bbn40; P=$O/matrix_ab.py
+cp ai_kb/tools/knowledge_search.py $O/knowledge_search.py.orig    # 改寫前先備份
+venv/bin/python $P $O/knowledge_search.py.orig $O/ab-old-1.json
+venv/bin/python $P ai_kb/tools/knowledge_search.py $O/ab-new.json
+venv/bin/python $P $O/knowledge_search.py.orig $O/ab-old-2.json
+cmp $O/ab-old-1.json $O/ab-old-2.json && cmp $O/ab-old-1.json $O/ab-new.json
+```
+
+`matrix_ab.py` 以參數指定實作檔，把它預先載入成 `ai_kb.tools.knowledge_search` 再匯入 MCP server，
+所以不必搬動工作區的檔案。它跑 `note_search` 的 128 組案例（4 個查詢字串、semantic 與 hybrid、
+16 種篩選與排序），比對完整 items。要點有二：備份檔副檔名不是 `.py` 時，
+`importlib.util.spec_from_file_location` 會回傳 `None`，必須明確給 `SourceFileLoader`；
+載入後要斷言實際註冊的模組就是指定的那份，否則可能兩次都在跑同一版而渾然不覺。
 
 ### `/todos` 的收錄判準
 
