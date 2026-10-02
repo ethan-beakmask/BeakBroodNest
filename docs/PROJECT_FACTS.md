@@ -474,6 +474,39 @@ EOF
 canvas_atoms / unified_relations，並把 `project_ref_counters` 的 `next_seq` 改回原值
 （否則正式發號會跳號）。
 
+### 改動 `ai_kb/tools/` 後的驗收手法（2026-10-02 BBN-39 實測）
+
+**工具介面不得意外變動時，改動前後各存一次 schema 快照比對**（目前 40 個工具）：
+
+```bash
+cd /opt/BeakBroodNest && venv/bin/python - <<'EOF'
+import sys, json, asyncio
+sys.path.insert(0,'.')
+from ai_kb.mcp_server import mcp
+tools = asyncio.run(mcp.list_tools())
+snap = {t.name: {'description': t.description, 'inputSchema': t.inputSchema} for t in tools}
+json.dump(snap, open('/opt/tmp/codex/schema-before.json','w'), ensure_ascii=False, indent=1, sort_keys=True)
+print('tools', len(tools))
+EOF
+```
+
+改完換檔名再跑一次，`cmp` 兩個檔必須位元組相同。
+
+經守門實際呼叫工具時，`mcp.call_tool` 回傳的是 `(content, meta)` tuple：
+
+```python
+content, _ = asyncio.run(mcp.call_tool('note_get', {'atom_id': 5572}))
+print(json.loads(content[0].text))
+```
+
+- 參數守門回歸測試放在專案外：`venv/bin/python -m pytest /opt/tmp/codex/20261001-mcp-guard/test_mcp_param_guard.py -q -p no:cacheprovider`
+  （不連 DB，13 個案例）。它用 monkeypatch 把各工具模組的 `session_scope` 換成會報錯的版本，
+  **新增工具模組時要把該模組補進 `block_database` fixture**
+- 工具都是 `register()` 內的巢狀函式，漏 import 的名稱要到實際呼叫才會炸，`py_compile` 抓不到。
+  用 `python3 -m pyflakes ai_kb/tools/*.py`（系統 python 才有 pyflakes，venv 沒裝）
+- **本機 `venv/bin/pip` 不能直接執行**（shebang 還指向搬家前的 `/opt/BeakNote/venv`，
+  報 `cannot execute: required file not found`）。一律用 `venv/bin/python -m pip ...`
+
 ### `/todos` 的收錄判準
 
 `status` 不在 `{completed, cancelled}` 的**全部** task entry，不論有無 `planned_start`。
