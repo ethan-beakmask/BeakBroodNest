@@ -9,7 +9,7 @@ from sqlalchemy.orm import joinedload
 from core.db import session_scope
 from core.models import (
     KnowledgeAtom, Tag, atom_tags,
-    AtomFieldValue,
+    AtomFieldValue, AtomEmbedding,
 )
 from core import visibility
 from .param_forms import normalize_tags
@@ -218,60 +218,40 @@ def register(mcp):
             def _semantic_search():
                 from core.embeddings import generate_embedding, MODEL_NAME
                 query_vec = generate_embedding(query)
+                distance_expr = AtomEmbedding.embedding.cosine_distance(query_vec)
+                similarity_expr = (1 - distance_expr).label('similarity')
 
-                conditions = ["a.is_deleted = FALSE", "e.model_name = :model_name"]
-                params = {
-                    'query_vec': str(query_vec),
-                    'model_name': MODEL_NAME,
-                    'limit': limit,
-                }
-                if atom_type:
-                    conditions.append("a.atom_type = :atom_type")
-                    params['atom_type'] = atom_type
-                if lifecycle:
-                    conditions.append("a.lifecycle = :lifecycle")
-                    params['lifecycle'] = lifecycle
-                elif scope != 'full':
-                    conditions.append("a.lifecycle IN ('active', 'aging')")
-                if source:
-                    conditions.append("a.source = :source")
-                    params['source'] = source
-                if owner:
-                    conditions.append("a.owner = :owner")
-                    params['owner'] = owner
-                if schema_id is not None:
-                    conditions.append("a.schema_id = :schema_id")
-                    params['schema_id'] = schema_id
-                if tag_filtered_ids is not None:
-                    conditions.append("a.id = ANY(:tag_ids)")
-                    params['tag_ids'] = tag_filtered_ids
-                if exclude_human_boards:
-                    conditions.append(visibility.sql_condition('a'))
-                    params.update(visibility.bind_params())
+                q = (
+                    s.query(
+                        KnowledgeAtom.id,
+                        KnowledgeAtom.title,
+                        KnowledgeAtom.content,
+                        KnowledgeAtom.atom_type,
+                        KnowledgeAtom.lifecycle,
+                        KnowledgeAtom.vitality_score,
+                        KnowledgeAtom.source,
+                        KnowledgeAtom.updated_at,
+                        KnowledgeAtom.schema_id,
+                        similarity_expr,
+                    )
+                    .select_from(AtomEmbedding)
+                    .join(KnowledgeAtom, KnowledgeAtom.id == AtomEmbedding.atom_id)
+                    .filter(KnowledgeAtom.is_deleted == False)
+                    .filter(AtomEmbedding.model_name == MODEL_NAME)
+                )
 
-                where_sql = " AND ".join(conditions)
+                q = _apply_filters(q)
 
                 if sort == 'vitality':
-                    order_sql = "a.vitality_score DESC, a.updated_at DESC"
+                    q = q.order_by(KnowledgeAtom.vitality_score.desc(), KnowledgeAtom.updated_at.desc())
                 elif sort == 'created_at':
-                    order_sql = "a.created_at DESC"
+                    q = q.order_by(KnowledgeAtom.created_at.desc())
                 elif sort == 'updated_at':
-                    order_sql = "a.updated_at DESC"
+                    q = q.order_by(KnowledgeAtom.updated_at.desc())
                 else:
-                    order_sql = "e.embedding <=> :query_vec"
+                    q = q.order_by(distance_expr)
 
-                sql = sa_text(f"""
-                    SELECT
-                        a.id, a.title, a.content, a.atom_type, a.lifecycle,
-                        a.vitality_score, a.source, a.updated_at, a.schema_id,
-                        1 - (e.embedding <=> :query_vec) AS similarity
-                    FROM atom_embeddings e
-                    JOIN knowledge_atoms a ON a.id = e.atom_id
-                    WHERE {where_sql}
-                    ORDER BY {order_sql}
-                    LIMIT :limit
-                """)
-                rows = s.execute(sql, params).fetchall()
+                rows = q.limit(limit).all()
 
                 atom_ids = [row[0] for row in rows]
                 atoms_map = {}
