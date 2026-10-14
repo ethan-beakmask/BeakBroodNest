@@ -123,7 +123,9 @@ sudo INSTANCE=staging \
 | `DB_USER` | `beak_broodnest_staging` |
 | `SERVICE_NAME` | `beakbroodnest-staging` |
 | `/opt/.mcp.json` 註冊 key | `beak_broodnest_staging` |
-| `config.ini [identity] project_id` | `beakbroodnest_staging` |
+
+> 跨專案訊息（`note_send` / `note_inbox`）的呼叫端身份一律依 Claude Code 的啟動目錄推斷（`/opt/line-bot` -> `project:line-bot`），
+> 與實例無關。舊版 `config.ini [identity] project_id` 已停用，`--update` 會自動註解掉並回填受影響的歷史訊息 sender。
 
 `BEAKBROODNEST_PORT` 必須各實例獨立指定，腳本不自動避讓。
 

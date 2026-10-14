@@ -37,7 +37,6 @@
 #                            DB_USER=beak_broodnest_${INSTANCE}
 #                            SERVICE_NAME=beakbroodnest-${INSTANCE}
 #                            MCP server key=beak_broodnest_${INSTANCE}
-#                            identity=project:beakbroodnest_${INSTANCE}
 #                          BEAKBROODNEST_PORT 仍須各自指定（自動推導風險高）
 #                          使用者顯式設的個別變數優先於 INSTANCE 推導
 # =============================================================================
@@ -76,10 +75,12 @@ GITHUB_REPO="${GITHUB_REPO:-https://github.com/ethan-beakmask/BeakBroodNest.git}
 SERVICE_NAME="${SERVICE_NAME:-beakbroodnest}"
 HEALTH_TIMEOUT=30
 
-# MCP server name 與 identity（依 SERVICE_NAME 推導，預設安裝保持 beak_broodnest）
+# MCP server name（依 SERVICE_NAME 推導，預設安裝保持 beak_broodnest）
+# 注意：不再寫 config.ini [identity] project_id。該鍵曾被 mcp_server.py 當成呼叫端
+# 身份的最高優先來源，導致所有 /opt/* 專案的 note_send/note_inbox 都變成
+# project:beakbroodnest（2026-10-14 公司端回報）。呼叫端身份一律由啟動目錄推斷。
 if [ "$SERVICE_NAME" = "beakbroodnest" ]; then
     MCP_SERVER_NAME="beak_broodnest"
-    IDENTITY_PROJECT_ID="beakbroodnest"
 else
     # 從 SERVICE_NAME 取後綴（beakbroodnest-staging -> staging）
     _SVC_SUFFIX="${SERVICE_NAME#beakbroodnest-}"
@@ -89,7 +90,6 @@ else
         _SVC_SUFFIX="$SERVICE_NAME"
     fi
     MCP_SERVER_NAME="beak_broodnest_${_SVC_SUFFIX}"
-    IDENTITY_PROJECT_ID="beakbroodnest_${_SVC_SUFFIX}"
 fi
 
 # === 顏色 ===
@@ -310,6 +310,42 @@ _mcp_target_users() {
 # 順帶清掉各 project 殘留的 disabledMcpjsonServers（誤按 No 造成，會讓 MCP 靜默消失）。
 # 多實例共存時，每個實例註冊獨立的 MCP server key (beak_broodnest_<suffix>)；
 # 預設安裝保持 beak_broodnest 不變，向後相容。
+# 升級遷移：把舊 config.ini 的 [identity] project_id 註解掉（先備份）。
+# 冪等：沒有該段或已註解就什麼都不做。
+migrate_legacy_identity_config() {
+    local cfg="$INSTALL_DIR/config.ini"
+    [ -f "$cfg" ] || return 0
+    if ! grep -qE '^\s*\[identity\]' "$cfg"; then
+        return 0
+    fi
+    local bak="${cfg}.bak.$(date +%Y%m%d_%H%M%S)"
+    cp -p "$cfg" "$bak"
+    # 只註解 [identity] 段標頭與其後緊鄰的 project_id 行，不動其他段
+    "$INSTALL_DIR/venv/bin/python3" - "$cfg" <<'PYEOF'
+import re, sys
+path = sys.argv[1]
+lines = open(path, encoding='utf-8').read().splitlines(keepends=True)
+out, in_identity = [], False
+for line in lines:
+    stripped = line.strip()
+    if re.match(r'^\[identity\]\s*$', stripped):
+        in_identity = True
+        out.append('; [identity] project_id 已於升級時停用（呼叫端身份改依啟動目錄推斷，2026-10-14）\n')
+        out.append('; ' + line)
+        continue
+    if in_identity:
+        if stripped.startswith('[') and stripped.endswith(']'):
+            in_identity = False
+        elif stripped and not stripped.startswith((';', '#')):
+            out.append('; ' + line)
+            continue
+    out.append(line)
+open(path, 'w', encoding='utf-8').write(''.join(out))
+PYEOF
+    chmod --reference="$bak" "$cfg" 2>/dev/null || chmod 600 "$cfg"
+    log_info "config.ini [identity] project_id 已停用（備份: $bak）"
+}
+
 register_mcp_servers() {
     log_info "註冊 MCP server 到 /opt/.mcp.json (key=${MCP_SERVER_NAME})"
     python3 - "$INSTALL_DIR" "$MCP_SERVER_NAME" <<'PYEOF'
@@ -611,6 +647,12 @@ if [ "$ACTION" = "update" ]; then
     HOME=/root "$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
     HOME=/root "$INSTALL_DIR/venv/bin/pip" install -r "$INSTALL_DIR/requirements.txt" -q
 
+    # 遷移舊 config.ini：移除 [identity] project_id（2026-10-14）
+    # 該鍵曾被 mcp_server.py 當成呼叫端身份的最高優先來源，讓所有 /opt/* 專案的
+    # note_send/note_inbox 都變成 project:beakbroodnest。新版程式會忽略它並印 WARNING，
+    # 這裡直接備份後註解掉，讓升級後不再每次啟動都警告。
+    migrate_legacy_identity_config
+
     # [3] Schema 補丁：對既有 DB 重跑 idempotent 的結構性 SQL（CREATE TABLE IF NOT EXISTS / CREATE OR REPLACE VIEW）
     #     僅補結構，不動 seed 資料；既有原子完全不會被影響（最後仍會比對 atom_count 雙重保險）
     log_step "3/4" "套用 Schema 補丁..."
@@ -737,6 +779,15 @@ print('  ORM 結構同步完成（新表已建）')
             -f "$INSTALL_DIR/migrations/034_atom_updated_by.up.sql" -v ON_ERROR_STOP=1 -q \
             && log_info "  原子 updated_by/updated_via 欄位補丁完成" \
             || log_warn "  原子 updated_by/updated_via 欄位補丁失敗（AI 可能讀不到人類編輯訊號）"
+    fi
+
+    # 回填被 [identity] project_id 覆寫錯的歷史訊息 sender（依 sender_cwd 重推）。
+    # 冪等：sender 與 cwd 推斷結果一致的列不會動；未讀狀態不變，收件專案升級後自然看得到。
+    if [ -f "$INSTALL_DIR/scripts/fix_message_sender.py" ]; then
+        "$INSTALL_DIR/venv/bin/python3" "$INSTALL_DIR/scripts/fix_message_sender.py" \
+            --config "$INSTALL_DIR/config.ini" --apply \
+            && log_info "  訊息 sender 回填完成" \
+            || log_warn "  訊息 sender 回填失敗（請手動跑 scripts/fix_message_sender.py --check）"
     fi
 
     # MCP 註冊（升級也要跑）：舊版安裝只寫過 /opt/.mcp.json，沒有 user scope，
@@ -1024,9 +1075,6 @@ token = $RELAY_TOKEN
 
 [logging]
 level = INFO
-
-[identity]
-project_id = $IDENTITY_PROJECT_ID
 
 ${PIPELINE_SECTION}
 CFGEOF

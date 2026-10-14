@@ -80,6 +80,28 @@ def create_argument_parser():
     return parser
 
 
+def _warn_legacy_identity_config(config_path: str) -> None:
+    """舊版 config.ini 若殘留 [identity] project_id，印 WARNING 到 stderr 後忽略。
+
+    該設定過去會覆寫呼叫端身份，使所有專案共用同一個 sender（見 main() 註解）。
+    現已改由 install.sh --update 自動註解掉；這裡只提醒，不中斷啟動。
+    """
+    try:
+        cfg = configparser.RawConfigParser()
+        cfg.read(config_path, encoding='utf-8')
+        if cfg.has_section('identity'):
+            legacy = cfg.get('identity', 'project_id', fallback='')
+            if legacy:
+                print(
+                    f'[WARNING] config.ini [identity] project_id = {legacy} 已停用並被忽略：'
+                    '呼叫端身份一律依啟動目錄推斷（或 --identity 參數）。'
+                    '請執行 install.sh --update 自動遷移，或手動刪除該段。',
+                    file=sys.stderr,
+                )
+    except Exception:
+        pass
+
+
 def main():
     parser = create_argument_parser()
 
@@ -160,18 +182,15 @@ def main():
     init_engine(config_path)
 
     # 初始化訊息身份
-    # 優先順序: --identity 參數 > config.ini [identity] > 啟動目錄推斷
+    # 優先順序: --identity 參數 > 啟動目錄推斷（CLAUDE_CWD / os.getcwd()）
+    #
+    # 刻意不讀 config.ini：MCP server 是由各專案的 Claude Code 從各自 cwd 啟動，
+    # 呼叫端身份必須隨啟動目錄而定。2026-10-14 公司端回報：install.sh 曾把
+    # 「實例名稱」寫進 config.ini [identity] project_id，而本處把它當最高優先的
+    # 呼叫端身份，結果所有 /opt/* 專案都被判成 project:beakbroodnest，
+    # note_send 寄件人失真、note_inbox 查錯收件匣。舊 config 殘留此段時只警告並忽略。
     identity_str = args.identity
-    if not identity_str:
-        try:
-            cfg = configparser.RawConfigParser()
-            cfg.read(config_path, encoding='utf-8')
-            if cfg.has_section('identity'):
-                project_id = cfg.get('identity', 'project_id', fallback='')
-                if project_id:
-                    identity_str = f'project:{project_id}'
-        except Exception:
-            pass
+    _warn_legacy_identity_config(config_path)
 
     # MCP server 由 claude code 啟動，取得呼叫端的 cwd
     caller_cwd = os.environ.get('CLAUDE_CWD', os.getcwd())

@@ -47,44 +47,57 @@ _CWD_PROJECT_MAP = {
 }
 
 
-def init_identity(config_identity: str = '', cwd: str = ''):
-    """初始化寄件人身份。
+def infer_identity_from_cwd(cwd: str) -> str:
+    """純函式：依啟動目錄推斷 project:{name}。
 
-    優先順序：
-    1. config.ini [identity] project_id（明確設定）
-    2. 啟動目錄對照 _CWD_PROJECT_MAP
-    3. 從啟動目錄名稱推導 project:{basename}
+    順序：_CWD_PROJECT_MAP 精確命中 > 已知路徑的子目錄 > 目錄名（去掉 -dev 後綴，轉小寫）。
+    scripts/fix_message_sender.py 回填歷史訊息時共用同一套規則。
     """
-    global _current_identity, _current_cwd
-
-    _current_cwd = cwd or os.getcwd()
-
     # 自訂 INSTALL_DIR 時動態把它對應到 project:beakbroodnest
     _install_dir = os.environ.get('BBN_INSTALL_DIR')
     if _install_dir:
         _install_dir = os.path.realpath(_install_dir)
         _CWD_PROJECT_MAP.setdefault(_install_dir, 'project:beakbroodnest')
 
+    resolved = os.path.realpath(cwd)
+    identity = _CWD_PROJECT_MAP.get(resolved, '')
+
+    if not identity:
+        # 檢查是否在已知路徑的子目錄
+        for known_path, known_identity in _CWD_PROJECT_MAP.items():
+            if resolved.startswith(known_path + '/'):
+                identity = known_identity
+                break
+
+    if not identity:
+        # 最後手段：用目錄名
+        basename = os.path.basename(resolved).lower()
+        basename = basename.replace('-dev', '')
+        identity = f'project:{basename}'
+
+    return identity
+
+
+def init_identity(config_identity: str = '', cwd: str = ''):
+    """初始化寄件人身份。
+
+    優先順序：
+    1. config_identity（mcp_server.py 的 --identity 參數；排程任務等明確指定身份用）
+    2. 啟動目錄推斷 infer_identity_from_cwd()
+
+    不讀 config.ini：MCP server 由各專案的 Claude Code 從各自 cwd 啟動，
+    身份必須隨啟動目錄而定，寫在知識庫 config 裡會讓所有呼叫端共用同一身份
+    （2026-10-14 公司端實例）。
+    """
+    global _current_identity, _current_cwd
+
+    _current_cwd = cwd or os.getcwd()
+
     if config_identity:
-        # config 明確指定，直接用
+        # --identity 明確指定，直接用
         _current_identity = config_identity
     else:
-        # 從 cwd 推斷
-        resolved = os.path.realpath(_current_cwd)
-        _current_identity = _CWD_PROJECT_MAP.get(resolved, '')
-
-        if not _current_identity:
-            # 檢查是否在已知路徑的子目錄
-            for known_path, identity in _CWD_PROJECT_MAP.items():
-                if resolved.startswith(known_path + '/'):
-                    _current_identity = identity
-                    break
-
-        if not _current_identity:
-            # 最後手段：用目錄名
-            basename = os.path.basename(resolved).lower()
-            basename = basename.replace('-dev', '')
-            _current_identity = f'project:{basename}'
+        _current_identity = infer_identity_from_cwd(_current_cwd)
 
     logger.info(f'Messaging identity: {_current_identity} (cwd: {_current_cwd})')
 
@@ -160,8 +173,8 @@ def register(mcp):
 
         if not actual_sender:
             return json.dumps({
-                'error': '無法判斷寄件人身份。請在 config.ini [identity] 設定 project_id，'
-                         '或確認工作目錄在已知專案路徑下。'
+                'error': '無法判斷寄件人身份。身份依 MCP server 啟動目錄推斷，'
+                         '請確認 Claude Code 從專案目錄啟動，或明確傳入 sender 參數。'
             }, ensure_ascii=False)
 
         if not recipient:
@@ -280,7 +293,8 @@ def register(mcp):
         me = recipient or get_identity()
         if not me:
             return json.dumps({
-                'error': '無法判斷收件人身份。請在 config.ini [identity] 設定 project_id。'
+                'error': '無法判斷收件人身份。身份依 MCP server 啟動目錄推斷，'
+                         '請確認 Claude Code 從專案目錄啟動，或明確傳入 recipient 參數。'
             }, ensure_ascii=False)
 
         limit = min(limit, 100)
