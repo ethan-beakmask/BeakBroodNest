@@ -164,9 +164,20 @@ grep 'status=' /opt/tmp/scripts-nightly_pipeline.log | tail -3
 
 ## Schema migration 慣例
 
-**沒有自動 runner。** `human_ui/app.py:92` 的 `_migrations_done` 只呼叫 `ensure_canvas_slugs()`，不會掃 `migrations/` 目錄；`scripts/install.sh` 也不通掃該目錄（它另走「Schema 補丁」路徑，跑的是 `scripts/init_*.sql` 那批 `CREATE TABLE IF NOT EXISTS`）。
+**沒有自動 runner。** `human_ui/app.py:92` 的 `_migrations_done` 只呼叫 `ensure_canvas_slugs()`，不會掃 `migrations/` 目錄；`scripts/install.sh` 也不通掃該目錄（它另走「Schema 補丁」路徑，跑的是 `scripts/init_*.sql` 那批 `CREATE TABLE IF NOT EXISTS` 加 `check_schema_drift.py --apply`）。
 
-**唯一例外是 `033_canvas_audience.up.sql`**，install.sh 有單獨一段執行它。原因：`check_schema_drift.py --apply` 補欄位只會補成 nullable 無預設，`canvases.audience` 留 NULL 會讓所有白板被判定成使用者自用，AI 連自己的待辦白板都搜不到。要加同類「必須有 default/NOT NULL/CHECK」的欄位時，比照辦理另外掛一段。
+**install.sh 明列套用的 migration（2026-10-15 起為 032~035）**：全新安裝與 `--update` 兩條路徑都透過 `apply_migration_sql` 跑同一組檔案。理由各不同，但共通點是「ORM create_all 與 drift 修復補不出來」：
+
+- `032_task_ref_code`：`project_ref_counters` 表不在 ORM，`next_ref_code()` 函式、部分唯一索引與 CHECK 只有這份 SQL 會建；缺了 `note_task_create` 直接報 `function next_ref_code does not exist`（公司端 2026-10-15 查證確缺）
+- `033_canvas_audience`：drift 修復補出的欄位是 nullable 無預設，`audience` 留 NULL 會讓 AI 連自己的白板都搜不到
+- `034_atom_updated_by`：`updated_by` / `updated_via` 欄位
+- `035_conversations_skip_analysis`：`conversations` 不在 ORM，`init_pipeline_tables.sql` 的 `CREATE TABLE IF NOT EXISTS` 不會替既有表補欄位；缺了 db_importer 每個 jsonl 都失敗（公司端 2026-07-23 起停擺 12 天才發現）
+
+**新增 migration 時要同時做三件事**：寫 up/down、在 install.sh 的 `--update` 路徑加一段 `apply_migration_sql`、把編號加進全新安裝路徑的 `for _mig in ...` 清單。漏掉後兩步，外部環境永遠不會套用到。
+
+**編號前先看 `origin/master`**（`git fetch && ls migrations/ | tail`）。2026-08-05 公司端本地建了 `032_conversations_skip_analysis`，與 GitHub 同期發布的 `032_task_ref_code` 撞號，公司端從此無法 pull，直到 2026-10-15 改編成 035 合併。已發布的編號不改，後到的改號。
+
+**`schema_migrations` 表是舊 MVP 遺留**，開發機 DB 根本沒有這張表，程式碼也沒有任何地方讀寫它（公司端 DB 還留著、紀錄停在 031）。不要往裡面補紀錄，也不要拿它判斷「哪些 migration 套過了」；判準只有實際查 `information_schema` / `pg_indexes` / `to_regclass()`。
 
 `migrations/NNN_名稱.up.sql` / `.down.sql` 是**人工撰寫、人工套用**的。慣例（照 `031_turn_evaluations.up.sql`）：
 

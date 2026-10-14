@@ -312,6 +312,16 @@ _mcp_target_users() {
 # 預設安裝保持 beak_broodnest 不變，向後相容。
 # 升級遷移：把舊 config.ini 的 [identity] project_id 註解掉（先備份）。
 # 冪等：沒有該段或已註解就什麼都不做。
+# 套用單一 migration SQL（全程冪等的 up.sql），$1=檔名（不含路徑）$2=成功訊息 $3=失敗提示
+apply_migration_sql() {
+    local f="$INSTALL_DIR/migrations/$1"
+    [ -f "$f" ] || return 0
+    PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
+        -f "$f" -v ON_ERROR_STOP=1 -q \
+        && log_info "  $2" \
+        || log_warn "  $3"
+}
+
 migrate_legacy_identity_config() {
     local cfg="$INSTALL_DIR/config.ini"
     [ -f "$cfg" ] || return 0
@@ -712,6 +722,12 @@ print('  ORM 結構同步完成（新表已建）')
             || log_warn "  Pipeline 表結構補丁失敗（observe 對話拓樸可能空白）"
     fi
 
+    # conversations.skip_analysis（035）：CREATE TABLE IF NOT EXISTS 不會替既有表補欄位，
+    # 缺了 db_importer 每個 jsonl 都失敗、匯入停擺（公司端 2026-07-23 起 12 天）。
+    apply_migration_sql "035_conversations_skip_analysis.up.sql" \
+        "conversations.skip_analysis 欄位補丁完成（035）" \
+        "conversations.skip_analysis 欄位補丁失敗（db_importer 將無法匯入，請手動套用 migrations/035）"
+
     # seed_baseline 也是 idempotent（CREATE OR REPLACE VIEW / ALTER ... IF NOT EXISTS）
     if [ -f "$INSTALL_DIR/scripts/seed_baseline.sql" ]; then
         PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -d "$DB_NAME" -h "${DB_HOST:-127.0.0.1}" -p "${DB_PORT:-5432}" \
@@ -761,6 +777,13 @@ print('  ORM 結構同步完成（新表已建）')
                 || log_warn "  nodeId 回填失敗（請手動執行 backfill_tiptap_node_id.py --run）"
         fi
     fi
+
+    # 短代號 ref_code 地基（032）：canvases.code / knowledge_atoms.ref_code 欄位 drift 修復會補，
+    # 但 project_ref_counters 表不在 ORM、next_ref_code() 函式與唯一/CHECK 約束也只有這份 SQL 會建。
+    # 缺了 note_task_create 會以 function next_ref_code does not exist 失敗（2026-10-15 公司端查證）。
+    apply_migration_sql "032_task_ref_code.up.sql" \
+        "短代號 ref_code 結構補丁完成（032）" \
+        "短代號 ref_code 結構補丁失敗（note_task_create 將無法發號，請手動套用 migrations/032）"
 
     # 白板 AI 可見性欄位（canvases.audience）：drift 修復只會補出 nullable 無預設的欄位，
     # 留 NULL 會讓所有白板被當成使用者自用，AI 連自己的待辦白板都搜不到。
@@ -1130,6 +1153,14 @@ if [ -f "$INSTALL_DIR/scripts/init_pipeline_tables.sql" ]; then
         && log_info "  Pipeline 表結構載入完成（conversations 等 5 張表）" \
         || log_warn "  Pipeline 表結構載入失敗（P1/P2/P3 與 observe 將無法運作）"
 fi
+
+# 套用版控 migrations（032~035）：ORM create_all 只建表、不建函式／CHECK／部分唯一索引，
+# seed_baseline 也沒有 next_ref_code()。全部冪等，與 --update 路徑套用同一組檔案。
+for _mig in 032_task_ref_code 033_canvas_audience 034_atom_updated_by 035_conversations_skip_analysis; do
+    apply_migration_sql "${_mig}.up.sql" \
+        "migration ${_mig} 套用完成" \
+        "migration ${_mig} 套用失敗（請手動 psql -f migrations/${_mig}.up.sql）"
+done
 
 atom_count=$(get_atom_count)
 log_info "資料庫就緒 (知識原子: $atom_count)"

@@ -25,7 +25,11 @@ CREATE TABLE IF NOT EXISTS conversations (
 
     -- Pipeline 階段標記
     p1_completed_at TIMESTAMPTZ,
-    p2_completed_at TIMESTAMPTZ
+    p2_completed_at TIMESTAMPTZ,
+
+    -- 跳過分析標記（NULL=需分析；pipeline/discard/no_analyze=跳過原因）。
+    -- 既有表由 migrations/035 補欄位與索引；這裡只讓全新建表一次到位。
+    skip_analysis   TEXT
 );
 
 COMMENT ON COLUMN conversations.parent_conversation_id IS
