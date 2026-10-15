@@ -23,6 +23,14 @@
 - `config.ini` 不入版控（已在 .gitignore 排除）
 - 程式碼變更後若影響 gunicorn 行為，須 `sudo systemctl restart beakbroodnest.service`
 
+### 開發端看不到的變更（補全域規則的本專案觸發項）
+全域 `~/.claude/CLAUDE.md`「開發端看不到的變更：提示安排測試機」的七類之外，本專案另加：
+- `scripts/install.sh` 的 `apply_migration_sql` 清單（`--update` 路徑與全新安裝的 `for _mig in` 兩處）沒有同步加上新 migration
+- `scripts/init_pipeline_tables.sql` 管的 pipeline 表（conversations 等）改結構——這些表不在 ORM，`check_schema_drift.py` 比不到
+- `ai_kb/mcp_server.py` 啟動期邏輯（身份、config 讀取、cwd 切換）——開發機從 `/opt/BeakBroodNest` 啟動，看不到從其他專案目錄啟動的行為
+- `scripts/install.sh` 的 `register_mcp_servers` 與 config.ini 範本段
+命中時回應結尾加提示，並寫明建議的驗證方式：乾淨 VM 跑 `install.sh` 全新安裝，再從舊版 commit 跑 `--update`，兩者都對 `information_schema`／`pg_proc`／`pg_indexes` 與開發機比對。
+
 ## Push 前測試與隱私守則
 詳細規範請參考：`docs/PUSH_POLICY.md`（測試完整性、隱私控制、push 指令、歷史備註）
 
